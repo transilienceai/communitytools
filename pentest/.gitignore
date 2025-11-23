@@ -1,0 +1,96 @@
+# Claude Code Pentest Framework - Git Ignore
+
+# Test outputs (exclude ALL test results and sensitive data from public repo)
+# Only allow outputs/README.md to be committed
+outputs/*
+!outputs/README.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Logs
+*.log
+logs/
+
+# Screenshots and evidence (sensitive)
+screenshots/
+evidence/
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# Raw data and results
+raw/
+*.json
+*.csv
+*.txt
+
+# Credentials and secrets
+credentials.json
+config.json
+.env
+.env.local
+secrets/
+tokens/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Backup files
+*.bak
+*.backup
