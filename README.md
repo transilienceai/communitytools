@@ -40,22 +40,36 @@ A comprehensive, AI-powered penetration testing framework that orchestrates 20+ 
 
 ## 🤝 Contributing
 
-We welcome contributions from the security community! Here's how you can help:
+We welcome contributions from the security community! Whether you're a seasoned security researcher or just getting started, there are many ways to help make these tools better.
 
 ### Ways to Contribute
 
-1. **Report Issues** - Found a bug or false positive? Open an issue
-2. **Submit Pull Requests** - Improvements, new agents, or bug fixes welcome
-3. **Share Feedback** - Let us know how you're using these tools
-4. **Add New Tools** - Have a security tool to contribute? We'd love to include it!
+- **Report Issues** - Found a bug or false positive? Open an issue
+- **Improve Detection** - Enhance accuracy of existing security testing agents
+- **Add New Agents** - Contribute new vulnerability testing capabilities
+- **Add New Tools** - Share your security frameworks and utilities
+- **Improve Documentation** - Help others understand and use these tools
+- **Share Feedback** - Tell us how you're using these tools and what you need
 
-### Contribution Guidelines
+### Quick Start for Contributors
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+1. Read our **[Contributing Guide](CONTRIBUTING.md)** for detailed instructions
+2. Check out [Good First Issues](https://github.com/transilienceai/communitytools/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+3. Join the conversation in [GitHub Discussions](https://github.com/transilienceai/communitytools/discussions)
+
+### Contribution Process
+
+1. **Create an issue** to discuss your proposed changes
+2. **Fork the repository** and create a feature branch
+3. **Make your changes** following our coding standards
+4. **Test thoroughly** and update documentation
+5. **Submit a Pull Request** linking to your issue
+
+**Read the full guide:** [CONTRIBUTING.md](CONTRIBUTING.md)
+
+### Recognition
+
+All contributors are recognized in our release notes and GitHub contributors list. Your contributions help the entire security community!
 
 ---
 
