@@ -24,10 +24,10 @@ We believe in giving back to the security community by open-sourcing our tools a
 
 **Multi-Agent Autonomous Penetration Testing Framework powered by Claude AI**
 
-A comprehensive, AI-powered penetration testing framework that orchestrates 20+ specialized security testing agents to perform automated vulnerability assessments.
+A comprehensive, AI-powered penetration testing framework that orchestrates 30+ specialized security testing agents to perform automated vulnerability assessments.
 
 **Features:**
-- 🤖 20+ specialized security testing agents
+- 🤖 30+ specialized security testing agents
 - 🎯 OWASP Top 10 coverage
 - 🗺️ 5-phase application mapping
 - 📊 Professional reporting with CVSS scoring
