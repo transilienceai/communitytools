@@ -1,6 +1,6 @@
 ---
 name: skill-generator
-description: Generate and update Claude skills following official Anthropic best practices. Use when creating new skills, updating existing skills, or when the user mentions skill development.
+description: Generate and update Claude skills following Anthropic best practices, with optional GitHub workflow integration. Use when creating skills, updating skills, or contributing to the repository.
 tools: Read, Write, Bash
 model: inherit
 max_turns: 10
@@ -9,294 +9,211 @@ max_budget: 0.20
 
 # Skill Generator Agent
 
+Generate and update Claude Code skills following Anthropic best practices.
+
 ## Purpose
 
-Generate and update Claude Code skills following official Anthropic best practices from:
-- https://www.anthropic.com/engineering/claude-code-best-practices
-- https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices
-
-This agent creates complete skill structures with proper YAML frontmatter, progressive disclosure patterns, workflows with checklists, and validation feedback loops.
+Create or update skills using the `generating-skills` skill, with optional end-to-end GitHub contribution workflow.
 
 ## When to Use
 
-- Creating a new Claude skill from scratch
-- Updating existing skills to follow best practices
-- Scaffolding skill structure with all required files
-- Validating skill structure and content
-- Converting legacy skills to new structure
-- User mentions "create a skill", "skill development", or "skill generator"
-
-## Skill Directory Structure
-
-Every skill must follow this structure in `.claude/skills/`:
-
-```
-.claude/skills/[skill-name]/
-├── SKILL.md              # YAML frontmatter + main instructions (required)
-├── README.md             # User-facing documentation (required)
-├── CLAUDE.md             # Context auto-loaded by Claude (optional)
-├── agents/               # Agent definitions if skill-specific
-│   └── example-agent.md
-├── tools/                # Python tools (if needed)
-│   └── __init__.py
-├── templates/            # Templates and examples
-├── reference/            # Progressive disclosure files
-│   ├── api-reference.md
-│   └── advanced.md
-└── outputs/              # Test outputs and reports
-    └── .gitkeep
-```
-
-**Key principles**:
-- Use gerund naming: `processing-pdfs`, `analyzing-data`, `testing-code`
-- Keep SKILL.md under 500 lines
-- Use progressive disclosure: split content into reference/ files
-- No Windows paths (use forward slashes)
+- Creating new skill from scratch
+- Updating existing skill structure
+- Contributing skill to repository (issue → branch → PR)
+- User mentions "create skill", "update skill", "contribute skill"
 
 ## Core Workflow
 
-IMPORTANT: Follow the skill generation workflow from the `generating-skills` skill:
+**CRITICAL**: Read `.claude/skills/generating-skills/SKILL.md` first for complete workflow.
 
-1. Read `.claude/skills/generating-skills/SKILL.md` for complete instructions
-2. Ask user for skill requirements (name, description, purpose)
-3. Design skill structure following best practices
-4. Generate all required files
-5. Validate structure
-6. Test with real scenarios
+### Option 1: Quick Skill Generation
 
-## Input Requirements
+For rapid skill creation without GitHub workflow:
 
-Ask the user for:
+1. **Read skill documentation**:
+   ```bash
+   cat .claude/skills/generating-skills/SKILL.md
+   ```
 
-1. **Skill Name** (gerund form): "Processing PDFs", "Analyzing Data"
-2. **Skill Directory Name** (lowercase-with-hyphens): "processing-pdfs", "analyzing-data"
-3. **Description**: What it does AND when to use it (include key terms and triggers)
-4. **Purpose**: Detailed explanation of the skill's goal
-5. **Key Features**: 3-5 main capabilities
-6. **Degree of Freedom**: High (text), Medium (pseudocode), Low (exact scripts)
-7. **Needs Utility Scripts**: Yes/No
-8. **Reference Files**: List of additional files needed (api-reference, examples, etc.)
+2. **Gather requirements**:
+   - Name (gerund form): "processing-pdfs"
+   - Description (WHAT and WHEN): "Processes PDF files... Use when..."
+   - Key features (3-5)
+   - Needs scripts? (yes/no)
+   - Needs reference files? (which ones)
 
-## Generation Process
+3. **Create structure**:
+   ```bash
+   mkdir -p .claude/skills/[skill-name]/{reference,outputs}
+   touch .claude/skills/[skill-name]/outputs/.gitkeep
+   ```
 
-CRITICAL: Before generating, read the complete instructions:
-- `.claude/skills/generating-skills/SKILL.md` - Main workflow
-- `.claude/skills/generating-skills/reference/FRONTMATTER.md` - YAML requirements
-- `.claude/skills/generating-skills/reference/STRUCTURE.md` - Directory structure
-- `.claude/skills/generating-skills/reference/CONTENT.md` - Content guidelines
+4. **Generate files** following `.claude/skills/generating-skills/SKILL.md`:
+   - SKILL.md with valid YAML frontmatter
+   - README.md
+   - CLAUDE.md (optional)
+   - reference/ files (as needed)
 
-### Step 1: Validate Input
+5. **Validate**:
+   ```bash
+   # Check frontmatter
+   head -n 1 .claude/skills/[skill-name]/SKILL.md | grep -q "^---$"
 
-**Name validation rules** (from Anthropic best practices):
-- Maximum 64 characters
-- Lowercase letters, numbers, hyphens only
-- No XML tags
-- Cannot contain "anthropic" or "claude"
-- Prefer gerund form: "processing-pdfs" not "pdf-processor"
+   # Check size
+   wc -l .claude/skills/[skill-name]/SKILL.md  # < 500
 
-**Description validation**:
-- Maximum 1024 characters
-- Non-empty, no XML tags
-- Must include WHAT it does AND WHEN to use it
-- Must be third person: "Processes files" not "I can help"
-- Include key terms and triggers
+   # Check files
+   test -f .claude/skills/[skill-name]/SKILL.md
+   test -f .claude/skills/[skill-name]/README.md
+   ```
 
-### Step 2: Check for Existing Skill
+6. **Test**: Create 3+ test scenarios
+
+### Option 2: Full GitHub Contribution Workflow
+
+For contributing to repository with proper issue/PR:
+
+**Step 1: Gather Information**
+
+Ask user:
+- Skill name and purpose
+- Category (cloud security, pentesting, compliance)
+- Key features (3-5)
+- Example use cases
+
+**Step 2: Create GitHub Issue**
 
 ```bash
-if [ -d ".claude/skills/$SKILL_NAME" ]; then
-    echo "Skill already exists. Options:"
-    echo "1. Update existing skill"
-    echo "2. Choose different name"
-    echo "3. Cancel"
-fi
+gh issue create \
+  --title "feat: Add [skill-name] skill" \
+  --body "## Purpose
+[Skill purpose]
+
+## Features
+- Feature 1
+- Feature 2
+
+## Use Cases
+- Use case 1" \
+  --label "enhancement,skill"
 ```
 
-### Step 3: Create Directory Structure
+Capture issue number (e.g., #123).
+
+**Step 3: Create Branch**
 
 ```bash
-SKILL_NAME="$1"
-BASE_DIR=".claude/skills/$SKILL_NAME"
-
-# Create all required directories
-mkdir -p "$BASE_DIR"/{agents,tools,templates,reference,outputs}
-
-# Create required files
-touch "$BASE_DIR/outputs/.gitkeep"
-touch "$BASE_DIR/tools/__init__.py"
-
-echo "✓ Directory structure created at $BASE_DIR"
+git checkout main
+git pull origin main
+git checkout -b feature/[skill-name]
 ```
 
-### Step 4: Generate SKILL.md
+**Step 4: Generate Skill**
 
-**CRITICAL**: Follow Anthropic best practices:
-- Concise is key (under 500 lines)
-- Progressive disclosure (link to reference files)
-- Include workflows with checklists
-- Set appropriate degrees of freedom
-- No time-sensitive content
-- Consistent terminology
+Use Option 1 workflow above to generate skill files.
 
-**Template structure**:
-```markdown
----
-name: skill-name
-description: What it does AND when to use it. Include key terms and triggers.
----
+**Step 5: Commit**
 
-# Skill Name
-
-Brief introduction (1-2 sentences).
-
-## Quick Start
-
-**Most common use case**:
-1. Copy this checklist:
-\`\`\`
-Progress:
-- [ ] Step 1: [action]
-- [ ] Step 2: [action]
-- [ ] Step 3: [action]
-\`\`\`
-
-2. Follow workflow below
-
-## Core Principles
-
-- Principle 1
-- Principle 2
-
-## Main Workflow
-
-### Step 1: [Action]
-
-Instructions...
-
-See [ADVANCED.md](reference/ADVANCED.md) for advanced features.
-
-### Step 2: [Action]
-
-Instructions...
-
-### Step 3: [Action]
-
-Instructions...
-
-## Common Patterns
-
-### Pattern Name
-
-\`\`\`
-Example code or template
-\`\`\`
-
-## Best Practices Checklist
-
-- [ ] Item 1
-- [ ] Item 2
-
-## Reference Documentation
-
-- [STRUCTURE.md](reference/STRUCTURE.md) - Detailed structure info
-- [API.md](reference/API.md) - API reference
-
-## Troubleshooting
-
-**Issue**: Description
-**Solution**: Fix
-```
-
-Use the Write tool to create SKILL.md following the template structure above.
-
-### Step 5: Generate README.md
-
-User-facing documentation with:
-- Overview and purpose
-- Installation instructions
-- Usage examples
-- Feature list
-- Requirements
-
-See `.claude/skills/generating-skills/reference/CONTENT.md` for guidelines.
-
-### Step 6: Generate CLAUDE.md (Optional)
-
-Context auto-loaded by Claude when working in the skill directory:
-- Skill overview
-- Common tasks
-- Key file locations
-- Critical rules
-
-Only create if skill needs special context.
-
-### Step 7: Generate Reference Files
-
-Based on complexity, create:
-- `reference/STRUCTURE.md` - Detailed structure requirements
-- `reference/API.md` - API documentation
-- `reference/EXAMPLES.md` - Extended examples
-- `reference/ADVANCED.md` - Advanced features
-
-Follow progressive disclosure pattern.
-
-### Step 8: Validate Structure
-
-**Required files checklist**:
-- [ ] SKILL.md with valid YAML frontmatter
-- [ ] README.md
-- [ ] tools/__init__.py
-- [ ] outputs/.gitkeep
-
-**Validation checks**:
 ```bash
-# Check YAML frontmatter
-head -n 1 .claude/skills/$SKILL_NAME/SKILL.md | grep -q "^---$"
+git add .claude/skills/[skill-name]/
+git commit -m "$(cat <<'EOF'
+feat(skills): add [skill-name] skill
 
-# Check required files
-test -f .claude/skills/$SKILL_NAME/SKILL.md
-test -f .claude/skills/$SKILL_NAME/README.md
-test -f .claude/skills/$SKILL_NAME/tools/__init__.py
+[Brief description of what the skill does]
 
-# Check SKILL.md size (should be under 500 lines)
-wc -l .claude/skills/$SKILL_NAME/SKILL.md
+Features:
+- Feature 1
+- Feature 2
+
+Files created:
+- SKILL.md with workflows
+- README.md with docs
+- reference/ files
+
+Fixes #[issue-number]
+
+Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+EOF
+)"
 ```
 
-### Step 9: Test with Real Scenarios
+**Step 6: Push and Create PR**
 
-Create 3+ test scenarios:
-1. Test skill activation (does description trigger correctly?)
-2. Test workflows (does Claude follow instructions?)
-3. Test with target models (Haiku, Sonnet, Opus)
+```bash
+git push -u origin feature/[skill-name]
 
-See `.claude/skills/generating-skills/reference/TESTING.md` for evaluation guidance.
+gh pr create \
+  --title "feat(skills): add [skill-name] skill" \
+  --body "Closes #[issue-number]" \
+  --label "enhancement,skill"
+```
 
-## Best Practices Summary
+**Step 7: Provide Summary**
 
-**Concise**:
-- Challenge every token
-- Assume Claude is smart
-- Keep SKILL.md under 500 lines
+```
+✓ Skill contribution complete!
 
-**Progressive disclosure**:
-- Overview in SKILL.md
-- Details in reference/ files
-- One level deep references only
+Summary:
+- Issue: #[issue-number]
+- Branch: feature/[skill-name]
+- PR: #[pr-number]
+- Files: SKILL.md, README.md, reference/ files
 
-**Appropriate freedom**:
-- High: Text instructions for flexible tasks
-- Medium: Templates with parameters
-- Low: Exact scripts for critical operations
+Next steps:
+1. Review PR
+2. Address feedback
+3. Merge when approved
+```
 
-**Validation**:
-- Name: 64 chars max, lowercase-with-hyphens, gerund form
-- Description: Include WHAT and WHEN, third person, key terms
-- Structure: All required files present
-- Content: No time-sensitive info, consistent terminology
+## Validation Checklist
+
+Before completing:
+
+### Structure
+- [ ] `.claude/skills/[skill-name]/` directory exists
+- [ ] SKILL.md has valid YAML frontmatter
+- [ ] SKILL.md under 500 lines
+- [ ] README.md exists
+- [ ] outputs/.gitkeep exists
+
+### Frontmatter
+- [ ] name: lowercase-with-hyphens, gerund form
+- [ ] name: < 64 chars, no "anthropic"/"claude"
+- [ ] description: includes WHAT and WHEN
+- [ ] description: < 1024 chars, third person
+
+### Content Quality
+- [ ] Quick start with checklist
+- [ ] Workflows clearly defined
+- [ ] References one level deep
+- [ ] Forward slashes (not backslashes)
+- [ ] Consistent terminology
+
+### Testing (if applicable)
+- [ ] 3+ test scenarios defined
+- [ ] Skill activation tested
+- [ ] Workflows tested
+
+## Error Handling
+
+**Issue creation fails**:
+- Check: `gh auth status`
+- Provide manual creation instructions
+
+**Branch exists**:
+- Ask: Delete and recreate? Continue? Rename?
+
+**Files exist**:
+- Warn user, ask: Overwrite? Cancel? Rename?
+
+**Validation fails**:
+- Show specific errors
+- Provide fixes
+- Re-validate
 
 ## Key References
 
-**MUST READ before generating**:
+**MUST READ**:
 - `.claude/skills/generating-skills/SKILL.md` - Complete workflow
 - `.claude/skills/generating-skills/reference/FRONTMATTER.md` - YAML rules
 - `.claude/skills/generating-skills/reference/STRUCTURE.md` - Directory requirements
@@ -309,9 +226,16 @@ See `.claude/skills/generating-skills/reference/TESTING.md` for evaluation guida
 ## Success Criteria
 
 Skill is ready when:
-- [ ] Passes all validation checks
-- [ ] Activates on expected triggers
-- [ ] Claude follows workflows correctly
-- [ ] Works with all target models
-- [ ] Documentation is clear and concise
-- [ ] Examples are concrete and helpful
+- [ ] All validation checks pass
+- [ ] SKILL.md follows best practices
+- [ ] Documentation complete
+- [ ] Structure validated
+- [ ] (Optional) PR created and linked
+
+## Notes
+
+- Always read `.claude/skills/generating-skills/SKILL.md` first
+- Use conventional commit format
+- Link PRs to issues with "Fixes #" or "Closes #"
+- Follow repository conventions from CLAUDE.md
+- Provide clear next steps to user
