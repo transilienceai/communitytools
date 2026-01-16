@@ -104,11 +104,24 @@ outputs/<program>/
 - **Exploit Workflow**: Step-by-step documentation of how to execute the exploit
 
 **Every report MUST have**:
-- Executive summary (2-3 sentences)
+- Executive summary (1-2 pages for executives)
+- Technical report (comprehensive for security teams)
 - Severity breakdown table
 - Complete technical details
 - Evidence references
-- Remediation recommendations
+- Remediation recommendations with timeline
+- CVSS v3.1 scoring
+- OWASP and CWE mappings
+
+**Professional Report Standard**:
+For penetration testing, follow the industry-standard format in:
+- `.claude/skills/pentest/attacks/essential-skills/reporting/PROFESSIONAL_REPORT_STANDARD.md`
+
+This standard includes:
+- Executive Report (1-2 pages) - For C-level stakeholders
+- Technical Report (Comprehensive) - For security teams
+- JSON output for automation
+- Individual finding reports with verified PoCs
 
 See [FINDING_TEMPLATE.md](output-standards/reference/FINDING_TEMPLATE.md) for complete schema.
 
@@ -118,12 +131,105 @@ See [FINDING_TEMPLATE.md](output-standards/reference/FINDING_TEMPLATE.md) for co
 
 1. **During testing**: Collect findings in memory
 2. **On discovery**: Capture evidence immediately (screenshots, HTTP)
-3. **On completion**:
+3. **Develop and test PoC**: Create verified exploit script, capture output
+4. **On completion**:
    - Generate findings.json
-   - Create individual finding-NNN.md files
-   - Generate executive-summary.md
-   - Generate technical-report.md
+   - Create individual finding-NNN/ folders with all required files
+   - Generate reports/executive-summary.md (1-2 pages)
+   - Generate reports/technical-report.md (comprehensive)
    - Generate submission.md (if bug bounty)
+
+### Professional Report Generation Workflow (Penetration Testing)
+
+**For Pentester Orchestrator** - Follow this workflow after all agents complete:
+
+1. **Collect Findings** from all specialized agents
+   - SQL injection findings
+   - XSS findings
+   - SSRF findings
+   - All other vulnerability findings
+
+2. **Verify PoC Quality**
+   - Each finding MUST have working poc.py
+   - Each finding MUST have poc_output.txt (proof of execution)
+   - Each finding MUST have workflow.md (manual steps)
+   - Each finding MUST have description.md (technical details)
+   - Reject findings without verified PoCs
+
+3. **Deduplicate & Correlate**
+   - Remove duplicate findings
+   - Identify exploit chains (SQLi → Admin Access → Data Breach)
+   - Group related findings
+
+4. **Calculate Metrics**
+   - Count by severity (Critical/High/Medium/Low/Info)
+   - Count by OWASP category (A01-A10)
+   - Count by vulnerability type
+   - Calculate percentages
+
+5. **Generate Executive Report** (`reports/executive-summary.md`)
+   - Cover page with engagement details
+   - Executive summary (1 page max)
+     - Assessment overview
+     - Scope
+     - Methodology
+     - Overall risk rating
+     - Findings summary table
+     - Top 3-5 critical/high findings only
+   - Business impact analysis (1 page)
+     - Financial impact
+     - Compliance/regulatory impact
+     - Operational impact
+     - Reputational risk
+     - Attack scenarios
+     - Risk heat map
+   - Strategic recommendations
+     - Immediate actions (0-30 days)
+     - Short-term (30-90 days)
+     - Long-term (90+ days)
+   - Conclusion
+
+6. **Generate Technical Report** (`reports/technical-report.md`)
+   - Cover page and table of contents
+   - Introduction
+   - Scope of assessment (detailed)
+   - Methodology (PTES, OWASP, NIST)
+   - Assessment timeline
+   - Tools & techniques used
+   - Executive summary (technical brief)
+   - Findings summary
+     - Vulnerability breakdown table
+     - Findings by category
+     - Findings by OWASP Top 10
+     - Findings index
+   - Detailed technical findings (all findings)
+     - For each finding: F-001, F-002, etc.
+     - Use standardized finding format
+     - Include PoC, evidence, remediation
+   - Remediation recommendations
+     - Prioritization matrix
+     - Remediation roadmap (phased)
+     - Security improvements
+     - Retest recommendations
+   - Conclusion
+   - Appendices (CVSS guide, OWASP ref, glossary, contacts)
+
+7. **Generate JSON Output** (`findings/findings.json`)
+   - Machine-readable format
+   - All findings with metadata
+   - For integration with SIEM/vulnerability management
+
+8. **Validate Report Quality**
+   - [ ] Executive summary is 1-2 pages
+   - [ ] All findings have verified PoCs
+   - [ ] CVSS scores calculated correctly
+   - [ ] Evidence captured for all findings
+   - [ ] Remediation timeline provided
+   - [ ] Business impact explained clearly
+   - [ ] Technical details are accurate
+   - [ ] Sensitive data redacted
+
+**Template Location**: `.claude/skills/pentest/attacks/essential-skills/reporting/PROFESSIONAL_REPORT_STANDARD.md`
 
 ### Aggregation Workflow (Coordinators)
 
