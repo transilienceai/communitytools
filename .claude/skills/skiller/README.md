@@ -1,4 +1,4 @@
-# Generating Skills
+# Skiller
 
 Create and update Claude Code skills following official Anthropic best practices.
 
@@ -11,7 +11,7 @@ Generate well-structured Claude skills that follow best practices from [Claude C
 ### Create New Skill
 
 ```
-Use the generating-skills skill to create "processing-pdfs"
+Use the skiller skill to create "processing-pdfs"
 ```
 
 Provide:

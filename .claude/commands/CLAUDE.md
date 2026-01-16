@@ -20,7 +20,7 @@ Slash commands are shortcuts that users can type to invoke common workflows. Whe
 - `/issue` - Create GitHub issue with structured format
 
 **Skill Development:**
-- `/skiller` - Create, update, or remove Claude Code skills using generating-skills skill and skill-generator agent
+- `/skiller` - Create, update, or remove Claude Code skills using skiller skill and skiller agent
 
 ## Command Development
 

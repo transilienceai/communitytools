@@ -1,6 +1,6 @@
-# Generating Skills - Claude Context
+# Skiller - Claude Context
 
-Context for working with the generating-skills skill.
+Context for working with the skiller skill.
 
 ## Purpose
 
@@ -26,7 +26,7 @@ Generate and update Claude Code skills following Anthropic best practices.
 
 ## Common Tasks
 
-**Create skill**: Follow SKILL.md workflow, use generating-skills skill
+**Create skill**: Follow SKILL.md workflow, use skiller skill
 
 **Validate**: Check frontmatter, files, size, references, terminology
 
@@ -38,7 +38,7 @@ Generate and update Claude Code skills following Anthropic best practices.
 
 **Skill location**: `.claude/skills/[skill-name]/`
 
-**Agent**: `.claude/agents/skill-generator.md`
+**Agent**: `.claude/agents/skiller.md`
 
 **Best practices**:
 - https://www.anthropic.com/engineering/claude-code-best-practices

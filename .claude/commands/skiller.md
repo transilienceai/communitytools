@@ -2,13 +2,13 @@
 model: sonnet
 ---
 
-Create, update, or remove Claude Code skills using the `generating-skills` skill and `skill-generator` agent following Anthropic best practices.
+Create, update, or remove Claude Code skills using the `skiller` skill and `skiller` agent following Anthropic best practices.
 
 **Instructions:**
 
-1. **Invoke the generating-skills skill immediately**:
+1. **Invoke the skiller skill immediately**:
 ```bash
-/generating-skills
+/skiller
 ```
 
 2. **Determine operation** by asking user what they want to do:
@@ -26,9 +26,9 @@ Create, update, or remove Claude Code skills using the `generating-skills` skill
       - Will it need reference files? (documentation)
       - Full GitHub workflow? (issue → branch → PR) or Quick generation?
 
-   b. Use the skill-generator agent:
+   b. Use the skiller agent:
    ```
-   Deploy skill-generator agent with operation: CREATE
+   Deploy skiller agent with operation: CREATE
    Skill name: [name]
    Features: [features]
    GitHub workflow: [yes/no]
@@ -37,7 +37,7 @@ Create, update, or remove Claude Code skills using the `generating-skills` skill
    c. If GitHub workflow selected:
       - Create GitHub issue with feat label
       - Create feature branch
-      - Generate skill files following `.claude/skills/generating-skills/SKILL.md`
+      - Generate skill files following `.claude/skills/skiller/SKILL.md`
       - Commit with conventional commit format
       - Push and create PR linking to issue
 
@@ -59,9 +59,9 @@ Create, update, or remove Claude Code skills using the `generating-skills` skill
    !head -n 20 .claude/skills/[skill-name]/SKILL.md
    ```
 
-   c. Use skill-generator agent:
+   c. Use skiller agent:
    ```
-   Deploy skill-generator agent with operation: UPDATE
+   Deploy skiller agent with operation: UPDATE
    Skill: [skill-name]
    Changes needed: [description]
    ```
@@ -149,7 +149,7 @@ Create, update, or remove Claude Code skills using the `generating-skills` skill
 ```
 User runs /skiller
   ↓
-Invoke /generating-skills skill
+Invoke /skiller skill
   ↓
 Ask: CREATE, UPDATE, or REMOVE?
   ↓
@@ -168,22 +168,22 @@ Ask: CREATE, UPDATE, or REMOVE?
 
 **Guardrails:**
 
-- **Always invoke /generating-skills skill first** - Contains critical workflow and best practices
+- **Always invoke /skiller skill first** - Contains critical workflow and best practices
 - **Never skip validation** - Frontmatter, size, structure must be validated
 - **Confirm before delete** - Double-check with user before removing skills
-- **Follow Anthropic best practices** - Reference `.claude/skills/generating-skills/reference/`
-- **Use skill-generator agent** - Don't generate manually, use the agent
+- **Follow Anthropic best practices** - Reference `.claude/skills/skiller/reference/`
+- **Use skiller agent** - Don't generate manually, use the agent
 - **Test before completing** - Guide user through testing scenarios
 - **Conventional commits** - Use conventional commit format for Git operations
 - **Link issues to PRs** - Always use "Fixes #123" or "Closes #123"
 
 **Key Files to Reference:**
 
-- `.claude/skills/generating-skills/SKILL.md` - Main workflow
-- `.claude/skills/generating-skills/reference/FRONTMATTER.md` - YAML rules
-- `.claude/skills/generating-skills/reference/STRUCTURE.md` - Directory structure
-- `.claude/skills/generating-skills/reference/CONTENT.md` - Writing guidelines
-- `.claude/agents/skill-generator.md` - Agent definition
+- `.claude/skills/skiller/SKILL.md` - Main workflow
+- `.claude/skills/skiller/reference/FRONTMATTER.md` - YAML rules
+- `.claude/skills/skiller/reference/STRUCTURE.md` - Directory structure
+- `.claude/skills/skiller/reference/CONTENT.md` - Writing guidelines
+- `.claude/agents/skiller.md` - Agent definition
 
 **Example Usage:**
 
@@ -192,7 +192,7 @@ Create new skill:
 User: /skiller
 Assistant: I'll help you create, update, or remove a skill. What would you like to do?
 User: Create a new skill
-Assistant: [Invokes /generating-skills, asks for details, deploys skill-generator agent]
+Assistant: [Invokes /skiller, asks for details, deploys skiller agent]
 ```
 
 Update existing skill:

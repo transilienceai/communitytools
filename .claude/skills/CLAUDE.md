@@ -53,7 +53,7 @@ Use the automation agents (in `.claude/agents/`) to help with the workflow:
 
 1. **Create issue** - Use `git-issue-creator` agent or `gh issue create`
 2. **Create branch** - Use `git-branch-manager` agent
-3. **Generate structure** - Use `skill-generator` agent or copy from `templates/skill_template/`
+3. **Generate structure** - Use `skiller` agent or copy from `templates/skill_template/`
 4. **Develop** - Add agents, tools, and documentation
 5. **Create PR** - Use `git-pr-creator` agent
 

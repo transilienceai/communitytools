@@ -9,7 +9,7 @@ This file is automatically loaded when working with automation agents.
 - `git-issue-creator.md` - Create GitHub issues with proper templates
 - `git-branch-manager.md` - Branch creation and management
 - `git-pr-creator.md` - Create pull requests with proper linking
-- `skill-generator.md` - Generate skill directory structure
+- `skiller.md` - Generate skill directory structure
 
 **Security testing agents:**
 - `pentester.md` - Universal penetration testing orchestrator

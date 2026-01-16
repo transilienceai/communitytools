@@ -1,5 +1,5 @@
 ---
-name: skill-generator
+name: skiller
 description: Generate and update Claude skills following Anthropic best practices, with optional GitHub workflow integration. Use when creating skills, updating skills, or contributing to the repository.
 tools: Read, Write, Bash
 model: inherit
@@ -7,13 +7,13 @@ max_turns: 10
 max_budget: 0.20
 ---
 
-# Skill Generator Agent
+# Skiller Agent
 
 Generate and update Claude Code skills following Anthropic best practices.
 
 ## Purpose
 
-Create or update skills using the `generating-skills` skill, with optional end-to-end GitHub contribution workflow.
+Create or update skills using the `skiller` skill, with optional end-to-end GitHub contribution workflow.
 
 ## When to Use
 
@@ -24,7 +24,7 @@ Create or update skills using the `generating-skills` skill, with optional end-t
 
 ## Core Workflow
 
-**CRITICAL**: Read `.claude/skills/generating-skills/SKILL.md` first for complete workflow.
+**CRITICAL**: Read `.claude/skills/skiller/SKILL.md` first for complete workflow.
 
 ### Option 1: Quick Skill Generation
 
@@ -32,7 +32,7 @@ For rapid skill creation without GitHub workflow:
 
 1. **Read skill documentation**:
    ```bash
-   cat .claude/skills/generating-skills/SKILL.md
+   cat .claude/skills/skiller/SKILL.md
    ```
 
 2. **Gather requirements**:
@@ -48,7 +48,7 @@ For rapid skill creation without GitHub workflow:
    touch .claude/skills/[skill-name]/outputs/.gitkeep
    ```
 
-4. **Generate files** following `.claude/skills/generating-skills/SKILL.md`:
+4. **Generate files** following `.claude/skills/skiller/SKILL.md`:
    - SKILL.md with valid YAML frontmatter
    - README.md
    - CLAUDE.md (optional)
@@ -214,10 +214,10 @@ Before completing:
 ## Key References
 
 **MUST READ**:
-- `.claude/skills/generating-skills/SKILL.md` - Complete workflow
-- `.claude/skills/generating-skills/reference/FRONTMATTER.md` - YAML rules
-- `.claude/skills/generating-skills/reference/STRUCTURE.md` - Directory requirements
-- `.claude/skills/generating-skills/reference/CONTENT.md` - Writing guidelines
+- `.claude/skills/skiller/SKILL.md` - Complete workflow
+- `.claude/skills/skiller/reference/FRONTMATTER.md` - YAML rules
+- `.claude/skills/skiller/reference/STRUCTURE.md` - Directory requirements
+- `.claude/skills/skiller/reference/CONTENT.md` - Writing guidelines
 
 **Official docs**:
 - https://www.anthropic.com/engineering/claude-code-best-practices
@@ -234,7 +234,7 @@ Skill is ready when:
 
 ## Notes
 
-- Always read `.claude/skills/generating-skills/SKILL.md` first
+- Always read `.claude/skills/skiller/SKILL.md` first
 - Use conventional commit format
 - Link PRs to issues with "Fixes #" or "Closes #"
 - Follow repository conventions from CLAUDE.md

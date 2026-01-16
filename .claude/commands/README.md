@@ -216,7 +216,7 @@ Merges pull request and cleans up.
 
 ### /skiller
 
-Create, update, or remove Claude Code skills using the `generating-skills` skill and `skill-generator` agent.
+Create, update, or remove Claude Code skills using the `skiller` skill and `skiller` agent.
 
 **Features:**
 - Create new skills following Anthropic best practices
@@ -255,10 +255,10 @@ Create, update, or remove Claude Code skills using the `generating-skills` skill
 ```
 
 **Process:**
-1. Invokes `/generating-skills` skill for best practices
+1. Invokes `/skiller` skill for best practices
 2. Asks for operation (CREATE/UPDATE/REMOVE)
 3. Gathers requirements or identifies skill
-4. Deploys `skill-generator` agent
+4. Deploys `skiller` agent
 5. Validates structure and frontmatter
 6. Guides through testing
 7. (Optional) Creates issue, branch, and PR
@@ -278,9 +278,9 @@ Create, update, or remove Claude Code skills using the `generating-skills` skill
 - Follows conventional commit format
 
 **Key Files:**
-- `.claude/skills/generating-skills/SKILL.md` - Main workflow
-- `.claude/agents/skill-generator.md` - Agent definition
-- `.claude/skills/generating-skills/reference/` - Guidelines
+- `.claude/skills/skiller/SKILL.md` - Main workflow
+- `.claude/agents/skiller.md` - Agent definition
+- `.claude/skills/skiller/reference/` - Guidelines
 
 ## Shell Aliases
 
