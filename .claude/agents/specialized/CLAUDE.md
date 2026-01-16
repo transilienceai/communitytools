@@ -59,3 +59,65 @@ These agents follow a systematic approach:
 4. **Retry** - Iterate with different approaches if needed
 
 IMPORTANT: All testing MUST be authorized. These agents refuse destructive operations and require proper authorization context.
+
+## PoC Verification Requirements (MANDATORY FOR ALL AGENTS)
+
+**CRITICAL**: Every specialized agent MUST follow PoC verification requirements.
+
+See `POC_REQUIREMENTS.md` in this directory for complete guidelines.
+
+### Key Requirements
+
+**A vulnerability is NOT verified unless**:
+1. Working PoC script exists (poc.py or poc.sh)
+2. PoC was tested and succeeded
+3. poc_output.txt proves successful exploitation
+4. workflow.md documents manual steps
+5. description.md explains the attack
+6. report.md provides comprehensive analysis
+
+**Folder Structure**: `findings/finding-NNN/`
+```
+finding-001/
+├── poc.py              # Verified, tested exploit script
+├── poc_output.txt      # Proof of successful execution
+├── workflow.md         # Manual exploitation steps
+├── description.md      # Attack technical details
+└── report.md           # Complete vulnerability report
+```
+
+**Do NOT report vulnerabilities without**:
+- ❌ Working, tested PoC script
+- ❌ Proof of execution (poc_output.txt)
+- ❌ Complete documentation
+
+**PoC Development Process**:
+1. Discover potential vulnerability
+2. Develop PoC script using template
+3. Test PoC - MUST succeed
+4. Capture output with timestamp
+5. Document workflow and description
+6. Create complete report
+7. Only then report to orchestrator
+
+## Browser Automation (Playwright MCP)
+
+**Available for client-side agents**: XSS, CSRF, DOM-based, Clickjacking, CORS, Prototype Pollution
+
+**Use Playwright when**:
+- Testing DOM-based vulnerabilities
+- Testing Single Page Applications (SPAs)
+- Automating multi-step exploits
+- Capturing screenshot/video evidence
+- Testing JavaScript-heavy applications
+- Verifying client-side impact
+
+**Key Capabilities**:
+- Navigate pages: `playwright_navigate(url)`
+- Fill forms: `playwright_fill(selector, value)`
+- Click elements: `playwright_click(selector)`
+- Execute JS: `playwright_evaluate(script)`
+- Screenshots: `playwright_screenshot(path)`
+- Network monitoring
+
+**See**: `/pentest` skill → `attacks/essential-skills/playwright-automation.md` for complete guide

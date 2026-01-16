@@ -15,6 +15,7 @@ This directory contains custom slash commands for automating git workflows and d
 | `/pr` | Create pull requests with generated descriptions | Sonnet | Medium |
 | `/issue` | Create GitHub issues with structured format | Sonnet | Medium |
 | `/merge` | Merge PR with cleanup | Sonnet | Medium |
+| `/skiller` | Create, update, or remove Claude Code skills | Sonnet | Medium |
 
 ## Quick Start
 
@@ -213,6 +214,74 @@ Merges pull request and cleans up.
 5. Updates local main
 6. Cleans local branches
 
+### /skiller
+
+Create, update, or remove Claude Code skills using the `generating-skills` skill and `skill-generator` agent.
+
+**Features:**
+- Create new skills following Anthropic best practices
+- Update existing skills (add features, fix issues)
+- Remove skills with safety checks
+- Optional full GitHub workflow (issue → branch → PR)
+- Automatic validation (frontmatter, size, structure)
+- Guided testing scenarios
+
+**Usage Examples:**
+
+**Create new skill:**
+```bash
+/skiller
+> CREATE
+> Name: processing-pdfs
+> Description: Extract and analyze PDF documents
+> Features: Text extraction, metadata parsing, OCR support
+> GitHub workflow? yes
+```
+
+**Update existing skill:**
+```bash
+/skiller
+> UPDATE
+> Which skill? pentest
+> What to update? Add Playwright automation support
+```
+
+**Remove skill:**
+```bash
+/skiller
+> REMOVE
+> Which skill? old-deprecated-skill
+> Confirm? yes
+```
+
+**Process:**
+1. Invokes `/generating-skills` skill for best practices
+2. Asks for operation (CREATE/UPDATE/REMOVE)
+3. Gathers requirements or identifies skill
+4. Deploys `skill-generator` agent
+5. Validates structure and frontmatter
+6. Guides through testing
+7. (Optional) Creates issue, branch, and PR
+
+**Validation:**
+- YAML frontmatter (name, description)
+- File structure (SKILL.md, README.md, outputs/)
+- Size limits (SKILL.md < 500 lines)
+- Naming conventions (gerund form, lowercase-with-hyphens)
+- Reference links (one level deep)
+
+**Safety:**
+- Confirms before deleting skills
+- Checks for skill references in other files
+- Validates before completing
+- Tests skill activation
+- Follows conventional commit format
+
+**Key Files:**
+- `.claude/skills/generating-skills/SKILL.md` - Main workflow
+- `.claude/agents/skill-generator.md` - Agent definition
+- `.claude/skills/generating-skills/reference/` - Guidelines
+
 ## Shell Aliases
 
 For even faster execution, add to your `.zshrc` or `.bashrc`:
@@ -228,6 +297,7 @@ alias clpr="claude -p '/pr'"
 alias clissue="claude -p '/issue'"
 alias clfix="claude -p '/fix-pipeline'"
 alias clmerge="claude -p '/merge'"
+alias clskiller="claude -p '/skiller'"
 
 # Combined workflows
 alias clship="cllint && cltest && clpush && clpr"  # Complete feature workflow

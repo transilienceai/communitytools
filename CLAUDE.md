@@ -29,7 +29,15 @@ IMPORTANT: Always follow these git workflows:
 
 ## Common Workflows
 
-**Contributing a new skill:**
+**Contributing a new skill (Recommended - Using /skiller):**
+```bash
+# Easy way: Use the /skiller slash command
+/skiller
+# Then select: CREATE → provide details → choose GitHub workflow
+# This automates: issue creation, branch, skill generation, validation, commit, PR
+```
+
+**Contributing a new skill (Manual):**
 ```bash
 # 1. Create issue first (using gh or GitHub UI)
 gh issue create --title "Add skill: X" --body "Description..."
@@ -37,7 +45,7 @@ gh issue create --title "Add skill: X" --body "Description..."
 # 2. Create branch
 git checkout -b feature/skill-name
 
-# 3. Use skill scaffolding tools in templates/
+# 3. Use skill scaffolding tools in templates/ or /skiller command
 # 4. Commit with conventional format
 # 5. Push and create PR linking to issue
 ```

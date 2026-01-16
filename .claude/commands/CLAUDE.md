@@ -19,6 +19,9 @@ Slash commands are shortcuts that users can type to invoke common workflows. Whe
 **Project Management:**
 - `/issue` - Create GitHub issue with structured format
 
+**Skill Development:**
+- `/skiller` - Create, update, or remove Claude Code skills using generating-skills skill and skill-generator agent
+
 ## Command Development
 
 When creating new commands:

