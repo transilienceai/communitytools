@@ -16,6 +16,7 @@ This directory contains custom slash commands for automating git workflows and d
 | `/issue` | Create GitHub issues with structured format | Sonnet | Medium |
 | `/merge` | Merge PR with cleanup | Sonnet | Medium |
 | `/skiller` | Create, update, or remove Claude Code skills | Sonnet | Medium |
+| `/pentest` | Execute penetration testing with orchestrator agent | Sonnet | Medium-Long |
 
 ## Quick Start
 
@@ -282,6 +283,94 @@ Create, update, or remove Claude Code skills using the `skiller` skill and `skil
 - `.claude/agents/skiller.md` - Agent definition
 - `.claude/skills/skiller/reference/` - Guidelines
 
+### /pentest
+
+Execute comprehensive penetration testing using the `Pentester` orchestration agent with the `pentest` skill knowledge base.
+
+**Features:**
+- Universal penetration testing orchestration (web apps, APIs, networks, cloud)
+- 32+ specialized vulnerability discovery agents
+- Parallel agent execution for 6x faster testing
+- Recursive agent spawning based on discoveries
+- Verified PoC requirements (all findings must have working exploits)
+- Professional reporting (executive + technical reports)
+- Industry standard compliance (PTES, OWASP, SANS, MITRE ATT&CK)
+
+**How It Works:**
+
+1. **Loads pentest skill** - 46+ attack types, 264+ lab walkthroughs, methodologies
+2. **Deploys Pentester orchestration agent** - Universal coordinator that NEVER tests directly
+3. **Agent deploys 32 specialized agents** in parallel:
+   - Injection agents (6): SQL, NoSQL, Command, SSTI, XXE, LDAP
+   - Client-side agents (6): XSS, CSRF, Clickjacking, CORS, DOM, Prototype Pollution
+   - Server-side agents (6): SSRF, HTTP Smuggling, File Upload, Path Traversal, Deserialization, Host Header
+   - Authentication agents (4): Auth Bypass, OAuth, JWT, Password Attacks
+   - API security agents (4): GraphQL, REST API, WebSocket, Web LLM
+   - Business logic agents (6): Logic Flaws, Race Conditions, Info Disclosure, Access Control, Cache Poisoning/Deception
+4. **Recursive testing** - Spawns additional agents based on discoveries
+5. **PoC verification** - Every finding must have working, tested exploit
+6. **Professional reports** - Executive summary (1-2 pages) + comprehensive technical report
+
+**Usage Example:**
+
+```bash
+/pentest
+> Target: https://example.com
+> Authorization: Confirmed (written authorization on file)
+> Scope: All subdomains under example.com, excluding example.com/admin/backup
+> Testing window: Monday-Friday 9AM-5PM EST
+```
+
+**Orchestrator Pattern:**
+
+The Pentester agent is a **pure orchestration agent** that:
+- ✅ Coordinates specialized agents
+- ✅ Monitors discoveries and spawns recursive agents
+- ✅ Aggregates findings and eliminates duplicates
+- ✅ Verifies all PoCs are working
+- ✅ Generates professional reports
+- ❌ NEVER runs testing tools directly (sqlmap, nmap, burp, etc.)
+- ❌ NEVER executes exploits itself
+- ❌ NEVER performs reconnaissance directly
+
+**Output Structure:**
+
+```
+findings/
+├── findings.json                    # Master findings (machine-readable)
+├── finding-001/
+│   ├── report.md                    # Vulnerability report
+│   ├── poc.py                       # VERIFIED, TESTED PoC script
+│   ├── poc_output.txt              # Proof of successful execution
+│   ├── workflow.md                  # Manual exploitation steps
+│   └── description.md               # Attack overview
+└── finding-002/...
+
+reports/
+├── executive-summary.md             # 1-2 pages for C-level
+└── technical-report.md              # Comprehensive for security teams
+
+evidence/
+├── screenshots/
+├── http-logs/
+└── videos/
+```
+
+**Safety & Ethics:**
+- Requires explicit written authorization
+- Confirms scope boundaries before testing
+- Non-destructive testing only
+- Minimal data extraction (1-5 records for PoC)
+- Respects rate limits and testing windows
+- Stops immediately if unintended impact detected
+
+**Key Files:**
+- `.claude/commands/pentest.md` - Command definition
+- `.claude/agents/pentester.md` - Orchestration agent
+- `.claude/skills/pentest/SKILL.md` - Knowledge base (46+ attack types)
+- `.claude/skills/pentest/attacks/` - Attack documentation
+- `.claude/agents/specialized/` - 32+ specialized vulnerability agents
+
 ## Shell Aliases
 
 For even faster execution, add to your `.zshrc` or `.bashrc`:
@@ -298,6 +387,7 @@ alias clissue="claude -p '/issue'"
 alias clfix="claude -p '/fix-pipeline'"
 alias clmerge="claude -p '/merge'"
 alias clskiller="claude -p '/skiller'"
+alias clpentest="claude -p '/pentest'"
 
 # Combined workflows
 alias clship="cllint && cltest && clpush && clpr"  # Complete feature workflow

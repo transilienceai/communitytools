@@ -22,6 +22,9 @@ Slash commands are shortcuts that users can type to invoke common workflows. Whe
 **Skill Development:**
 - `/skiller` - Create, update, or remove Claude Code skills using skiller skill and skiller agent
 
+**Security Testing:**
+- `/pentest` - Execute comprehensive penetration testing using Pentester orchestration agent and pentest skill
+
 ## Command Development
 
 When creating new commands:
