@@ -1,8 +1,3 @@
----
-name: skiller
-description: Generate and update Claude skills following official Anthropic best practices. Use when creating new skills, updating existing skills, or when the user mentions skill development, skill generation, or Claude Code skills.
----
-
 # Skiller
 
 Generate Claude Code skills following Anthropic best practices.
