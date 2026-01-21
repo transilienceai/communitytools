@@ -60,6 +60,27 @@ These agents follow a systematic approach:
 
 IMPORTANT: All testing MUST be authorized. These agents refuse destructive operations and require proper authorization context.
 
+## Report Generation Requirements (MANDATORY FOR ALL AGENTS)
+
+**CRITICAL**: Every specialized agent MUST generate comprehensive testing reports in organized folders.
+
+See `reference/REPORT_GENERATION.md` for complete guidelines. All agents generate:
+- `TESTING_PROCESS.md` - Overview of testing phases
+- `EXPERIMENTATION_LOG.md` - Detailed log of every test
+- `HYPOTHESES_AND_RESULTS.md` - All hypotheses with results
+- `METHODOLOGY.md` - Testing methodology applied
+- `summary/findings-summary.md` - Executive summary
+- `summary/statistics.md` - Testing statistics and metrics
+- Individual `finding-NNN/` folders with complete documentation
+
+**Quick navigation**:
+- Start here: `reference/REPORTING_STANDARDS_SUMMARY.md`
+- Complete guide: `reference/REPORT_GENERATION.md`
+- Update template: `reference/AGENT_UPDATE_TEMPLATE.md`
+- Real example: `reference/EXAMPLE_REPORT_OUTPUT.md`
+- Implementation: `reference/IMPLEMENTATION_GUIDE.md`
+- Index: `reference/REPORTING_INDEX.md`
+
 ## PoC Verification Requirements (MANDATORY FOR ALL AGENTS)
 
 **CRITICAL**: Every specialized agent MUST follow PoC verification requirements.

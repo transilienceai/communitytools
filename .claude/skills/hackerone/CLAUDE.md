@@ -71,12 +71,17 @@ Automate HackerOne bug bounty workflows: program analysis → scope testing → 
 outputs/<program>/
 ├── findings/
 │   ├── finding-001/
-│   │   ├── report.md           # HackerOne report
-│   │   ├── poc.py              # Validated PoC
-│   │   ├── poc_output.txt      # Execution proof
-│   │   └── workflow.md         # Manual steps
+│   │   ├── report.md                    # HackerOne report
+│   │   ├── poc.py                       # Validated PoC
+│   │   ├── poc_output.txt               # Execution proof
+│   │   ├── workflow.md                  # Manual steps
+│   │   └── sensitive_data.json          # NEW: Per-finding sensitive data
+│   ├── finding-002/
+│   │   └── ...
+│   └── sensitive_data_metadata.json     # NEW: Complete asset-level inventory
+├── sensitive_data_report.md             # NEW: Sensitive data analysis
 ├── reports/
-│   ├── submissions/            # Ready to submit
+│   ├── submissions/                     # Ready to submit
 │   │   ├── H1_CRITICAL_001.md
 │   │   └── H1_HIGH_001.md
 │   └── SUBMISSION_GUIDE.md
@@ -84,6 +89,25 @@ outputs/<program>/
     ├── screenshots/
     └── http-logs/
 ```
+
+## Sensitive Data Tracking (NEW)
+
+**IMPORTANT**: All testing now tracks sensitive data discovered:
+- Credentials (usernames, passwords, hashes)
+- API keys and tokens
+- Private keys and certificates
+- Database connection strings
+- User PII (emails, phones, addresses)
+- Configuration data
+- Other sensitive information
+
+**Output files**:
+- `sensitive_data_metadata.json` - Structured inventory of all sensitive data
+- `sensitive_data_report.md` - Executive summary and remediation guidance
+- Per-finding `sensitive_data.json` - Focused analysis per vulnerability
+
+**See**: `reference/SENSITIVE_DATA_METADATA.md` for complete documentation
+**Tool**: `tools/sensitive_data_tracker.py` for implementation
 
 ## CSV Parsing
 
