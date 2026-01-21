@@ -365,27 +365,6 @@ python pentest/scan.py --target https://example.com --auth-token YOUR_TOKEN
 
 ---
 
-## 📖 Documentation
-
-### Core Documentation
-
-- **[Getting Started Guide](./docs/getting-started.md)** - Installation and setup
-- **[Agent Development Guide](./docs/agent-development.md)** - Create custom security agents
-- **[API Reference](./docs/api-reference.md)** - Programmatic usage
-- **[Output Standards](./docs/output-standards.md)** - Report formats and standards
-- **[Contributing Guide](CONTRIBUTING.md)** - Contribution guidelines
-- **[Security Best Practices](./docs/security-practices.md)** - Ethical testing guidelines
-
-### Tool-Specific Documentation
-
-Each tool in this repository has its own comprehensive documentation:
-
-- **[Pentest Framework Docs](./pentest/README.md)**
-- **[Recon Framework Docs](./recon/README.md)** *(Coming Soon)*
-- **[Bug Bounty Tools Docs](./bug-bounty/README.md)** *(Coming Soon)*
-
----
-
 ## 🔄 How It Works
 
 ### Agent Execution Flow
