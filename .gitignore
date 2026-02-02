@@ -72,6 +72,8 @@ config.json
 .env.local
 secrets/
 tokens/
+.credentials
+*.credentials
 
 # Temporary files
 tmp/
@@ -94,3 +96,5 @@ Desktop.ini
 # Backup files
 *.bak
 *.backup
+
+cai_env/

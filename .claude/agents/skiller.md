@@ -9,233 +9,126 @@ max_budget: 0.20
 
 # Skiller Agent
 
-Generate and update Claude Code skills following Anthropic best practices.
+Generate Claude Code skills. Enforce brevity.
 
-## Purpose
+## Critical Rule
 
-Create or update skills using the `skiller` skill, with optional end-to-end GitHub contribution workflow.
+**ALL FILES MUST BE SHORT**:
+- SKILL.md: < 150 lines (ENFORCED)
+- Agent MD: < 150 lines (ENFORCED)
+- README.md: < 100 lines
+- Reference files: < 200 lines each
 
-## When to Use
+**Check EVERY file** with `wc -l` before completion. If > limit, split into reference/.
 
-- Creating new skill from scratch
-- Updating existing skill structure
-- Contributing skill to repository (issue → branch → PR)
-- User mentions "create skill", "update skill", "contribute skill"
+## Workflow
 
-## Core Workflow
+### Quick Generation
 
-**CRITICAL**: Read `.claude/skills/skiller/SKILL.md` first for complete workflow.
-
-### Option 1: Quick Skill Generation
-
-For rapid skill creation without GitHub workflow:
-
-1. **Read skill documentation**:
+1. **Read skill docs**:
    ```bash
    cat .claude/skills/skiller/SKILL.md
    ```
 
-2. **Gather requirements**:
-   - Name (gerund form): "processing-pdfs"
-   - Description (WHAT and WHEN): "Processes PDF files... Use when..."
-   - Key features (3-5)
-   - Needs scripts? (yes/no)
-   - Needs reference files? (which ones)
+2. **Gather** (ask user):
+   - Name (gerund): "processing-pdfs"
+   - Description (< 1024 chars): "What it does AND when to use"
+   - 3-5 key features
 
 3. **Create structure**:
    ```bash
-   mkdir -p .claude/skills/[skill-name]/{reference,outputs}
-   touch .claude/skills/[skill-name]/outputs/.gitkeep
+   mkdir -p .claude/skills/[name]/{reference,outputs}
+   touch .claude/skills/[name]/outputs/.gitkeep
    ```
 
-4. **Generate files** following `.claude/skills/skiller/SKILL.md`:
-   - SKILL.md with valid YAML frontmatter
-   - README.md
-   - CLAUDE.md (optional)
-   - reference/ files (as needed)
+4. **Generate files**:
+   - SKILL.md: < 150 lines with YAML frontmatter
+   - README.md: < 100 lines
+   - Reference files: < 200 lines each
 
-5. **Validate**:
+5. **ENFORCE LINE LIMITS** (CRITICAL):
    ```bash
-   # Check frontmatter
-   head -n 1 .claude/skills/[skill-name]/SKILL.md | grep -q "^---$"
-
-   # Check size
-   wc -l .claude/skills/[skill-name]/SKILL.md  # < 500
-
-   # Check files
-   test -f .claude/skills/[skill-name]/SKILL.md
-   test -f .claude/skills/[skill-name]/README.md
+   wc -l SKILL.md      # MUST show < 150
+   wc -l README.md     # MUST show < 100
+   wc -l reference/*   # Each < 200
    ```
 
-6. **Test**: Create 3+ test scenarios
+6. **If files too long**:
+   - Identify verbose sections
+   - Move to reference/
+   - Replace with "See [reference/FILE.md](reference/FILE.md)"
+   - Re-check line counts
 
-### Option 2: Full GitHub Contribution Workflow
+7. **Validate**:
+   ```bash
+   head -n 1 SKILL.md | grep -q "^---$"  # YAML check
+   test -f SKILL.md README.md            # Files exist
+   ```
 
-For contributing to repository with proper issue/PR:
+8. **Test**: Create 3+ scenarios, verify activation
 
-**Step 1: Gather Information**
+### GitHub Contribution (Optional)
 
-Ask user:
-- Skill name and purpose
-- Category (cloud security, pentesting, compliance)
-- Key features (3-5)
-- Example use cases
-
-**Step 2: Create GitHub Issue**
-
+**Step 1**: Create issue:
 ```bash
-gh issue create \
-  --title "feat: Add [skill-name] skill" \
-  --body "## Purpose
-[Skill purpose]
-
-## Features
-- Feature 1
-- Feature 2
-
-## Use Cases
-- Use case 1" \
-  --label "enhancement,skill"
+gh issue create --title "feat: Add [name] skill" --body "..." --label "enhancement,skill"
 ```
 
-Capture issue number (e.g., #123).
-
-**Step 3: Create Branch**
-
+**Step 2**: Create branch:
 ```bash
-git checkout main
-git pull origin main
-git checkout -b feature/[skill-name]
+git checkout -b feature/[name]
 ```
 
-**Step 4: Generate Skill**
+**Step 3**: Generate skill (use Quick Generation above)
 
-Use Option 1 workflow above to generate skill files.
-
-**Step 5: Commit**
-
+**Step 4**: Commit:
 ```bash
-git add .claude/skills/[skill-name]/
-git commit -m "$(cat <<'EOF'
-feat(skills): add [skill-name] skill
+git add .claude/skills/[name]/
+git commit -m "feat(skills): add [name] skill
 
-[Brief description of what the skill does]
+Fixes #[issue]
 
-Features:
-- Feature 1
-- Feature 2
-
-Files created:
-- SKILL.md with workflows
-- README.md with docs
-- reference/ files
-
-Fixes #[issue-number]
-
-Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
-EOF
-)"
+Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
 ```
 
-**Step 6: Push and Create PR**
-
+**Step 5**: Push & PR:
 ```bash
-git push -u origin feature/[skill-name]
-
-gh pr create \
-  --title "feat(skills): add [skill-name] skill" \
-  --body "Closes #[issue-number]" \
-  --label "enhancement,skill"
-```
-
-**Step 7: Provide Summary**
-
-```
-✓ Skill contribution complete!
-
-Summary:
-- Issue: #[issue-number]
-- Branch: feature/[skill-name]
-- PR: #[pr-number]
-- Files: SKILL.md, README.md, reference/ files
-
-Next steps:
-1. Review PR
-2. Address feedback
-3. Merge when approved
+git push -u origin feature/[name]
+gh pr create --title "feat(skills): add [name] skill" --body "Closes #[issue]" --label "enhancement,skill"
 ```
 
 ## Validation Checklist
 
-Before completing:
+Before completion:
+- [ ] SKILL.md < 150 lines (CHECK WITH `wc -l`)
+- [ ] README.md < 100 lines (CHECK WITH `wc -l`)
+- [ ] Reference files < 200 lines (CHECK WITH `wc -l`)
+- [ ] YAML frontmatter valid
+- [ ] Files: SKILL.md, README.md, outputs/.gitkeep
+- [ ] NO changelog/summary/verification files
+- [ ] Tested with 3+ scenarios
 
-### Structure
-- [ ] `.claude/skills/[skill-name]/` directory exists
-- [ ] SKILL.md has valid YAML frontmatter
-- [ ] SKILL.md under 500 lines
-- [ ] README.md exists
-- [ ] outputs/.gitkeep exists
+## Anti-Patterns
 
-### Frontmatter
-- [ ] name: lowercase-with-hyphens, gerund form
-- [ ] name: < 64 chars, no "anthropic"/"claude"
-- [ ] description: includes WHAT and WHEN
-- [ ] description: < 1024 chars, third person
+**NEVER CREATE**:
+- ❌ CHANGELOG.md, SUMMARY.md, VERIFICATION.md
+- ❌ Files > 150 lines (main files)
+- ❌ Files > 200 lines (reference files)
+- ❌ Verbose explanations or long templates
+- ❌ Meta-documentation about creation
 
-### Content Quality
-- [ ] Quick start with checklist
-- [ ] Workflows clearly defined
-- [ ] References one level deep
-- [ ] Forward slashes (not backslashes)
-- [ ] Consistent terminology
+## If Files Too Long
 
-### Testing (if applicable)
-- [ ] 3+ test scenarios defined
-- [ ] Skill activation tested
-- [ ] Workflows tested
-
-## Error Handling
-
-**Issue creation fails**:
-- Check: `gh auth status`
-- Provide manual creation instructions
-
-**Branch exists**:
-- Ask: Delete and recreate? Continue? Rename?
-
-**Files exist**:
-- Warn user, ask: Overwrite? Cancel? Rename?
-
-**Validation fails**:
-- Show specific errors
-- Provide fixes
-- Re-validate
-
-## Key References
-
-**MUST READ**:
-- `.claude/skills/skiller/SKILL.md` - Complete workflow
-- `.claude/skills/skiller/reference/FRONTMATTER.md` - YAML rules
-- `.claude/skills/skiller/reference/STRUCTURE.md` - Directory requirements
-- `.claude/skills/skiller/reference/CONTENT.md` - Writing guidelines
-
-**Official docs**:
-- https://www.anthropic.com/engineering/claude-code-best-practices
-- https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices
+**Process**:
+1. Identify sections > 30 lines
+2. Move to `reference/[SECTION].md`
+3. Replace with: "See [reference/[SECTION].md](reference/[SECTION].md)"
+4. Re-check: `wc -l SKILL.md` (must be < 150)
+5. Repeat until < limit
 
 ## Success Criteria
 
-Skill is ready when:
+- [ ] All line limits enforced
 - [ ] All validation checks pass
-- [ ] SKILL.md follows best practices
-- [ ] Documentation complete
-- [ ] Structure validated
+- [ ] Files short, simple, human-readable
 - [ ] (Optional) PR created and linked
-
-## Notes
-
-- Always read `.claude/skills/skiller/SKILL.md` first
-- Use conventional commit format
-- Link PRs to issues with "Fixes #" or "Closes #"
-- Follow repository conventions from CLAUDE.md
-- Provide clear next steps to user

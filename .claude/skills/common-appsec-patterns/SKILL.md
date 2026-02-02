@@ -5,7 +5,7 @@ description: Application security testing coordinator for common vulnerability p
 
 # Common Application Security Patterns
 
-Application security testing coordinator for common vulnerability patterns including XSS, injection flaws, and client-side security issues. Orchestrates specialized testing agents to identify and validate common application security weaknesses.
+Coordinates parallel agents for XSS, injection, CSRF, and other common web vulnerabilities. See `/AGENTS.md` for quick payload reference.
 
 ## When to Use This Skill
 

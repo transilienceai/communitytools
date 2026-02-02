@@ -2,9 +2,37 @@
 
 This repo provides Claude Code skills and agents for security testing, bug bounty hunting, and pentesting workflows.
 
+## Architecture: AGENTS.md + Skills
+
+**IMPORTANT**: Based on Vercel research, this repository uses a hybrid architecture:
+
+**AGENTS.md** (`/AGENTS.md` in root):
+- **Passive context** - Always loaded, available in every conversation turn
+- **100% pass rate** in Vercel agent evals (vs 53-79% for skills alone)
+- Contains compressed security testing knowledge (80% reduction: ~40KB → ~8KB)
+- Pipe-delimited indexing: `Vulnerability|Payloads|Details|Reference`
+- "Prefer retrieval-led reasoning" directive for security tasks
+- Includes: Vulnerability payloads, methodologies (PTES, OWASP, MITRE), CVSS scoring, PoC standards
+
+**Skills** (`.claude/skills/`):
+- **User-triggered workflows** - Invoked explicitly with `/skill-name`
+- Orchestration and coordination (parallel agents, aggregation, reporting)
+- Complex multi-step processes with checkpointing
+- User preference gathering and decision workflows
+- Examples: `/pentest`, `/hackerone`, `/authenticating`
+
+**Why this works better**:
+- Eliminates decision-making friction (no "should I load the skill?" question)
+- Consistent availability (AGENTS.md always present, skills loaded on-demand)
+- No sequencing problems (passive knowledge + explicit workflows)
+- Faster context access (no async skill loading delay)
+
+**Reference**: [Vercel Blog - AGENTS.md outperforms skills in our agent evals](https://vercel.com/blog/agents-md-outperforms-skills-in-our-agent-evals)
+
 ## Repository Structure
 
-- `.claude/skills/` - Security testing skills (pentest, cve-testing, domain-assessment, etc.)
+- `AGENTS.md` - **Passive security testing knowledge base** (always loaded)
+- `.claude/skills/` - **Workflow orchestration skills** (user-triggered)
 - `.claude/agents/` - Workflow automation agents (contribute-skill, git-issue-creator, etc.)
 - `.claude/commands/` - Slash commands for common tasks
 - `templates/` - Skill templates and GitHub templates
@@ -69,7 +97,29 @@ See `.claude/OUTPUT_STANDARDS.md` for complete specification.
 
 ## Critical Rules
 
-IMPORTANT: When working with security testing skills:
+**AGENTS.md vs Skills Decision** (for contributors):
+
+**Add to AGENTS.md when:**
+- General framework/library knowledge (APIs, patterns)
+- Frequently referenced information (payloads, scoring, mappings)
+- Methodology frameworks (PTES, OWASP, MITRE ATT&CK)
+- Quick reference data that doesn't require user action
+- Content that benefits from always being available
+
+**Create a Skill when:**
+- Multi-step workflow orchestration (parallel agents, aggregation)
+- User-triggered explicit actions (/pentest, /hackerone)
+- Complex processes with checkpointing
+- User preference gathering (AskUserQuestion patterns)
+- Task coordination requiring state management
+
+**Compression Guidelines**:
+- Aim for 80% reduction in AGENTS.md content
+- Use pipe-delimited indexing: `Topic|Key Info|Details|Reference Path`
+- Keep critical info inline, link to detailed documentation
+- Example: `SQL Injection|Union: ' UNION SELECT|Time: SLEEP(5)|.claude/skills/pentest/attacks/injection/sql-injection/`
+
+**Security Testing Rules**:
 - All testing MUST be authorized and legal
 - Never perform destructive operations
 - Always document findings using standardized formats (see OUTPUT_STANDARDS.md)
@@ -77,4 +127,4 @@ IMPORTANT: When working with security testing skills:
 - Generate complete evidence (screenshots, HTTP captures, videos)
 - Create actionable reports with remediation guidance
 
-IMPORTANT: Skill structure requirements are in `.claude/skills/CLAUDE.md` (auto-loaded when working in that directory)
+**Skill Structure**: Requirements are in `.claude/skills/CLAUDE.md` (auto-loaded when working in that directory)

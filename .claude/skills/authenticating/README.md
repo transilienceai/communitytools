@@ -19,28 +19,57 @@ The `authenticating` skill provides automated testing capabilities for authentic
 
 Ensure you have written permission and documented scope before proceeding.
 
-### 2. Initialize Playwright
+### 2. Generate Compliant Password
+
+```python
+from tools.password_generator import generate_password
+
+# Analyze password requirements from signup form
+password = generate_password(
+    hint_text="Password must be 8-16 characters with uppercase, lowercase, and numbers",
+    length=12
+)
+# Result: Properly randomized password like "Xy7mK9Pq2zAb"
+```
+
+### 3. Initialize Playwright
 
 ```javascript
 // Playwright MCP server must be running
 await playwright_navigate({ url: 'https://authorized-target.com' });
 ```
 
-### 3. Test Authentication Flow
+### 4. Test Authentication Flow with Credential Management
 
-```javascript
-// Test signup
-await authenticating_test_signup({
-  email: 'test@example.com',
-  password: 'TestPassword123!',
-  generateRandom: false
-});
+```python
+from tools.credential_manager import CredentialManager, store_test_credential, get_test_credential
 
-// Test login
-await authenticating_test_login({
-  email: 'test@example.com',
-  password: 'TestPassword123!'
-});
+# After signup - store credentials
+credential_id = store_test_credential(
+    target="authorized-target.com",
+    username="testuser123",
+    password=password,
+    email="test@example.com",
+    account_type="test"
+)
+
+# For login - retrieve stored credentials
+cred = get_test_credential(target="authorized-target.com", account_type="test")
+
+# Use in Playwright
+await playwright_type({
+    element: "username",
+    ref: "input[name='username']",
+    text: cred["username"],
+    slowly: true
+})
+
+await playwright_type({
+    element: "password",
+    ref: "input[name='password']",
+    text: cred["password"],
+    slowly: true
+})
 
 // Test 2FA
 await authenticating_test_2fa_bypass();
@@ -50,12 +79,33 @@ await authenticating_test_captcha();
 
 // Test bot detection
 await authenticating_test_bot_detection();
+
+# Cleanup after testing
+mgr = CredentialManager()
+mgr.cleanup_target("authorized-target.com")
 ```
 
 ## Key Features
 
+### Smart Password Generation
+- **Policy-aware generation**: Analyzes password requirements from form text
+- **Proper randomization**: Cryptographically secure random passwords
+- **Restriction compliance**: No repeating chars, no sequential patterns
+- **Custom character sets**: Supports specific special character requirements
+- **Flexible constraints**: Min/max length, character type requirements
+
+### Credential Management
+- **Persistent storage**: `.credentials` file for credential reuse
+- **Automatic gitignore**: Credentials never committed to version control
+- **Metadata support**: Store 2FA secrets, session tokens, API keys
+- **Secure permissions**: File permissions set to 600 on Unix systems
+- **Easy cleanup**: Simple credential lifecycle management
+- **Cross-session reuse**: Access credentials across testing sessions
+
 ### Signup Testing
 - Account creation flow analysis
+- Policy-compliant password generation
+- Credential storage and reuse
 - Email verification bypass testing
 - Parameter manipulation
 - Rate limit testing
