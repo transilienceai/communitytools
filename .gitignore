@@ -1,9 +1,7 @@
 # Claude Code Pentest Framework - Git Ignore
 
 # Test outputs (exclude ALL test results and sensitive data from public repo)
-# Only allow outputs/README.md to be committed
-outputs/*
-!outputs/README.md
+**/outputs
 
 # Python
 __pycache__/
@@ -97,4 +95,4 @@ Desktop.ini
 *.bak
 *.backup
 
-cai_env/
+**/.playwright-mcp
