@@ -55,6 +55,7 @@ This repository provides a complete **Claude Code security testing framework**:
 - 🔧 **9 Orchestration Agents** - Pentester (orchestrator/executor/validator/spear), HackerOne, HackTheBox, Slack notifier, Skiller, GitHub workflow
 - 📝 **23 Slash Commands** - `/pentest`, `/hackerone`, `/hackthebox`, `/injection`, `/server-side`, `/client-side`, `/skiller`, and more
 - 📚 **264+ Lab Walkthroughs** - PortSwigger Academy solutions with step-by-step guides
+- 💣 **50+ Curated Payload Files** - PayloadsAllTheThings (PATT) integration across 35+ attack categories (P0/P1/P2)
 - 📊 **Standardized Outputs** - Professional reports with CVSS scoring and evidence
 
 ### Why Choose Transilience Community Tools?
@@ -64,6 +65,7 @@ This repository provides a complete **Claude Code security testing framework**:
 - 🔍 **Complete OWASP Coverage** - 100% OWASP Top 10 + SANS Top 25 CWE testing
 - 📊 **Professional Reporting** - CVSS 3.1, CWE, MITRE ATT&CK, remediation guidance
 - 🔬 **Playwright Integration** - Browser automation for client-side vulnerability testing
+- 💣 **PATT Payload Database** - 50+ curated payload files from PayloadsAllTheThings, token-optimized for developer self-testing; on-demand long-tail coverage via `patt-fetcher` agent
 - 🎓 **Educational Resources** - 264+ lab walkthroughs, 46+ attack type documentation
 - 📚 **Claude Code Native** - Works seamlessly in Claude Code IDE with slash commands
 - ⚖️ **Open Source** - MIT licensed for commercial and personal use
@@ -144,42 +146,42 @@ graph TB
 
 ```
 communitytools/
-├── projects/pentest/
-│   └── .claude/
-│       ├── skills/                # 23 security testing skills
-│       │   ├── injection/         # SQL, NoSQL, Command, SSTI, XXE, LDAP
-│       │   ├── server-side/       # SSRF, HTTP Smuggling, Path Traversal, File Upload
-│       │   ├── client-side/       # XSS, CSRF, Clickjacking, CORS, Prototype Pollution
-│       │   ├── authentication/    # Auth bypass, JWT, OAuth, password attacks
-│       │   ├── api-security/      # GraphQL, REST, WebSocket, Web LLM
-│       │   ├── web-app-logic/     # Logic flaws, race conditions, access control
-│       │   ├── hackerone/         # Bug bounty hunting automation
-│       │   ├── hackthebox/        # HackTheBox platform automation
-│       │   ├── cve-testing/       # CVE vulnerability testing
-│       │   ├── reconnaissance/    # Subdomain discovery, port scanning
-│       │   ├── infrastructure/    # Network testing, DNS, SMB, VLAN
-│       │   ├── cloud-containers/  # AWS, Azure, GCP, Docker, K8s
-│       │   ├── osint/             # Open-source intelligence gathering
-│       │   ├── source-code-scanning/ # SAST, dependency CVEs, secrets
-│       │   ├── ai-threat-testing/ # LLM/AI security testing
-│       │   └── ... (8 more)
-│       │
-│       ├── agents/                # 9 orchestration agents
-│       │   ├── pentester-orchestrator.md  # Multi-phase coordinator
-│       │   ├── pentester-executor.md      # Vulnerability test executor
-│       │   ├── pentester-validator.md     # Finding validator
-│       │   ├── pentester-spear.md         # Deep exploitation (Hunt-Experiment-Learn)
-│       │   ├── hackerone.md               # Bug bounty workflow
-│       │   ├── hackthebox.md              # HackTheBox platform automation
-│       │   ├── slack-notifier.md          # Slack notifications (Block Kit)
-│       │   ├── skiller.md                 # Skill creation/management
-│       │   └── github-workflow.md         # Git workflow automation
-│       │
-│       └── OUTPUT_STANDARDS.md    # Standardized output formats
+├── .claude/
+│   ├── skills/              # Security testing skills
+│   │   ├── pentest/         # 46+ attack types, 264+ lab walkthroughs
+│   │   │   └── attacks/     # Per-category attack directories
+│   │   │       └── <category>/payloads/  # Curated PATT payload files (P0/P1/P2)
+│   │   ├── hackerone/       # Bug bounty hunting automation
+│   │   ├── cve-testing/     # CVE vulnerability testing
+│   │   ├── domain-assessment/     # Subdomain discovery, port scanning
+│   │   ├── web-application-mapping/ # Endpoint discovery, tech detection
+│   │   ├── common-appsec-patterns/ # OWASP Top 10 testing
+│   │   └── authenticating/  # Auth testing, 2FA bypass, bot evasion
+│   │
+│   ├── agents/              # Orchestration agents
+│   │   ├── pentester.md     # Multi-phase pentest coordinator
+│   │   ├── hackerone-hunter.md # Bug bounty workflow orchestrator
+│   │   ├── patt-fetcher.md  # On-demand PATT payload fetcher (Haiku)
+│   │   ├── skiller.md       # Skill creation/management
+│   │   ├── git-*.md         # Git workflow automation
+│   │   └── specialized/     # 35+ vulnerability-specific agents
+│   │       ├── sql-injection-agent.md
+│   │       ├── xss-agent.md
+│   │       ├── ssrf-agent.md
+│   │       ├── jwt-agent.md
+│   │       └── ... (31 more)
+│   │
+│   ├── commands/            # Slash commands
+│   │   ├── pentest.md       # /pentest command
+│   │   ├── hackerone.md     # /hackerone command
+│   │   ├── commit.md        # /commit workflow
+│   │   └── ... (11 total)
+│   │
+│   └── output-standards/    # Standardized output formats
+│       ├── OUTPUT_STANDARDS.md
+│       └── reference/
 │
-├── docker/                 # Kali container images for isolated execution
-├── benchmarks/             # XBOW benchmark runner
-├── AGENTS.md               # Passive security knowledge base (always loaded)
+├── outputs/                 # Generated findings and reports
 ├── CLAUDE.md               # Repository-wide instructions
 ├── CONTRIBUTING.md         # Contribution guidelines
 └── README.md               # This file
@@ -876,17 +878,66 @@ We believe in giving back to the security community by open-sourcing our tools a
 
 ---
 
+## 🗺️ Roadmap
+
+### Current Status
+
+**Released Skills:**
+- ✅ **Pentest Skill** - 46+ attack types, 264+ lab walkthroughs, 35+ specialized agents
+- ✅ **HackerOne Skill** - Bug bounty automation from scope parsing to submission
+- ✅ **CVE Testing** - Vulnerability testing and exploitation framework
+- ✅ **Domain Assessment** - Subdomain discovery and port scanning
+- ✅ **Web App Mapping** - Endpoint discovery and technology detection
+- ✅ **Common AppSec Patterns** - OWASP Top 10 testing
+- ✅ **Authenticating** - Auth testing, 2FA bypass, bot evasion
+- ✅ **Git Workflow Agents** - Issue, branch, commit, PR automation
+- ✅ **Skiller Agent** - Skill creation and management
+
+### Planned Enhancements
+
+**Q1 2026**
+- [ ] **Enhanced CVE Database Integration** - Automated CVE-to-test mapping
+- [ ] **Burp Suite Integration Skill** - Export/import findings from Burp
+- [ ] **Nuclei Template Skill** - Convert Nuclei templates to agent workflows
+- [ ] **OWASP ZAP Integration** - ZAP API integration for automation
+
+**Q2 2026**
+- [x] **Cloud Payload Coverage** - AWS and Azure PATT payloads curated (IMDS, IAM privesc, Key Vault, MicroBurst)
+- [ ] **Cloud Security Skills** - Full GCP coverage + orchestrated cloud misconfig skill
+- [ ] **Container Security Skill** - Docker and Kubernetes testing
+- [ ] **Mobile Security Skill** - iOS and Android app testing
+- [ ] **API Security Enhancement** - gRPC, WebSocket advanced testing
+
+**Q3 2026**
+- [ ] **Compliance Reporting** - PCI-DSS, SOC 2, ISO 27001 report generation
+- [ ] **AI/ML Security Skill** - LLM prompt injection, model poisoning
+- [ ] **Blockchain Security** - Smart contract auditing agents
+- [ ] **IoT Security Skill** - Firmware and embedded device testing
+
+**Community Contributions Welcome:**
+- 🎯 New specialized vulnerability agents
+- 📝 Additional lab walkthroughs and tutorials
+- 🔧 Tool integrations (Metasploit, Nmap, etc.)
+- 🌐 Bug bounty platform integrations (Bugcrowd, Intigriti, YesWeHack)
+- 📊 Enhanced reporting templates
+
+**Vote on features:** [Feature Requests](https://github.com/transilienceai/communitytools/discussions/categories/feature-requests)
+
+---
+
 ## 📊 Project Stats
 
 **Repository Metrics:**
 
 | Category | Count | Description |
 |----------|-------|-------------|
-| 🎯 **Security Skills** | 23 | User-invocable testing workflows (also slash commands) |
-| 🤖 **Specialized Executors** | 30+ | Vulnerability-specific testing executor types |
-| 🔧 **Orchestration Agents** | 9 | Pentester (4), HackerOne, HackTheBox, Slack, Skiller, GitHub |
+| 🎯 **Security Skills** | 7 | Main security testing workflows |
+| 🤖 **Specialized Agents** | 35+ | Vulnerability-specific testing agents |
+| 🔧 **Orchestration Agents** | 7 | Workflow coordinators (pentest, hackerone, git, patt-fetcher) |
+| 📝 **Slash Commands** | 14 | User-invocable commands |
 | 📚 **Lab Walkthroughs** | 264+ | PortSwigger Academy solutions |
 | 🎓 **Attack Types** | 46+ | Documented exploitation techniques |
+| 💣 **PATT Payload Files** | 50+ | Curated payloads across P0/P1/P2 categories |
 | 📊 **Output Standards** | 3 | Standardized formats (recon, vuln, bounty) |
 
 **Vulnerability Coverage:**
