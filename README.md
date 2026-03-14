@@ -46,6 +46,7 @@ This repository provides a complete **Claude Code security testing framework**:
 - 🔧 **6 Orchestration Agents** - Multi-phase coordinators (Pentester, HackerOne Hunter, Git workflows)
 - 📝 **14 Slash Commands** - `/pentest`, `/hackerone`, `/commit`, `/pr`, `/issue`, `/branch`, `/skiller`
 - 📚 **264+ Lab Walkthroughs** - PortSwigger Academy solutions with step-by-step guides
+- 💣 **50+ Curated Payload Files** - PayloadsAllTheThings (PATT) integration across 35+ attack categories (P0/P1/P2)
 - 📊 **Standardized Outputs** - Professional reports with CVSS scoring and evidence
 
 ### Why Choose Transilience Community Tools?
@@ -55,6 +56,7 @@ This repository provides a complete **Claude Code security testing framework**:
 - 🔍 **Complete OWASP Coverage** - 100% OWASP Top 10 + SANS Top 25 CWE testing
 - 📊 **Professional Reporting** - CVSS 3.1, CWE, MITRE ATT&CK, remediation guidance
 - 🔬 **Playwright Integration** - Browser automation for client-side vulnerability testing
+- 💣 **PATT Payload Database** - 50+ curated payload files from PayloadsAllTheThings, token-optimized for developer self-testing; on-demand long-tail coverage via `patt-fetcher` agent
 - 🎓 **Educational Resources** - 264+ lab walkthroughs, 46+ attack type documentation
 - 📚 **Claude Code Native** - Works seamlessly in Claude Code IDE with slash commands
 - ⚖️ **Open Source** - MIT licensed for commercial and personal use
@@ -138,6 +140,8 @@ communitytools/
 ├── .claude/
 │   ├── skills/              # Security testing skills
 │   │   ├── pentest/         # 46+ attack types, 264+ lab walkthroughs
+│   │   │   └── attacks/     # Per-category attack directories
+│   │   │       └── <category>/payloads/  # Curated PATT payload files (P0/P1/P2)
 │   │   ├── hackerone/       # Bug bounty hunting automation
 │   │   ├── cve-testing/     # CVE vulnerability testing
 │   │   ├── domain-assessment/     # Subdomain discovery, port scanning
@@ -148,6 +152,7 @@ communitytools/
 │   ├── agents/              # Orchestration agents
 │   │   ├── pentester.md     # Multi-phase pentest coordinator
 │   │   ├── hackerone-hunter.md # Bug bounty workflow orchestrator
+│   │   ├── patt-fetcher.md  # On-demand PATT payload fetcher (Haiku)
 │   │   ├── skiller.md       # Skill creation/management
 │   │   ├── git-*.md         # Git workflow automation
 │   │   └── specialized/     # 35+ vulnerability-specific agents
@@ -864,7 +869,8 @@ We believe in giving back to the security community by open-sourcing our tools a
 - [ ] **OWASP ZAP Integration** - ZAP API integration for automation
 
 **Q2 2026**
-- [ ] **Cloud Security Skills** - AWS, Azure, GCP misconfigurations
+- [x] **Cloud Payload Coverage** - AWS and Azure PATT payloads curated (IMDS, IAM privesc, Key Vault, MicroBurst)
+- [ ] **Cloud Security Skills** - Full GCP coverage + orchestrated cloud misconfig skill
 - [ ] **Container Security Skill** - Docker and Kubernetes testing
 - [ ] **Mobile Security Skill** - iOS and Android app testing
 - [ ] **API Security Enhancement** - gRPC, WebSocket advanced testing
@@ -894,10 +900,11 @@ We believe in giving back to the security community by open-sourcing our tools a
 |----------|-------|-------------|
 | 🎯 **Security Skills** | 7 | Main security testing workflows |
 | 🤖 **Specialized Agents** | 35+ | Vulnerability-specific testing agents |
-| 🔧 **Orchestration Agents** | 6 | Workflow coordinators (pentest, hackerone, git) |
+| 🔧 **Orchestration Agents** | 7 | Workflow coordinators (pentest, hackerone, git, patt-fetcher) |
 | 📝 **Slash Commands** | 14 | User-invocable commands |
 | 📚 **Lab Walkthroughs** | 264+ | PortSwigger Academy solutions |
 | 🎓 **Attack Types** | 46+ | Documented exploitation techniques |
+| 💣 **PATT Payload Files** | 50+ | Curated payloads across P0/P1/P2 categories |
 | 📊 **Output Standards** | 3 | Standardized formats (recon, vuln, bounty) |
 
 **Vulnerability Coverage:**
