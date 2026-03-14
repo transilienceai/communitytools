@@ -1,0 +1,11 @@
+{
+  "name": "hackerone",
+  "version": "1.0.0",
+  "description": "HackerOne bug bounty integration — report generation, CSV parsing, sensitive data tracking, and platform-ready submissions",
+  "author": {
+    "name": "Transilience AI",
+    "url": "https://github.com/transilienceai"
+  },
+  "repository": "https://github.com/transilienceai/communitytools",
+  "license": "MIT"
+}

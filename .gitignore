@@ -62,9 +62,14 @@ evidence/
 
 # Raw data and results
 raw/
-*.json
 *.csv
 *.txt
+
+# JSON data files (but NOT plugin manifests)
+*.json
+!.claude-plugin/plugin.json
+!.claude-plugin/marketplace.json
+!plugins/**/.claude-plugin/plugin.json
 
 # Credentials and secrets
 credentials.json

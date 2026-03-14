@@ -1,0 +1,11 @@
+{
+  "name": "communitytools",
+  "version": "1.0.0",
+  "description": "Claude Code skills and agents for authorized security testing, bug bounty hunting, and pentesting workflows",
+  "author": {
+    "name": "Transilience AI",
+    "url": "https://github.com/transilienceai"
+  },
+  "repository": "https://github.com/transilienceai/communitytools",
+  "license": "MIT"
+}
