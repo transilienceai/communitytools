@@ -16,6 +16,16 @@
 
 ---
 
+## 📢 Announcement
+
+**📄 Practice Makes Perfect: Teaching an AI to Hack by Learning from Its Mistakes** (March 2026)
+
+We built an autonomous pentesting agent that scores **100% (104/104)** on a published CTF benchmark suite — using only structured markdown skill files, no fine-tuning. Starting from a bare 89.4% baseline, we ran a simple loop roughly 15 times: run the benchmarks, find a failure, diagnose the missing technique, write it into a skill file, and run again. The same skills transfer cross-model: Claude Sonnet 4.6 reaches 96.2% and Claude Haiku 4.5 reaches 62.5%. This repository contains the full skill set described in the paper.
+
+**[Read the paper (PDF)](papers/practice-makes-perfect.pdf)**
+
+---
+
 ## 📋 Table of Contents
 
 - [Overview](#-overview)
@@ -28,7 +38,6 @@
 - [Contributing](#-contributing)
 - [Security & Legal](#-security--legal)
 - [Community](#-community)
-- [Roadmap](#-roadmap)
 - [License](#-license)
 
 ---
@@ -837,52 +846,6 @@ We believe in giving back to the security community by open-sourcing our tools a
 - 👀 **Watch releases** for new versions
 - 🐦 **Follow us on social media** for news and updates
 - 📰 **Read our blog** for security insights
-
----
-
-## 🗺️ Roadmap
-
-### Current Status
-
-**Released Skills:**
-- ✅ **Pentest Skill** - 46+ attack types, 264+ lab walkthroughs, 35+ specialized agents
-- ✅ **HackerOne Skill** - Bug bounty automation from scope parsing to submission
-- ✅ **CVE Testing** - Vulnerability testing and exploitation framework
-- ✅ **Domain Assessment** - Subdomain discovery and port scanning
-- ✅ **Web App Mapping** - Endpoint discovery and technology detection
-- ✅ **Common AppSec Patterns** - OWASP Top 10 testing
-- ✅ **Authenticating** - Auth testing, 2FA bypass, bot evasion
-- ✅ **Git Workflow Agents** - Issue, branch, commit, PR automation
-- ✅ **Skiller Agent** - Skill creation and management
-
-### Planned Enhancements
-
-**Q1 2026**
-- [ ] **Enhanced CVE Database Integration** - Automated CVE-to-test mapping
-- [ ] **Burp Suite Integration Skill** - Export/import findings from Burp
-- [ ] **Nuclei Template Skill** - Convert Nuclei templates to agent workflows
-- [ ] **OWASP ZAP Integration** - ZAP API integration for automation
-
-**Q2 2026**
-- [ ] **Cloud Security Skills** - AWS, Azure, GCP misconfigurations
-- [ ] **Container Security Skill** - Docker and Kubernetes testing
-- [ ] **Mobile Security Skill** - iOS and Android app testing
-- [ ] **API Security Enhancement** - gRPC, WebSocket advanced testing
-
-**Q3 2026**
-- [ ] **Compliance Reporting** - PCI-DSS, SOC 2, ISO 27001 report generation
-- [ ] **AI/ML Security Skill** - LLM prompt injection, model poisoning
-- [ ] **Blockchain Security** - Smart contract auditing agents
-- [ ] **IoT Security Skill** - Firmware and embedded device testing
-
-**Community Contributions Welcome:**
-- 🎯 New specialized vulnerability agents
-- 📝 Additional lab walkthroughs and tutorials
-- 🔧 Tool integrations (Metasploit, Nmap, etc.)
-- 🌐 Bug bounty platform integrations (Bugcrowd, Intigriti, YesWeHack)
-- 📊 Enhanced reporting templates
-
-**Vote on features:** [Feature Requests](https://github.com/transilienceai/communitytools/discussions/categories/feature-requests)
 
 ---
 
