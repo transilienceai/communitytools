@@ -19,7 +19,7 @@ This repo provides Claude Code skills and agents for security testing, bug bount
 - Orchestration and coordination (parallel agents, aggregation, reporting)
 - Complex multi-step processes with checkpointing
 - User preference gathering and decision workflows
-- Examples: `/pentest`, `/hackerone`, `/authenticating`
+- Examples: `/coordination`, `/hackerone`, `/authentication`
 
 **Why this works better**:
 - Eliminates decision-making friction (no "should I load the skill?" question)
@@ -88,7 +88,7 @@ git checkout -b feature/skill-name
 
 **CRITICAL**: All skills follow standardized output formats.
 
-See `.claude/OUTPUT_STANDARDS.md` for complete specification.
+See `.claude/agents/reference/OUTPUT_STRUCTURE.md` for complete specification.
 
 **Three formats**:
 - **Reconnaissance**: inventory/ + analysis/ → testing checklist
@@ -117,12 +117,12 @@ See `.claude/OUTPUT_STANDARDS.md` for complete specification.
 - Aim for 80% reduction in AGENTS.md content
 - Use pipe-delimited indexing: `Topic|Key Info|Details|Reference Path`
 - Keep critical info inline, link to detailed documentation
-- Example: `SQL Injection|Union: ' UNION SELECT|Time: SLEEP(5)|.claude/skills/pentest/attacks/injection/sql-injection/`
+- Example: `SQL Injection|Union: ' UNION SELECT|Time: SLEEP(5)|.claude/skills/injection/reference/sql-injection*`
 
 **Security Testing Rules**:
 - All testing MUST be authorized and legal
 - Never perform destructive operations
-- Always document findings using standardized formats (see OUTPUT_STANDARDS.md)
+- Always document findings using standardized formats (see `.claude/agents/reference/OUTPUT_STRUCTURE.md`)
 - Follow responsible disclosure practices
 - Generate complete evidence (screenshots, HTTP captures, videos)
 - Create actionable reports with remediation guidance
