@@ -16,6 +16,12 @@ This project creates a 12-panel manga comic carousel depicting the March 11, 202
 | `storyboard/attack-intel.md` | Compressed attack intelligence for visual accuracy |
 | `project.json` | Project metadata |
 
+## Agents
+
+| Agent | File | Purpose |
+|-------|------|---------|
+| comic-artist | `.claude/agents/comic-artist.md` | Generate→inspect→refine loop for all 12 manga panels |
+
 ## Generation Workflow
 
 1. The `comic-artist` agent reads all storyboard files

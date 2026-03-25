@@ -1,3 +1,16 @@
+---
+name: comic-artist
+description: Generate→inspect→refine loop for all 12 manga panels via Gemini API
+model: opus
+tools:
+  - Read
+  - Write
+  - Edit
+  - Bash
+  - Glob
+  - Grep
+---
+
 # Comic Artist Agent — Generate→Inspect→Refine Loop
 
 ## Purpose

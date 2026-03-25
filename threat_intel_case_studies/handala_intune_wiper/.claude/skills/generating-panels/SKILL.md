@@ -1,3 +1,8 @@
+---
+name: generating-panels
+description: Generate manga-style comic panels via Google Gemini API using curl
+---
+
 # Skill: Generating Panels — Gemini API Image Generation
 
 ## Purpose
