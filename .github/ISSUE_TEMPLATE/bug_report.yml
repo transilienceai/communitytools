@@ -1,0 +1,111 @@
+name: Bug Report
+description: Report a bug or false positive in a skill, agent, or tool
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! Please fill out the sections below so we can reproduce and fix the issue.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of the project is affected?
+      options:
+        - Skill (vulnerability testing)
+        - Skill (reconnaissance)
+        - Skill (specialized)
+        - Skill (platform integration)
+        - Skill (orchestration/tooling)
+        - Agent
+        - Tool integration (Playwright)
+        - Tool integration (Kali tools)
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: skill-or-agent
+    attributes:
+      label: Skill / Agent name
+      description: Which specific skill or agent? (e.g. `/injection`, `pentester-orchestrator`)
+      placeholder: "/skill-name or agent-name"
+    validations:
+      required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug description
+      description: A clear description of what went wrong.
+      placeholder: Describe the bug...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Step-by-step instructions to reproduce the issue.
+      value: |
+        1. Run skill/agent: `...`
+        2. With target/input: `...`
+        3. Observe: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened? Include error messages, false positives, or incorrect output.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: bug-type
+    attributes:
+      label: Bug type
+      description: What kind of bug is this?
+      options:
+        - False positive (flagged something that isn't a vulnerability)
+        - False negative (missed a real vulnerability)
+        - Crash / error
+        - Incorrect output format
+        - Performance issue
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Provide details about your setup.
+      value: |
+        - OS:
+        - Claude Code version:
+        - Python version:
+        - Target application (if applicable):
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: Paste relevant logs, output, or attach screenshots.
+      render: shell
+    validations:
+      required: false

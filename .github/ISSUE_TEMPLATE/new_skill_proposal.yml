@@ -1,0 +1,97 @@
+name: New Skill Proposal
+description: Propose a new Claude Code skill for security testing
+title: "[Skill]: "
+labels: ["new-skill", "discussion"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Proposing a new skill? Great! Please provide enough detail so maintainers can evaluate the scope and fit.
+
+        **Tip:** You can also use the `/skiller` command inside Claude Code to scaffold and submit skills automatically.
+
+  - type: input
+    id: skill-name
+    attributes:
+      label: Skill name
+      description: The slash command name (lowercase, hyphens only).
+      placeholder: "e.g. mobile-security, graphql-fuzzing"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      description: Where does this skill fit?
+      options:
+        - Vulnerability testing
+        - Reconnaissance
+        - Specialized
+        - Platform integration
+        - Orchestration / tooling
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What does this skill do? What security testing capability does it add?
+    validations:
+      required: true
+
+  - type: textarea
+    id: techniques
+    attributes:
+      label: Techniques / attack types covered
+      description: List the specific techniques, attack types, or standards this skill will cover.
+      placeholder: |
+        - Technique 1
+        - Technique 2
+        - OWASP/CWE/MITRE mapping (if applicable)
+    validations:
+      required: true
+
+  - type: textarea
+    id: existing-coverage
+    attributes:
+      label: Overlap with existing skills
+      description: Does this overlap with any of the 23 existing skills? How is it different?
+      placeholder: "This differs from /injection because..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reference-materials
+    attributes:
+      label: Reference materials
+      description: Links to cheat sheets, OWASP pages, PayloadsAllTheThings sections, or other references you'd include.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: tool-dependencies
+    attributes:
+      label: External tool dependencies
+      description: Does this skill require tools beyond Claude Code?
+      options:
+        - None (Claude Code only)
+        - Playwright (browser automation)
+        - Kali Linux tools (nmap, sqlmap, etc.)
+        - Other external tools
+    validations:
+      required: true
+
+  - type: dropdown
+    id: willingness
+    attributes:
+      label: Contribution
+      description: Would you like to build this skill?
+      options:
+        - "Yes, I'll submit a PR"
+        - "I can help but need guidance"
+        - "No, just proposing the idea"
+    validations:
+      required: true
