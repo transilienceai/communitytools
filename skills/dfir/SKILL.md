@@ -1,0 +1,70 @@
+---
+name: dfir
+description: Digital forensics and incident response - Windows event log analysis, PCAP forensics, filesystem artifact analysis, AD attack detection, and timeline correlation. Use when investigating security incidents, analyzing Sherlocks, or performing threat hunting on provided evidence files.
+---
+
+# DFIR
+
+Investigate security incidents by analyzing event logs, network captures, and filesystem artifacts. Detect and reconstruct AD attack chains.
+
+## Techniques
+
+| Domain | Key Capabilities |
+|--------|-----------------|
+| **Windows Event Logs** | EVTX parsing, Event ID correlation, logon tracking, privilege enumeration |
+| **Network Forensics** | PCAP analysis, NTLM extraction, LLMNR/NBT-NS poisoning detection, relay identification |
+| **Filesystem Forensics** | MFT parsing, Prefetch analysis, VSS artifact recovery, timeline reconstruction |
+| **AD Attack Detection** | Kerberoasting, AS-REP roasting, NTDS dump, NTLM relay, credential theft |
+| **Hash Analysis** | NTLMv2 hash construction from pcap, offline cracking validation |
+
+## Workflow
+
+1. **Inventory evidence** — List all artifacts (EVTX, pcap, MFT, prefetch, registry)
+2. **Parse structured data** — EVTX with `python-evtx`, pcap with `tshark`, MFT with `analyzeMFT`
+3. **Identify attack indicators** — Key Event IDs, suspicious traffic patterns, anomalous files
+4. **Correlate across sources** — Match timestamps, IPs, LogonIDs, and process IDs across artifacts
+5. **Reconstruct timeline** — Build chronological attack chain with UTC timestamps
+6. **Answer investigative questions** — Map findings to specific incident response queries
+
+## Tools
+
+```bash
+pip install python-evtx windowsprefetch analyzeMFT
+brew install wireshark p7zip hashcat
+```
+
+| Tool | Purpose |
+|------|---------|
+| `python-evtx` | Parse Windows .evtx files |
+| `tshark` | CLI pcap analysis (NTLM, LLMNR, SMB filters) |
+| `analyzeMFT` | Parse NTFS Master File Table |
+| `windowsprefetch` | Parse Windows prefetch files (Windows host only) |
+| `hashcat` | Hash cracking (NTLMv2 mode 5600, Kerberos mode 13100/18200) |
+| `7z` | Extract AES-encrypted evidence ZIPs |
+
+## Quick Reference: Key Event IDs
+
+| Event ID | Log | Indicates |
+|----------|-----|-----------|
+| 4624 | Security | Successful logon (check Type + IP mismatch) |
+| 4768 | Security | TGT request (PreAuthType=0 → AS-REP roast) |
+| 4769 | Security | TGS request (EncType=0x17 → Kerberoast) |
+| 4799 | Security | Group membership enumerated (VSS/ntdsutil) |
+| 5140 | Security | Network share accessed |
+| 7036 | System | Service state change (VSS start → NTDS dump) |
+| 325/326/327 | Application | ESENT database create/detach/close |
+| 330 | Application | ESENT database file info |
+
+## Reference
+
+- [windows-event-analysis.md](reference/windows-event-analysis.md) — EVTX parsing patterns and AD attack detection
+- [network-forensics.md](reference/network-forensics.md) — PCAP analysis for NTLM, LLMNR, relay detection
+- [filesystem-forensics.md](reference/filesystem-forensics.md) — MFT, Prefetch, VSS artifact analysis
+
+## Critical Rules
+
+- All timestamps in **UTC** — convert from local time zones in pcap/logs
+- Parse EVTX with `python-evtx` (XML namespace: `http://schemas.microsoft.com/win/2004/08/events/event`)
+- Use `tshark` for pcap (not scapy for large files) — filter with `-Y` display filters
+- Decompress Win10 prefetch (MAM\x04 header) with `dissect.util.compression.lzxpress_huffman`
+- For AES-encrypted ZIPs (compression method 99), use `7z` not `unzip`

@@ -61,9 +61,8 @@ VANILLA_MODE = False
 CLAUDE_MODEL = None  # None = use CLI default
 ANTHROPIC_API_KEY = None  # None = inherit from environment
 
-# Skills & agents injection paths
+# Skills injection paths (role prompts live in skills/coordination/reference/)
 SKILLS_DIR = PENTEST_PROJECT_PATH / ".claude" / "skills"
-AGENTS_DIR = PENTEST_PROJECT_PATH / ".claude" / "agents"
 
 
 @dataclass
@@ -179,9 +178,9 @@ def discover_benchmarks(
 
 
 @lru_cache(maxsize=1)
-def _load_skills_and_agents_content() -> str:
+def _load_skills_content() -> str:
     """
-    Load all SKILL.md and agent definition files for system prompt injection.
+    Load all SKILL.md and role reference files for system prompt injection.
 
     Cached because the content is identical across all benchmarks.
     Returns a formatted string with section headers.
@@ -198,23 +197,23 @@ def _load_skills_and_agents_content() -> str:
         except Exception:
             pass
 
-    # Load all agent .md files (top-level + reference/)
-    agent_files = sorted(AGENTS_DIR.glob("*.md"))
-    agent_files += sorted(AGENTS_DIR.glob("reference/*.md"))
-    for agent_file in agent_files:
-        try:
-            content = agent_file.read_text()
-            rel = agent_file.relative_to(AGENTS_DIR)
-            sections.append(f"## Agent: {rel}\n{content}")
-        except Exception:
-            pass
+    # Load role reference files from coordination skill
+    role_dir = SKILLS_DIR / "coordination" / "reference"
+    if role_dir.exists():
+        role_files = sorted(role_dir.glob("*.md"))
+        for role_file in role_files:
+            try:
+                content = role_file.read_text()
+                sections.append(f"## Role: {role_file.name}\n{content}")
+            except Exception:
+                pass
 
     if not sections:
         return ""
 
     return (
-        "# PENTEST SKILLS & AGENT DEFINITIONS\n"
-        "The following skills and agent definitions are available for this security assessment.\n"
+        "# PENTEST SKILLS & ROLE DEFINITIONS\n"
+        "The following skills and role definitions are available for this security assessment.\n"
         "Use the techniques, payloads, and methodologies described below.\n\n"
         + "\n\n".join(sections)
     )
@@ -708,13 +707,13 @@ Begin your security assessment now."""
     # Choose working directory based on mode.
     #
     # SKILLS mode: run from projects/pentest/ so Claude auto-loads
-    #   .claude/skills/, .claude/agents/, and the repo's AGENTS.md
+    #   .claude/skills/ and the repo's CLAUDE.md
     #
     # VANILLA mode: run from a temp directory OUTSIDE the repo.
-    #   Claude CLI walks up the directory tree looking for AGENTS.md,
-    #   CLAUDE.md, and .claude/ folders. If we run from anywhere inside
-    #   the repo, it will find and load all our security knowledge --
-    #   making "vanilla" not actually vanilla. A temp dir ensures Claude
+    #   Claude CLI walks up the directory tree looking for CLAUDE.md
+    #   and .claude/ folders. If we run from anywhere inside the repo,
+    #   it will find and load all our security knowledge -- making
+    #   "vanilla" not actually vanilla. A temp dir ensures Claude
     #   starts with zero project context.
     vanilla_tmpdir = None
     if VANILLA_MODE:
@@ -747,19 +746,19 @@ Begin your security assessment now."""
         if VANILLA_MODE:
             # Exclude project/local settings so only user-level config loads.
             # Combined with the temp dir cwd (outside the repo), this ensures
-            # Claude won't discover any repo AGENTS.md, CLAUDE.md, .claude/skills/,
+            # Claude won't discover any repo CLAUDE.md, .claude/skills/,
             # or project-specific memory.
             cmd.extend(["--setting-sources", "user"])
         else:
-            # SKILLS mode: inject skill definitions, agent prompts, and
+            # SKILLS mode: inject skill definitions, role prompts, and
             # tag-relevant quickstart references into the system prompt.
             # The cwd alone only makes skills *discoverable* as slash commands
             # but doesn't load their content. --append-system-prompt injects
             # the actual knowledge so the agent can use it without invocation.
-            skills_content = _load_skills_and_agents_content()
+            skills_content = _load_skills_content()
             if skills_content:
                 cmd.extend(["--append-system-prompt", skills_content])
-                print(f"  [{test_id}] Injected {len(skills_content):,} bytes of skills/agents content")
+                print(f"  [{test_id}] Injected {len(skills_content):,} bytes of skills content")
         cmd.extend(["-p", prompt])
         _env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
         if ANTHROPIC_API_KEY:
@@ -1127,7 +1126,7 @@ def list_benchmarks(configs: List[BenchmarkConfig]):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="XBOW Validation Benchmark Runner for Claude Code security agents"
+        description="XBOW Validation Benchmark Runner for Claude Code security skills"
     )
     parser.add_argument("--setup", action="store_true",
                         help="Clone the XBOW validation-benchmarks repo")
@@ -1208,8 +1207,8 @@ def main():
             print(f"  {c.benchmark_id}: {c.name} (L{c.level})")
 
         if not VANILLA_MODE:
-            skills_content = _load_skills_and_agents_content()
-            print(f"\n  Skills/Agents content (cached): {len(skills_content):,} bytes (~{len(skills_content) // 4:,} tokens)")
+            skills_content = _load_skills_content()
+            print(f"\n  Skills content (cached): {len(skills_content):,} bytes (~{len(skills_content) // 4:,} tokens)")
         return
 
     # Pre-flight checks

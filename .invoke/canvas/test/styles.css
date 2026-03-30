@@ -1,0 +1,30 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8f9fa;
+  color: #1a1a2e;
+}
+
+[data-canvas-id="root"] {
+  text-align: center;
+  padding: 2rem;
+}
+
+[data-canvas-id="heading"] {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+[data-canvas-id="description"] {
+  font-size: 1.1rem;
+  color: #666;
+}

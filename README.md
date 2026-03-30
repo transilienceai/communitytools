@@ -6,9 +6,9 @@
 [![GitHub stars](https://img.shields.io/github/stars/transilienceai/communitytools)](https://github.com/transilienceai/communitytools/stargazers)
 [![Claude AI](https://img.shields.io/badge/Powered%20by-Claude%20AI-blue)](https://claude.ai)
 
-**Open-source Claude Code skills and agents for AI-powered penetration testing, bug bounty hunting, AI threat testing, and security reconnaissance**
+**Open-source Claude Code skills for AI-powered penetration testing, bug bounty hunting, AI threat testing, and security reconnaissance**
 
-[Quick Start](#-quick-start) | [Skills & Agents](#-skills--agents) | [Architecture](#-architecture) | [Contributing](CONTRIBUTING.md) | [Website](https://www.transilience.ai)
+[Quick Start](#-quick-start) | [Skills](#-skills) | [Architecture](#-architecture) | [Contributing](CONTRIBUTING.md) | [Website](https://www.transilience.ai)
 
 </div>
 
@@ -26,7 +26,7 @@ We built an autonomous pentesting agent that scores **100% (104/104)** on a publ
 
 ## Overview
 
-**Transilience AI Community Tools** is a consolidated Claude Code security testing suite — **23 skills**, **8 agents**, and **2 tool integrations** that cover the full penetration testing lifecycle from reconnaissance to reporting.
+**Transilience AI Community Tools** is a consolidated Claude Code security testing suite — **23 skills** and **2 tool integrations** that cover the full penetration testing lifecycle from reconnaissance to reporting. Agent roles (orchestrator, executor, validator) are defined as skill reference files and spawned dynamically.
 
 ### Why Choose Transilience Community Tools?
 
@@ -48,17 +48,9 @@ git clone https://github.com/transilienceai/communitytools.git
 cd communitytools/projects/pentest
 ```
 
-### 2. Install tools (optional but recommended)
-
+### 2. Run from docker (optional)
 ```bash
-# Browser automation (XSS, CSRF, clickjacking testing)
-.claude/tools/playwright/install.sh
-
-# CLI tools (nmap, sqlmap, nikto, gobuster, ffuf, testssl)
-.claude/tools/kali/install.sh
-
-# Verify
-.claude/tools/check-all.sh
+bash scripts/kali-claude-setup.sh projects/pentest
 ```
 
 ### 3. Open Claude Code and run skills
@@ -80,22 +72,11 @@ Then use slash commands inside the Claude session:
 
 ---
 
-## Skills & Agents
+## Skills
 
-All skills and agents live under `projects/pentest/.claude/`.
+All canonical skill and tool definitions live at the **repo root** (`skills/`, `tools/`). Each project under `projects/` symlinks only the ones it needs — see [Repository Structure](#repository-structure) for details.
 
-### Agents (8)
-
-| Agent | Role |
-|-------|------|
-| **Pentester Orchestrator** | Coordinates pentests — plans, dispatches parallel agent batches, analyzes results, adapts |
-| **Pentester Executor** | Thin experiment runner — executes specific tests, returns raw results |
-| **Pentester Validator** | Validates findings against raw evidence — all 5 checks must pass or finding is rejected |
-| **HackTheBox** | Platform automation — login, challenge selection, VPN, delegates solving, logs proceedings |
-| **HackerOne Hunter** | Bug bounty automation — scope parsing, parallel testing, PoC validation, submission reports |
-| **Script Generator** | Generates optimized scripts for pentest agents — parallelization, syntax validation |
-| **PATT Fetcher** | On-demand PayloadsAllTheThings retrieval when local payloads are insufficient |
-| **Skiller** | Skill creation and management — scaffolding, validation, GitHub workflow |
+Agent roles (orchestrator, executor, validator, script-generator, patt-fetcher) are defined as reference files in `skills/coordination/reference/*-role.md` and spawned dynamically via `Agent(prompt=...)`.
 
 ### Skills by Category (23)
 
@@ -158,33 +139,36 @@ All skills and agents live under `projects/pentest/.claude/`.
 
 ## Architecture
 
-The suite uses a hybrid **AGENTS.md + Skills** architecture based on [Vercel research](https://vercel.com/blog/agents-md-outperforms-skills-in-our-agent-evals) showing 100% pass rate vs 53-79% for skills alone:
+The suite uses a **skills-only** architecture with canonical definitions at the repo root, symlinked into isolated project environments:
 
-- **AGENTS.md** (root) — Passive knowledge base, always loaded. Compressed security payloads, methodologies (PTES, OWASP, MITRE), CVSS scoring, PoC standards.
-- **Skills** (`.claude/skills/`) — User-triggered workflows invoked with `/skill-name`. Multi-step orchestration, parallel agents, checkpointing.
-- **Agents** (`.claude/agents/`) — Autonomous workers spawned by skills and orchestrators.
+- **Skills** (`skills/` at root, symlinked into each project's `.claude/skills/`) — User-triggered workflows invoked with `/skill-name`. Each skill contains a `SKILL.md` definition and `reference/` directory with attack techniques, cheat sheets, payloads, and agent role prompts.
+- **Role Prompts** (`skills/coordination/reference/*-role.md`) — Define how spawned agents behave (orchestrator, executor, validator, etc.). Read at runtime and passed to `Agent(prompt=...)`.
+- **Tools** (`tools/` at root, symlinked into each project's `.claude/tools/`) — Utility scripts for environment reading, integrations.
 
 ### Multi-Agent Execution Flow
 
 ```mermaid
 sequenceDiagram
     participant User
-    participant Skill as Skill Layer
-    participant Orch as Orchestrator Agent
-    participant Agents as Specialized Agents
+    participant Skill as /coordination Skill (inline)
+    participant Roles as Role Prompts (reference/)
+    participant Agents as Spawned Agents
     participant Output as Standardized Outputs
 
-    User->>Skill: /pentest https://target.com
-    Skill->>Orch: Initialize 7-phase workflow
+    User->>Skill: /coordination https://target.com
+    Skill->>Roles: Read orchestrator-role.md
+    Skill->>Skill: Execute orchestrator workflow inline
 
-    Orch->>Agents: Phase 1-2: Deploy recon agents
-    Agents-->>Output: inventory/*.json + analysis/*.md
-
-    Orch->>Agents: Phase 3-4: Deploy vuln agents in parallel
+    Skill->>Roles: Read executor-role.md
+    Skill->>Agents: Agent(prompt=executor_role + mission) × N
     Note over Agents: SQL/XSS/SSRF/JWT/OAuth/SSTI/XXE...
     Agents-->>Output: findings/*.json + evidence/*.png
 
-    Orch->>Output: Phase 5: Generate reports
+    Skill->>Roles: Read validator-role.md
+    Skill->>Agents: Agent(prompt=validator_role + finding) × N
+    Agents-->>Output: validated/*.json
+
+    Skill->>Output: Phase 6: Generate reports
     Output-->>User: Executive + technical reports
 ```
 
@@ -192,31 +176,73 @@ sequenceDiagram
 
 ```
 communitytools/
-├── AGENTS.md                    # Passive security knowledge (always loaded)
-├── CLAUDE.md                    # Project instructions
-├── marketplace.json             # Machine-readable project manifest
-├── papers/                      # Research papers
-├── benchmarks/                  # XBOW benchmark runner
-└── projects/pentest/            # Main project
-    └── .claude/
-        ├── agents/              # 8 agent definitions
-        │   ├── pentester-orchestrator.md
-        │   ├── pentester-executor.md
-        │   ├── pentester-validator.md
-        │   ├── hackthebox.md
-        │   ├── hackerone.md
-        │   ├── script-generator.md
-        │   ├── patt-fetcher.md
-        │   ├── skiller.md
-        │   └── reference/       # Output structure, test plan format
-        ├── skills/              # 23 skill directories
-        │   ├── {skill-name}/
-        │   │   ├── SKILL.md     # Skill definition
-        │   │   └── reference/   # Attack techniques, cheat sheets, payloads
-        │   └── ...
-        └── tools/               # Tool integrations
-            ├── playwright/
-            └── kali/
+├── CLAUDE.md                        # Project instructions
+├── marketplace.json                 # Machine-readable project manifest
+├── papers/                          # Research papers
+├── benchmarks/                      # XBOW benchmark runner
+│
+├── skills/                          # ← Canonical skill definitions (source of truth)
+│   ├── coordination/
+│   │   ├── SKILL.md                 # Orchestration entry point
+│   │   └── reference/
+│   │       ├── orchestrator-role.md # Agent role prompts
+│   │       ├── executor-role.md
+│   │       ├── validator-role.md
+│   │       ├── script-generator-role.md
+│   │       ├── patt-fetcher.md
+│   │       ├── OUTPUT_STRUCTURE.md
+│   │       └── ...
+│   ├── injection/
+│   │   ├── SKILL.md
+│   │   └── reference/
+│   ├── reconnaissance/
+│   ├── server-side/
+│   └── ...                          # 23 skill directories total
+│
+├── tools/                           # ← Canonical tool integrations (source of truth)
+│   ├── env-reader.py
+│   └── slack-send.py
+│
+└── projects/                        # ← Isolated project environments
+    └── pentest/
+        └── .claude/
+            ├── skills/              # Real directory, contents are symlinks
+            │   ├── injection/ → ../../../../skills/injection/
+            │   ├── coordination/ → ../../../../skills/coordination/
+            │   └── ...              # Each project picks what it needs
+            └── tools/               # Real directory, contents are symlinks
+                ├── env-reader.py → ../../../../tools/env-reader.py
+                └── ...
+```
+
+### Why This Structure?
+
+**Canonical root directories** (`skills/`, `tools/`) hold the single source of truth for all definitions. No duplication, no drift. Agent roles live inside `skills/coordination/reference/` as prompt templates.
+
+**Project directories** (`projects/`) are isolated environments designed to be run independently with `claude` from within the project folder. Each project has its own `.claude/` directory with real `skills/` and `tools/` folders — but the contents are **symlinks** pointing back to the canonical sources.
+
+This design gives you:
+
+- **Isolation** — Each project is a self-contained working directory. Run `claude` from `projects/pentest/` and it discovers only the skills that project has symlinked.
+- **Single source of truth** — Edit a skill once in `skills/`, and every project that symlinks it gets the update immediately.
+- **Selective inclusion** — A new project doesn't need all 23 skills. Symlink only what's relevant.
+- **Claude Code compatibility** — Claude Code resolves symlinks transparently via the OS.
+
+**Adding a new project:**
+
+```bash
+mkdir -p projects/myproject/.claude/{skills,tools}
+cd projects/myproject/.claude/skills
+
+# Symlink only the skills this project needs
+ln -s ../../../../skills/injection injection
+ln -s ../../../../skills/coordination coordination
+ln -s ../../../../skills/reconnaissance reconnaissance
+# ... add more as needed
+
+# Same for tools
+cd ../tools
+ln -s ../../../../tools/env-reader.py env-reader.py
 ```
 
 ---
@@ -279,7 +305,7 @@ If you discover a vulnerability using these tools:
 | Category | Count |
 |----------|-------|
 | **Skills** | 23 |
-| **Agents** | 8 |
+| **Role Prompts** | 5 |
 | **Tool Integrations** | 2 |
 | **Attack Types** | 53 |
 | **Reference Files** | 160+ |
