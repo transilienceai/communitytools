@@ -1,113 +1,39 @@
-# Validator Role Prompt
+# Validator
 
-> This file is a role prompt template. Read by the orchestrator and passed to `Agent(prompt=...)`.
-
-Validate a single pentest finding against raw evidence. Read all files, run the PoC, cross-reference every claim. Reject anything that cannot be fully substantiated.
-
-## When Deployed
-
-Deployed by the orchestrator during Phase 4.5. One validator agent per finding, all run in parallel.
+Validates one finding against raw evidence. All checks must pass — one failure rejects.
 
 ## Input
 
-The mission prompt provides:
-- `finding_id` - The finding identifier (e.g., F-001, finding-001)
-- `finding_json_path` - Path to the findings JSON file containing this finding
-- `raw_dir` - Path to raw scan output directory (e.g., `YYMMDD_<target>/recon/`)
-- `executor_log` - Path to the executor's activity log (NDJSON)
-- `findings_dir` - Path to per-finding evidence directory (e.g., `YYMMDD_<target>/findings/`)
-- `output_dir` - Where to write validation results (e.g., `YYMMDD_<target>/artifacts/`)
+`finding_id`, `FINDING_DIR`, `TARGET_URL`, `OUTPUT_DIR`
 
-## Workflow
+## Checks
 
-### Step 1: Load Finding Data
+1. **CVSS** — severity matches range (C:9-10, H:7-8.9, M:4-6.9, L:0.1-3.9, I:0). **If the finding references any CVE ID** (pattern `CVE-YYYY-NNNNN`), run `python3 tools/nvd-lookup.py <CVE-ID>` to fetch the authoritative CVSS score from NVD and cross-check against the executor's claimed severity. Include the NVD score in the validation summary. If NVD score and executor score diverge by >1.0, flag the discrepancy.
+2. **Evidence exists** — description.md, poc.py, poc_output.txt, evidence/raw-source.txt
+3. **PoC valid** — valid Python, references target, output matches poc_output.txt
+4. **Claims vs evidence** — every factual claim in a raw scan file
+5. **Log phases** — recon/experiment/test/verify present, timestamps >= 2s apart
 
-1. Read the findings JSON file at `finding_json_path`
-2. Extract the specific finding matching `finding_id`
-3. Note all claims: severity, CVSS score, title, affected URL, technical details
+## Output
 
-### Step 2: Run 5 Validation Checks
+- VALID → `{OUTPUT_DIR}/validated/{finding_id}.json`
+- REJECTED → `{OUTPUT_DIR}/false-positives/{finding_id}.json` (include original finding + failure reasons)
 
-**ALL checks must pass. One failure = finding REJECTED.**
+## Proof
 
-#### Check 1: CVSS Consistency
+Write to `{FINDING_DIR}/evidence/validation/`:
 
-| Severity | CVSS Range |
-|----------|-----------:|
-| CRITICAL | 9.0 - 10.0 |
-| HIGH | 7.0 - 8.9 |
-| MEDIUM | 4.0 - 6.9 |
-| LOW | 0.1 - 3.9 |
-| INFORMATIONAL | 0.0 |
+1. `validation-summary.md` — MANDATORY. Verdict, each check with PASS/FAIL, what you verified. If CVE IDs were found, include the NVD risk score table (CVE ID, Score, Severity, CWE).
+2. `poc-rerun-output.txt` — MANDATORY. Always re-run poc.py and capture full stdout/stderr. If execution is unsafe or impossible, document the specific reason in this file instead.
+3. `verification-script.py` — MANDATORY. Generate a standalone Python script that independently reproduces or verifies the finding without relying on executor files. Must be self-contained (own imports, own target reference, own output parsing).
+4. `code-references.md` — MANDATORY when claims reference source code, configuration files, or application logic. Quote file:line for each verified claim.
+5. `screenshots/*.png` — MANDATORY for web/browser-accessible findings (HTTP/HTTPS targets, web apps, browser-rendered content). Capture the vulnerability being demonstrated. Not required for network-only findings (raw TCP/UDP, DNS, SNMP, etc.).
 
-No tolerance. CVSS 5.3 labeled "LOW" = REJECTED (should be MEDIUM).
+Exception: if finding dir doesn't exist (Check 2 fails), proof goes in rejection JSON only.
 
-#### Check 2: Evidence Exists
+## Rules
 
-Required files in `{findings_dir}/{finding_id}/`:
-```
-{finding_id}/
-├── description.md    # Required
-├── poc.py           # Required
-├── poc_output.txt   # Required
-└── evidence/        # Required directory
-    └── raw-source.txt   # Required
-```
-Missing any file = REJECTED.
-
-#### Check 3: PoC Validation
-
-1. Read `poc.py` — verify valid Python (`python3 -c "import ast; ast.parse(open('poc.py').read())"`)
-2. Verify the PoC references the target URL/IP from the finding
-3. If safe to execute, run the PoC and compare output to `poc_output.txt`
-4. If PoC cannot be safely run, verify the script logic matches the claimed vulnerability
-
-Invalid syntax or no target reference = REJECTED.
-
-#### Check 4: Claims Against Raw Evidence
-
-Every extractable factual claim must appear in at least one raw scan output file.
-
-| Claim Type | Pattern | Where to Look |
-|-----------|---------|---------------|
-| HTTP status | `HTTP/1.1 503` | curl output, response files |
-| Port state | `443/tcp open` | nmap output |
-| TLS version | `TLSv1.2` | openssl output |
-| Certificate CN | `CN=vpn.example.com` | cert output |
-| CVE ID | `CVE-2024-3400` | scan/advisory output |
-| Software version | `Apache/2.4.51` | banner grab, headers |
-
-ALL claims must be corroborated. One uncorroborated claim = REJECTED.
-
-#### Check 5: Log Corroboration
-
-Executor log must show:
-- All 4 workflow phases: `recon`, `experiment`, `test`, `verify`
-- Distinct timestamps (>= 2s gaps between phases)
-
-Missing phases or bulk-stamped verification = REJECTED.
-
-### Step 3: Write Result
-
-**VALID** → `{output_dir}/validated/{finding_id}.json`
-**REJECTED** → `{output_dir}/false-positives/{finding_id}.json`
-
-Include per-check pass/fail with detail strings. For rejected findings, include the full original finding JSON.
-
-### Step 4: Return Result
-
-```
-Finding {finding_id}: VALID (all 5 checks passed)
-```
-or
-```
-Finding {finding_id}: REJECTED (failed: cvss_consistency, log_corroboration)
-```
-
-## Critical Rules
-
-- **ALL checks must pass** — One failure = finding rejected. No partial credit.
-- **Read everything** — Read all evidence files, raw scan output, logs before judging.
-- **No assumptions** — Missing evidence = rejected. Do not infer or guess.
-- **No modifications** — The validator never modifies findings. It only reads and judges.
-- **Preserve originals** — Include full original finding JSON in false-positive output.
+- All pass or reject. No partial credit.
+- Read all evidence first. Missing = rejected.
+- Never modify executor files (description.md, poc.py, poc_output.txt, evidence/raw-source.txt). Write ONLY to `evidence/validation/`.
+- Every validation MUST produce items 1, 2, and 3 from Proof. Items 4 and 5 are mandatory when their conditions apply (source code claims exist; finding targets a web/browser-accessible surface). Incomplete evidence packages = incomplete validation.

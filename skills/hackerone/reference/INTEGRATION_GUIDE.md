@@ -13,7 +13,7 @@ from tools.sensitive_data_tracker import SensitiveDataTracker
 tracker = SensitiveDataTracker(
     program_name="ACME Corp Bug Bounty",
     asset_identifier="https://api.example.com",
-    output_dir="outputs/acme_corp/api.example.com"
+    output_dir="{OUTPUT_DIR}"
 )
 ```
 
@@ -94,7 +94,7 @@ report_path = tracker.export_summary()
 print(f"Report saved to: {report_path}")
 
 # JSON metadata automatically saved to:
-# outputs/<program>/<asset>/sensitive_data_metadata.json
+# {OUTPUT_DIR}/artifacts/sensitive_data_metadata.json
 ```
 
 ---
@@ -108,7 +108,7 @@ print(f"Report saved to: {report_path}")
 tracker = SensitiveDataTracker(
     program_name=program_name,
     asset_identifier=asset["identifier"],
-    output_dir=f"outputs/{program_handle}/{asset['identifier']}"
+    output_dir=f"{OUTPUT_DIR}"
 )
 
 # Phase 2: During testing
@@ -423,13 +423,13 @@ A: Check that `tracker.finalize()` is called at end of testing before exporting
 A: Run `tracker.export_summary()` after finalize, verify output directory exists
 
 ### Q: Unsure what data to track
-A: Reference SENSITIVE_DATA_METADATA.md for all 6 categories and examples
+A: Reference `formats/sensitive-data-metadata.md` for all 6 categories and examples
 
 ---
 
 ## References
 
-- `.claude/skills/hackerone/reference/SENSITIVE_DATA_METADATA.md` - Complete standards
+- `formats/sensitive-data-metadata.md` - Complete standards
 - `.claude/skills/hackerone/tools/sensitive_data_tracker.py` - Implementation tool
 - GDPR: https://gdpr-info.eu/
 - CCPA: https://oag.ca.gov/privacy/ccpa

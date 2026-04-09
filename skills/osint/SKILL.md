@@ -47,7 +47,7 @@ raw/osint/                              # Raw tool outputs
 2. Scan git history — deleted secrets are still in commit objects
 3. Check employee personal accounts, not just org accounts
 4. Document every discovered credential/secret immediately as a finding
-5. All output saved to `outputs/` per project output standards
+5. All output saved to `{OUTPUT_DIR}/` per CLAUDE.md directory structure
 
 ## Reference
 

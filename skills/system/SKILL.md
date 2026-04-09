@@ -11,7 +11,7 @@ Test system-level security including Active Directory, privilege escalation, and
 
 | Type | Key Vectors |
 |------|-------------|
-| **Active Directory** | Kerberoasting, AS-REP roasting, DCSync, Pass-the-Hash, Golden Ticket |
+| **Active Directory** | Kerberoasting, AS-REP roasting, DCSync, PtH, Golden/RODC Ticket, RBCD, ACL abuse, KeyList |
 | **Privilege Escalation** | SUID/sudo abuse, kernel exploits, service misconfig, token manipulation |
 | **Exploit Development** | Buffer overflow, format string, ROP chains, shellcode |
 

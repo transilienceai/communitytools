@@ -15,7 +15,7 @@ Core tools, methodology, and reporting standards for penetration testing.
 | **Playwright** | Browser automation, evidence capture, SPA testing |
 | **Binary Analysis** | Static analysis, reverse engineering, string extraction |
 | **Methodology** | PTES, OWASP WSTG, attack prioritization |
-| **Reporting** | Professional report templates, DOCX generation |
+| **Reporting** | Professional report templates, PDF generation |
 
 ## Reference
 
@@ -23,4 +23,4 @@ Core tools, methodology, and reporting standards for penetration testing.
 - `reference/playwright-automation.md` - Playwright MCP usage for pentesting
 - `reference/binary-analysis-quickstart.md` - Static analysis for executable files and reverse engineering
 - `reference/web-application-attacks.md` - Web application attack methodology
-- `reference/PROFESSIONAL_REPORT_STANDARD.md` - Finding quality standards, compliance mapping, and pre-delivery checklist (report structure is in coordination skill)
+- `formats/transilience-report-style/pentest-report.md` - Finding quality standards, compliance mapping, and pre-delivery checklist

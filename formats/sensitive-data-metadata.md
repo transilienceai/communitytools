@@ -26,7 +26,7 @@ Every HackerOne bug bounty testing engagement generates a `sensitive_data_metada
 ## Directory Structure
 
 ```
-outputs/<program_name>/<asset_identifier>/
+{OUTPUT_DIR}/
 ├── findings/
 │   ├── finding-001/
 │   │   ├── report.md

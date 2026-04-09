@@ -1,40 +1,26 @@
 ---
 name: hackthebox
-description: HackTheBox platform automation — login, VPN, solve challenges via orchestrator, submit flags, feed learnings back.
+description: HackTheBox platform operations and automations to solve challenges, machines and capture the flags hacking competitions
+context: fork
 ---
 
-# HackTheBox
-
-Runs **inline**. Playwright MCP required (current session only).
-
-## Rules
-- Never solve inline — delegate to orchestrator (step 8)
-- No DoS, no brute force, no headless browser
-- Read credentials via `env-reader.py` before asking user
-- **Each executor agent opens its own browser tab — never share tabs**
-
 ## Workflow
+- [workflow.md](reference/workflow.md) — Complete workflow with commands. Read this for each step
 
-1. **Credentials** — `python3 ./.claude/tools/env-reader.py HTB_USER HTB_PASS ANTHROPIC_API_KEY SLACK_BOT_TOKEN HTB_SLACK_CHANNEL_ID`
-2. **VPN** — verify running, ask user if not
-3. **Output dir** — `mkdir -p YYMMDD_<name>/{recon,findings,logs,artifacts,reports}`
-4. **Login** — headed browser, handle 2FA/Cloudflare
-5. **Start machine** — navigate, start, save meta
-6. **Connectivity** — ping, curl, configure `/etc/hosts`
-7. **Slack: started** — via `./.claude/tools/slack-send.py`
-8. **Orchestrator** — delegate to `skills/coordination/SKILL.md`
-9. **Submit flags** — via Playwright
-10. **Skill Update** — `/skill-update` (MANDATORY, foreground)
-11. **Stats** — read `stats.json`, write completion report
-12. **Slack: completed** — full narrative
+### Steps
+1. Get Credentials — `python3 .claude/tools/env-reader.py HTB_USER HTB_PASS ANTHROPIC_API_KEY SLACK_BOT_TOKEN HTB_SLACK_CHANNEL_ID`
+2. Only for "Machine" kind of competition -> Verify vpn is running, otherwise download the vpn file from HTB and instruct the user on how to enable it
+3. Generate output dirs — `mkdir -p YYMMDD_<name>/{recon,findings,logs,artifacts,reports}` for each challenge
+4. Login hackthebox.com
+5. If necessary, start the machines
+6. If necessary, check network connectivity to the machines
+7. Spawn and manage coordinator pool — max N concurrent agents, queue-based spawning (new agent spawns when previous completes)
 
-## Step 8 Context
-
-Pass to orchestrator:
-```
-TARGET: {ip}
-SCOPE: {details}
-OUTPUT_DIR: {date}_{name}/
-TAGS: {tags}
-HTB CONSTRAINT: Logic-based solutions only. No Hydra, no wordlists.
-```
+## References
+- [workflow.md](reference/workflow.md) — Workflow overview with credentials, VPN, setup, and coordinator spawn
+- [coordinator-spawn.md](reference/coordinator-spawn.md) — Coordinator agent spawn prompt template (includes flag submission, reporting, skill-update, slack notifications)
+- [completion-report-schema.md](../../formats/htb-completion-report.md) — Challenge completion report structure & template
+- [slack-notifications.md](reference/slack-notifications.md) — Slack completion notification format & examples
+- [platform-navigation.md](reference/platform-navigation.md) — HTB site navigation guide
+- [vpn-setup.md](reference/vpn-setup.md) — VPN connectivity troubleshooting
+- [cloudflare-bypass.md](reference/cloudflare-bypass.md) — Cloudflare detection evasion

@@ -28,7 +28,7 @@ Converts structured JSON reports into human-readable formats optimized for diffe
     /* Complete TechStackReport JSON */
   },
   "export_format": "markdown|html|pdf",
-  "output_path": "string (optional, defaults to outputs/techstack_reports/)"
+  "output_path": "string (optional, defaults to {OUTPUT_DIR}/reports/)"
 }
 ```
 
@@ -192,7 +192,7 @@ This report identifies {N} technologies across {M} categories with an overall co
 {
   "status": "success",
   "export_format": "markdown",
-  "output_file": "outputs/techstack_reports/Acme_Corporation_20240120_100000.md",
+  "output_file": "{OUTPUT_DIR}/reports/Acme_Corporation_20240120_100000.md",
   "file_size_bytes": 12456,
   "generation_time_ms": 450
 }
@@ -360,7 +360,7 @@ Converts JSON report to styled HTML for web viewing and sharing.
 {
   "status": "success",
   "export_format": "html",
-  "output_file": "outputs/techstack_reports/Acme_Corporation_20240120_100000.html",
+  "output_file": "{OUTPUT_DIR}/reports/Acme_Corporation_20240120_100000.html",
   "file_size_bytes": 34567,
   "generation_time_ms": 850
 }
@@ -400,7 +400,7 @@ Converts JSON report to PDF format for formal presentations and archival.
 {
   "status": "success",
   "export_format": "pdf",
-  "output_file": "outputs/techstack_reports/Acme_Corporation_20240120_100000.pdf",
+  "output_file": "{OUTPUT_DIR}/reports/Acme_Corporation_20240120_100000.pdf",
   "file_size_bytes": 156789,
   "page_count": 12,
   "generation_time_ms": 3450
@@ -427,17 +427,17 @@ Exports report to multiple formats in a single operation.
   "exports": [
     {
       "format": "markdown",
-      "file": "outputs/techstack_reports/Acme_Corporation_20240120_100000.md",
+      "file": "{OUTPUT_DIR}/reports/Acme_Corporation_20240120_100000.md",
       "size_bytes": 12456
     },
     {
       "format": "html",
-      "file": "outputs/techstack_reports/Acme_Corporation_20240120_100000.html",
+      "file": "{OUTPUT_DIR}/reports/Acme_Corporation_20240120_100000.html",
       "size_bytes": 34567
     },
     {
       "format": "pdf",
-      "file": "outputs/techstack_reports/Acme_Corporation_20240120_100000.pdf",
+      "file": "{OUTPUT_DIR}/reports/Acme_Corporation_20240120_100000.pdf",
       "size_bytes": 156789
     }
   ],
@@ -492,7 +492,7 @@ Users can provide custom templates for HTML/PDF generation:
 {
   "status": "success",
   "export_format": "html",
-  "output_file": "outputs/techstack_reports/Acme_Corporation_20240120_100000.html",
+  "output_file": "{OUTPUT_DIR}/reports/Acme_Corporation_20240120_100000.html",
   "file_size_bytes": 34567,
   "generation_time_ms": 850,
   "includes_sections": ["summary", "assets", "technologies", "confidence", "metadata"]
@@ -548,7 +548,7 @@ Users can provide custom templates for HTML/PDF generation:
 {
   "report_export": {
     "default_formats": ["json", "markdown", "html"],
-    "output_directory": "outputs/techstack_reports/",
+    "output_directory": "{OUTPUT_DIR}/reports/",
     "markdown_include_emoji": true,
     "html_template": "default",
     "html_theme": "professional",
@@ -566,7 +566,7 @@ Users can provide custom templates for HTML/PDF generation:
   "operation": "export_to_html",
   "inputs": {
     "report": { /* TechStackReport JSON */ },
-    "output_path": "outputs/techstack_reports/"
+    "output_path": "{OUTPUT_DIR}/reports/"
   },
   "options": {
     "template": "default",

@@ -277,7 +277,7 @@ tool-name/
 ├── LICENSE                # MIT License (or compatible)
 ├── requirements.txt       # Python dependencies
 ├── .claude/
-│   ├── agents/           # Claude Code agents (if applicable)
+│   ├── skills/           # Claude Code skills (if applicable)
 │   │   └── agent-name.md
 │   └── skills/           # Claude Code skills (if applicable)
 │       └── skill-name/

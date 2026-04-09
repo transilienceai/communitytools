@@ -30,7 +30,7 @@ A fully-featured skill may include:
 ├── SKILL.md              # Main skill definition
 ├── README.md             # User documentation
 ├── CLAUDE.md             # (Optional) Auto-loaded context
-├── agents/               # Skill-specific agents
+├── agents/               # Skill-specific agent role prompts
 │   └── example-agent.md
 ├── tools/                # Python utilities
 │   ├── __init__.py

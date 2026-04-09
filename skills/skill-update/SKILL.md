@@ -1,6 +1,6 @@
 ---
 name: skill-update
-description: Skill creation and management — generates skill directory structure, validates against best practices, enforces line count limits. Use when creating, updating, or improving skills.
+description: Skill creation, update and management — generates skill directory structure, validates against best practices, enforces line count limits. Use when creating, updating, or improving skills.
 model: opus
 ---
 
@@ -133,3 +133,19 @@ See reference/ for:
 3. **Validate**: wc -l SKILL.md (must show < 150)
 4. **Test**: 3+ scenarios
 5. **Fix**: If too long, split into reference/
+
+## How to update skills
+When updating skills, process all activities done previously. Any successful techniques, failed attempts, and key discoveries and evaluate whether to update to the pentest skills, agent behavior, or reference files.
+Update if: 
+1. Represent generalizable attack patterns or techniques (not specific to this target) that is not mentioned in the files
+2. Materially improve efficiency, coverage, or decision-making for future engagements
+3. Are not already adequately captured in existing skill/agent/reference files
+Strict constraints:
+* No target-specific data: Do not include machine names, challenge names, hostnames, IPs, flags, or any identifiers tied to this specific engagement
+* No clutter: Do not pad files with marginal or redundant information. If existing content already covers a technique sufficiently, skip it
+* Generalize everything: Frame all updates as reusable patterns — e.g., "when encountering X condition, try Y approach" rather than "on this box, Y worked"
+* Minimal footprint: Prefer updating existing entries over adding new ones. Keep skills/agents/reference files lean and high-signal
+Output: Provide a concise change report structured as:
+* Updated: What changed and why (file + summary of edit)
+* Skipped: Notable findings that were intentionally not added, with brief reasoning
+* No changes: If nothing warranted an update, state that explicitly

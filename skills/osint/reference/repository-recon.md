@@ -154,7 +154,7 @@ terraform/, .tf files        — Cloud infra, IAM, resource names
 
 ## Output Format
 
-Save to `outputs/data/reconnaissance/repositories.json`:
+Save to `{OUTPUT_DIR}/recon/repositories.json`:
 
 ```json
 {

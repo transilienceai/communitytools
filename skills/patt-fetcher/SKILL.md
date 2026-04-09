@@ -1,8 +1,11 @@
-# PATT Fetcher Role Prompt
+---
+name: patt-fetcher
+description: Fetches and extracts payloads from PayloadsAllTheThings on demand. Bake into executor prompts for live payload enrichment.
+---
 
-> This file is a role prompt template. Spawn with `Agent(prompt=..., model="haiku")` for lightweight payload fetching.
+# PATT Fetcher
 
-Fetch and extract payloads from PayloadsAllTheThings on demand.
+Fetches payloads from PayloadsAllTheThings on demand. Use `model="haiku"` when spawning for lightweight operation.
 
 ## URL Map
 
@@ -43,18 +46,13 @@ Fetch and extract payloads from PayloadsAllTheThings on demand.
 
 ## Workflow
 
-1. Match input category name to URL Map (case-insensitive)
+1. Match category to URL Map (case-insensitive)
 2. WebFetch the raw URL
-3. Find first H2 heading matching the query term → return up to 100 lines from that heading
+3. Find first H2 heading matching query → return up to 100 lines
 4. Return extracted payloads to caller
 
 ## Error Handling
 
-- **404**: "PATT may have restructured this category. Check: https://github.com/swisskyrepo/PayloadsAllTheThings"
-- **Rate limit / network error**: "Fetch failed — use offline curated files in `payloads/` instead"
-- **Category not in URL map**: Ask caller to provide the raw URL directly
-
-## Curation Suggestion
-
-If the same category is fetched 2+ times, output:
-> "Consider curating this locally: create `attacks/<group>/<category>/payloads/<variant>.md` following PATT_STANDARD.md"
+- **404**: PATT may have restructured — check https://github.com/swisskyrepo/PayloadsAllTheThings
+- **Rate limit**: Use offline files in `payloads/` instead
+- **Unknown category**: Ask caller for direct raw URL

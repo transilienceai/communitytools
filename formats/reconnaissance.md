@@ -1,16 +1,26 @@
-# Reconnaissance Output Formats
+# Reconnaissance Output Format
 
-Asset-specific reconnaissance for Phase 2. Output: `outputs/reconnaissance/`.
+Asset-specific reconnaissance for Phase 2. Stored in `data/reconnaissance/`.
 
 ## Directory Structure
 
 ```
-├── reconnaissance_report.md
-├── assets/{domains|web-applications|api-endpoints|network-services|cloud-resources}.json
-└── raw/  # Tool outputs (nmap, ffuf, zap)
+data/reconnaissance/
+├── domains.json
+├── web-apps.json
+├── apis.json
+├── network.json
+├── cloud.json
+└── repositories.json
+
+reports/
+└── reconnaissance_report.md
+
+processed/reconnaissance/
+└── raw/              # Tool outputs (nmap, ffuf, ZAP)
 ```
 
-## Format 1: domains.json
+## Schema: domains.json
 
 ```json
 {
@@ -25,7 +35,7 @@ Asset-specific reconnaissance for Phase 2. Output: `outputs/reconnaissance/`.
 }
 ```
 
-## Format 2: web-applications.json
+## Schema: web-apps.json
 
 ```json
 {
@@ -40,7 +50,7 @@ Asset-specific reconnaissance for Phase 2. Output: `outputs/reconnaissance/`.
 }
 ```
 
-## Format 3: api-endpoints.json
+## Schema: apis.json
 
 ```json
 {
@@ -58,7 +68,7 @@ Asset-specific reconnaissance for Phase 2. Output: `outputs/reconnaissance/`.
 }
 ```
 
-## Format 4: network-services.json
+## Schema: network.json
 
 ```json
 {
@@ -75,7 +85,7 @@ Asset-specific reconnaissance for Phase 2. Output: `outputs/reconnaissance/`.
 }
 ```
 
-## Format 5: cloud-resources.json
+## Schema: cloud.json
 
 ```json
 {
@@ -91,21 +101,7 @@ Asset-specific reconnaissance for Phase 2. Output: `outputs/reconnaissance/`.
 }
 ```
 
-## reconnaissance_report.md
-The Reconnaissance report file will contains the following structure: 
-- `Executive summary`: List of all discovered assets.
-- `Stats`: a list of stats as follow: 
-  - `Assets`: Total count of primary assets discovered
-  - `High-risk items`: Count of high-risk items requiring immediate attention
-  - Coverage metrics (e.g., live vs. total subdomains)
-- `Risk-prioritized findings`: Critical → low (ordered by severity).
-- `Technology stack`: Summary with version information for each technology.
-- `External exposure map`: Overview of internet-facing services.
-- `Authentication entry points`: Locations where authentication occurs.
-- `Data input vectors`: List of forms, APIs, file upload functionalities.
-- `Reconnaissance logs`: A list of all the tools and jobs executed to collect these information grouped by asset
-
-## Format 6: repositories.json
+## Schema: repositories.json
 
 ```json
 {
@@ -138,6 +134,20 @@ The Reconnaissance report file will contains the following structure:
 }
 ```
 
-## Critical Rules
-- Generate all inventory JSON files (one per asset type discovered)
-- Save raw tool outputs in `outputs/reconnaissance/raw/` directory with the name of the asset + the name of the tool
+## reconnaissance_report.md
+
+Summary report structure:
+- **Executive summary**: List of all discovered assets
+- **Stats**: Asset count, high-risk items, coverage metrics (e.g., live vs. total subdomains)
+- **Risk-prioritized findings**: Critical -> Low (ordered by severity)
+- **Technology stack**: Summary with version information
+- **External exposure map**: Internet-facing services
+- **Authentication entry points**: Where authentication occurs
+- **Data input vectors**: Forms, APIs, file uploads
+- **Reconnaissance logs**: Tools/jobs grouped by asset
+
+## Rules
+
+- Generate one JSON file per discovered asset type
+- Save raw tool outputs in `processed/reconnaissance/raw/` (named: `{asset}_{tool}.txt`)
+- All JSON must be valid and include a `stats` summary object

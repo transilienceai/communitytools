@@ -51,15 +51,15 @@ Use `tools/csv_parser.py` to parse.
 
 ## Agent Deployment
 
-**Orchestrator per asset** — spawned inline using role prompts:
+**Coordinator per asset** — spawned inline using role prompts:
 ```python
-orchestrator_role = Read("skills/coordination/reference/orchestrator-role.md")
-Agent(prompt=f"{orchestrator_role}\n\nTARGET: {asset_url}\nSCOPE: {program_guidelines}\nOUTPUT_DIR: ...",
+coordinator_role = Read("skills/coordination/SKILL.md")
+Agent(prompt=f"{coordinator_role}\n\nTARGET: {asset_url}\nSCOPE: {program_guidelines}\nOUTPUT_DIR: ...",
       run_in_background=True)
 ```
 
 **Parallel Execution**:
-- 10 assets = 10 orchestrator agents in parallel
+- 10 assets = 10 coordinator agents in parallel
 - Each spawns executor agents from `skills/coordination/reference/executor-role.md`
 - Time: 2-4 hours vs 20-40 sequential
 
@@ -90,7 +90,7 @@ Use `tools/report_validator.py` to validate.
 Per OUTPUT.md - Bug Bounty format:
 
 ```
-outputs/<program>/
+{OUTPUT_DIR}/
 ├── findings/
 │   ├── finding-001/
 │   │   ├── report.md           # HackerOne report
@@ -150,12 +150,11 @@ Before submission:
 
 - `tools/csv_parser.py` - Parse HackerOne scope CSVs
 - `tools/report_validator.py` - Validate report completeness
-- `/coordination` skill - Orchestration and role prompts
-- `skills/coordination/reference/orchestrator-role.md` - Orchestrator role prompt
+- `skills/coordination/SKILL.md` — Coordinator skill (spawns executors/validators)
 
 ## Integration
 
-Uses `/coordination` skill for orchestration and role prompts. Follows OUTPUT.md for submission format.
+Uses `skills/coordination/SKILL.md` for coordination workflow. Follows OUTPUT.md for submission format.
 
 ## Common Rejections
 

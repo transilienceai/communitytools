@@ -1,14 +1,14 @@
 # HackTheBox Workflow — Detailed Steps
 
-## 1. Read credentials
-
+## 1. Get Credentials
 ```bash
-python3 projects/pentest/.claude/tools/env-reader.py HTB_USER HTB_PASS ANTHROPIC_API_KEY SLACK_BOT_TOKEN HTB_SLACK_CHANNEL_ID
+python3 ./tools/env-reader.py HTB_USER HTB_PASS ANTHROPIC_API_KEY SLACK_BOT_TOKEN HTB_SLACK_CHANNEL_ID
 ```
 Use `HTB_USER`/`HTB_PASS` from `ENV_VALUES`. Only `AskUserQuestion` if `NOT_SET`.
 Slack is enabled when BOTH `SLACK_BOT_TOKEN` and `HTB_SLACK_CHANNEL_ID` are set.
 
 ## 2. Check VPN
+Only for "Machine" kind of competition -> Verify vpn is running, otherwise download the vpn file from HTB and instruct the user on how to enable it
 
 This skill does NOT start VPN — the user manages it. Check if running:
 ```bash
@@ -16,23 +16,22 @@ ps aux | grep -v grep | grep openvpn && echo "VPN_RUNNING" || echo "VPN_NOT_RUNN
 ```
 If not running → `AskUserQuestion` asking user to start it. Do NOT try to start VPN yourself.
 
-## 3. Create output directory
+## 3. Generate output dirs
 
 ```bash
 mkdir -p YYMMDD_<name>/{recon,findings,logs,artifacts,reports}
 ```
 
-## 4. Log in to HTB (headed browser, NEVER headless)
-
+## 4. Login hackthebox.com (headed browser, NEVER headless)
 Navigate `https://app.hackthebox.com/login`, fill credentials, handle 2FA. Use headed mode + anti-detection flags + realistic viewport + persistent context for `cf_clearance`. If blocked: `reference/cloudflare-bypass.md`. Fallback: HTB API `https://labs.hackthebox.com/api/v4/` with Bearer token.
 
-## 5. Select and start machine
-
+## 5. If necessary, start the machine
 1. Navigate to the requested machine/challenge (or browse and present options via `AskUserQuestion`)
-2. Start the machine if not running (click Start Machine in Tab 0)
+2. Start the machine if not running
 3. Save challenge info to `YYMMDD_<name>/challenge-meta.json`
 
-## 6. Verify connectivity and configure hosts
+## 6. If necessary, check network connectivity to the machine
+Only for those competition that requires machine to be started and connected through VPN
 
 ```bash
 ping -c 3 {target_ip}
@@ -47,46 +46,50 @@ grep -v "{target_ip}" /etc/hosts | grep -v "{name}.htb" > /tmp/hosts.clean
 sudo cp /tmp/hosts.clean /etc/hosts
 echo "{target_ip} {name}.htb {name}" | sudo tee -a /etc/hosts
 ```
-Add more entries if orchestrator discovers additional vhosts later.
+Add more entries if coordinator discovers additional vhosts later.
 
 Record start time:
 ```bash
 date -u +%Y-%m-%dT%H:%M:%SZ > YYMMDD_<name>/logs/start_time.txt
 ```
 
-## 7. Slack: challenge started (if enabled)
+## 7. Spawn and manage coordinator agent pool
 
-```bash
-printf ':crossed_swords: *Starting HTB: %s*\n*Difficulty:* %s | *OS:* %s | *Target:* `%s`\n_Started at %s_' \
-  "{name}" "{difficulty}" "{os}" "{ip}" "$(date -u '+%Y-%m-%d %H:%M UTC')" \
-  | python3 projects/pentest/.claude/tools/slack-send.py --token "{SLACK_BOT_TOKEN}" --channel "{HTB_SLACK_CHANNEL_ID}" -
-```
-If tool exits non-zero, log error but continue.
+**Strict 1:1 mapping**: One coordinator agent per challenge, never shared.
 
-## 8. Run orchestrator to solve
+**Pool management** (queue-based with cap N, default: 3 max concurrent):
+1. Maintain a queue of challenges to solve
+2. Start with min(N, total_challenges) coordinator agents from the queue
+3. Each agent solves exactly ONE challenge, then terminates
+4. When an agent completes, immediately spawn the next challenge from the queue
+5. Never exceed N agents running simultaneously
 
-See the "Orchestrator (Step 8)" section in the main SKILL.md.
+**Example**: 5 challenges with max N=3:
+- T0: Queue=[1,2,3,4,5]. Spawn agents for 1, 2, 3. Running: [1,2,3]
+- T1: Agent 1 completes. Spawn agent for 4. Running: [2,3,4]. Queue=[5]
+- T2: Agent 2 completes. Spawn agent for 5. Running: [3,4,5]. Queue=[]
+- T3: Agents 3,4,5 complete. All done.
 
-**Multi-agent isolation**: When spawning multiple executors, each agent opens its own browser tab immediately — never share or reuse tabs.
+**Agent responsibility** (one challenge only):
+- Analyze TARGET, plan exploitation
+- Spawn executor agents (each in separate browser tab) as needed
+- Extract flags, submit to HTB platform
+- Generate completion report
+- Run skill-update
+- Send Slack notification
+- Terminate when challenge is complete
 
-## 9. Submit flags
+Each agent writes to its own `OUTPUT_DIR` (unique per challenge).
 
-1. Extract flags from orchestrator output → submit via Playwright on Tab 0
-2. Save to `YYMMDD_<name>/flag.txt`
-3. Write structured findings in `YYMMDD_<name>/findings/finding-NNN/`
+**Reference**: See [coordinator-spawn.md](coordinator-spawn.md) for coordinator spawn prompt template.
 
-## 10. Run skill-update (MANDATORY, foreground)
+## Flag Progression (Multi-Flag Machines)
 
-Run `/skill-update` to process all activities — successful techniques, failed attempts, key discoveries. Evaluate skill/reference updates. Constraints: generalizable only, no target-specific data, minimal footprint. Save output for report + Slack.
+HTB machines are designed as chains — each flag builds on the previous foothold.
 
-## 11. Collect stats and write completion report
-
-Read `stats.json` + `start_time.txt`, compute duration. If `stats.json` missing, count from activity logs. Write `reports/completion-report.md`: challenge info, stats, attack chain, techniques, lessons, failed approaches.
-
-## 12. Slack: challenge completed (if enabled)
-
-Build from completion report. ALL sections required — do not send partial. Include a narrative "How it was hacked" (connected story, 3-6 sentences, not just bullets).
-
-Format: `:trophy: PWNED — {name}` | difficulty/OS/time | flag status (:white_check_mark:/:x:) | Stats (experiments/findings/agents) | How it was hacked (narrative) | Key Techniques (bullets) | Skills Updated (skill-update summary)
-
-Send via `projects/pentest/.claude/tools/slack-send.py`. If tool fails, log error but continue.
+1. **User flag first, always.** Establish stable access before attempting root.
+2. **From user shell, enumerate for root.** The user context often reveals the root path (sudo -l, groups, SeBackupPrivilege, RODC access, etc.)
+3. **Don't skip steps.** Advanced techniques (RODC golden tickets, kernel exploits) require prerequisites that earlier flags provide.
+4. **AD machines: enumerate ACLs early.** Run `bloodyAD get writable` and BloodHound. Check ForceChangePassword, GenericWrite (scriptPath hijack), WriteDACL, RBCD paths, SeBackupPrivilege, MachineAccountQuota. These are the most common HTB AD escalation vectors.
+5. **Clock skew breaks Kerberos.** If any Kerberos tool fails, check skew and use `faketime` prefix.
+6. **Internal subnets need tunneling.** If you find Hyper-V (port 2179), dual NICs, or internal IPs — set up Ligolo-ng or chisel to reach internal hosts.

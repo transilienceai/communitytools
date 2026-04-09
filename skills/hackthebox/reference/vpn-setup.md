@@ -3,17 +3,17 @@
 ## Download Config
 
 1. Via Playwright: navigate to HTB → Access → Connection Pack
-2. Download `.ovpn` file to `outputs/vpn/`
+2. Download `.ovpn` file to `{OUTPUT_DIR}/artifacts/vpn/`
 
 ## Split-Tunnel Connection
 
 ```bash
 # Start OpenVPN with split-tunnel (no default route hijack)
-sudo openvpn --config outputs/vpn/lab.ovpn \
+sudo openvpn --config {OUTPUT_DIR}/artifacts/vpn/lab.ovpn \
   --route-nopull \
   --route 10.10.0.0 255.255.0.0 \
   --route 10.129.0.0 255.255.0.0 \
-  --daemon --log outputs/vpn/openvpn.log
+  --daemon --log {OUTPUT_DIR}/artifacts/vpn/openvpn.log
 
 # Verify tunnel is up
 ip addr show tun0 2>/dev/null || ifconfig tun0
@@ -58,7 +58,7 @@ ip addr show tun0 2>/dev/null && echo "STILL UP" || echo "Disconnected"
 brew install openvpn
 
 # macOS may need full path
-sudo /opt/homebrew/sbin/openvpn --config outputs/vpn/lab.ovpn \
+sudo /opt/homebrew/sbin/openvpn --config {OUTPUT_DIR}/artifacts/vpn/lab.ovpn \
   --route-nopull \
   --route 10.10.0.0 255.255.0.0 \
   --route 10.129.0.0 255.255.0.0

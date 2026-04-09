@@ -8,7 +8,7 @@ Anti-hallucination validation for pentest findings. Every claim must be backed b
 
 ## How Validation Works
 
-Validation is performed by a validator agent (spawned from `reference/validator-role.md`) -- an LLM agent deployed per-finding by the orchestrator. Unlike a regex-based script, the validator agent can:
+Validation is performed by a validator agent (spawned from `skills/coordination/reference/validator-role.md`) -- an LLM agent deployed per-finding by the coordinator. Unlike a regex-based script, the validator agent can:
 
 - **Read and reason** about evidence files, understanding context and nuance
 - **Run PoCs** to verify they actually work (not just check syntax)
@@ -20,7 +20,7 @@ Validation is performed by a validator agent (spawned from `reference/validator-
 | Phase | Who | What |
 |-------|-----|------|
 | 4a | Executor | Prepares evidence for validation (ensures all files exist, CVSS consistent) |
-| 4.5 | Orchestrator | Deploys one validator agent per finding using `reference/validator-role.md` (all in parallel) |
+| 4.5 | Coordinator | Deploys one validator agent per finding using `skills/coordination/reference/validator-role.md` (all in parallel) |
 
 ## 5 Required Checks
 
@@ -91,9 +91,72 @@ The executor log must show:
 
 Missing phases or bulk-stamped verification = REJECTED.
 
-## Orchestrator Deployment
+## Proof of Validation
 
-The orchestrator deploys validators during Phase 4.5:
+Validators must produce tangible proof of their work in `{findings_dir}/finding-{id}/evidence/validation/`.
+
+### Structure
+
+```
+evidence/validation/
+├── validation-summary.md      # MANDATORY — always produced
+├── poc-rerun-output.txt       # MANDATORY — always produced (re-run PoC or document why execution was blocked)
+├── verification-script.py     # MANDATORY — always produced (standalone independent reproduction script)
+├── code-references.md         # MANDATORY — when finding claims reference source code, config, or app logic
+└── screenshots/*.png          # MANDATORY — when finding targets a web/browser-accessible surface (HTTP/HTTPS)
+```
+
+### Evidence completeness rules
+
+Every validation must produce a **complete evidence package**:
+
+1. **`validation-summary.md`** — Always generated. No exceptions.
+2. **`poc-rerun-output.txt`** — Always generated. The validator must attempt to re-run `poc.py` in every case. If execution is unsafe, blocked by environment constraints, or would cause destructive side effects, the file must still be created with a documented explanation of why execution was skipped and what alternative verification was performed.
+3. **`verification-script.py`** — Always generated. Must be a **self-contained, standalone Python script** that independently verifies or reproduces the finding. Must not import or depend on executor files (poc.py, evidence/*). Must include its own target references, imports, and output parsing. Purpose: allow a human reviewer to run a single script to confirm the finding without needing the executor's toolchain.
+4. **`code-references.md`** — Mandatory whenever the finding's claims reference source code, configuration files, or application-level logic. Each claim must map to a specific `file:line` with the relevant snippet quoted.
+5. **`screenshots/*.png`** — Mandatory whenever the finding targets a web or browser-accessible surface (any HTTP/HTTPS endpoint, web application, or browser-rendered content). The screenshot must show the vulnerability being exploited or its observable effect. Not required for network-only findings with no browser-accessible surface (raw TCP/UDP, DNS, SNMP, SSH banner grabs, etc.).
+
+A validation that omits a mandatory artifact is **incomplete** and must not be submitted. The coordinator will reject incomplete validation packages.
+
+### validation-summary.md template
+
+```markdown
+# Validation: {finding_id}
+
+## Verdict: VALID / REJECTED
+
+## Checks
+- CVSS: {severity} matches {score} — PASS/FAIL
+- Evidence: all files present — PASS/FAIL
+- PoC: {ran/skipped}, output {matches/differs} — PASS/FAIL
+- Claims: {N}/{N} corroborated — PASS/FAIL
+- Log phases: all present, timestamps valid — PASS/FAIL
+
+## PoC Re-execution
+{What happened when poc.py was run. If skipped, why.}
+
+## Claims Verified
+{Each claim → raw file + line that corroborates it.}
+
+## Notes
+{Anything unusual observed.}
+
+## Evidence Package
+- verification-script.py: {generated / N/A with reason}
+- poc-rerun-output.txt: {generated — execution succeeded/failed / generated — execution skipped: [reason]}
+- code-references.md: {generated / not applicable — no source code claims}
+- screenshots: {N screenshots captured / not applicable — network-only finding}
+```
+
+### Boundary rule
+
+Validators write ONLY to `evidence/validation/`. Never modify executor files (description.md, poc.py, poc_output.txt, evidence/raw-source.txt).
+
+**Exception**: if the finding directory doesn't exist (Check 2 fails), proof goes in the rejection JSON only — there is nowhere to write files.
+
+## Coordinator Deployment
+
+The coordinator deploys validators during Phase 4.5:
 
 ```python
 # Read validator role prompt once
@@ -104,30 +167,31 @@ for finding in all_findings:
     Agent(prompt=f"{validator_role}\n\n"
                 f"finding_id: {finding['id']}\n"
                 f"finding_json_path: {findings_file}\n"
-                f"raw_dir: outputs/processed/reconnaissance/raw/\n"
-                f"executor_log: outputs/logs/{executor}.log\n"
-                f"findings_dir: outputs/processed/findings/\n"
-                f"output_dir: outputs/data/",
+                f"raw_dir: {{OUTPUT_DIR}}/recon/\n"
+                f"executor_log: {{OUTPUT_DIR}}/logs/{executor}.log\n"
+                f"findings_dir: {{OUTPUT_DIR}}/findings/\n"
+                f"output_dir: {{OUTPUT_DIR}}/artifacts/",
           run_in_background=True)
 ```
 
-After all validators complete, the orchestrator:
-1. Reads `outputs/data/validated/{id}.json` (passed) and `outputs/data/false-positives/{id}.json` (rejected)
+After all validators complete, the coordinator:
+1. Reads `{OUTPUT_DIR}/artifacts/validated/{id}.json` (passed) and `{OUTPUT_DIR}/artifacts/false-positives/{id}.json` (rejected)
 2. Performs cross-executor deduplication (same URL + same CWE = reject duplicate)
 3. Proceeds to aggregation with ONLY validated findings
 
 ## Output: Validated Findings
 
-**Location**: `outputs/data/validated/{finding-id}.json`
+**Location**: `{OUTPUT_DIR}/artifacts/validated/{finding-id}.json`
 
 ```json
 {
   "finding_id": "F-001",
   "valid": true,
+  "proof_dir": "findings/finding-001/evidence/validation/",
   "checks": {
     "cvss_consistency": {"passed": true, "detail": "CRITICAL matches CVSS 9.1"},
     "evidence_exists": {"passed": true, "detail": "All required files present"},
-    "poc_validation": {"passed": true, "detail": "Valid Python, target referenced, output matches"},
+    "poc_validation": {"passed": true, "detail": "Valid Python, target referenced, output matches", "proof_file": "poc-rerun-output.txt"},
     "claims_vs_raw": {"passed": true, "detail": "All 5 claims corroborated in raw scan output"},
     "log_corroboration": {"passed": true, "detail": "All 4 phases present with distinct timestamps"}
   }
@@ -136,13 +200,13 @@ After all validators complete, the orchestrator:
 
 ## Output: Rejected Findings (false-positives/)
 
-**Location**: `outputs/data/false-positives/{finding-id}.json`
+**Location**: `{OUTPUT_DIR}/artifacts/false-positives/{finding-id}.json`
 
 ```json
 {
   "finding_id": "F-009",
   "finding_title": "Information Disclosure via Prelogin Response",
-  "source_file": "outputs/data/findings/executor-findings.json",
+  "source_file": "{OUTPUT_DIR}/findings/executor-findings.json",
   "valid": false,
   "failed_checks": ["cvss_consistency", "evidence_exists", "log_corroboration"],
   "checks": {
@@ -152,7 +216,7 @@ After all validators complete, the orchestrator:
     },
     "evidence_exists": {
       "passed": false,
-      "detail": "No processed/findings/F-009/ directory found"
+      "detail": "No findings/F-009/ directory found"
     },
     "poc_validation": {
       "passed": true,
@@ -186,3 +250,5 @@ Rejected findings do NOT appear anywhere in the final report -- not in findings,
 7. **Unverified CVE references** -- Names CVE without scan evidence
 8. **Bulk fabrication** -- All findings "verified" at the same timestamp
 9. **Incomplete workflow** -- Missing recon/experiment/test/verify phases
+10. **Unsubstantiated validation** -- Validator passed the finding but `evidence/validation/validation-summary.md` is missing or empty
+11. **Incomplete evidence packages** -- Validator passed but failed to generate verification-script.py or omitted screenshots for a web-accessible finding

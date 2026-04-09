@@ -425,7 +425,7 @@ else:
 {
   "status": "success",
   "report": { /* Complete TechStackReport */ },
-  "report_file_path": "outputs/techstack_reports/Company_20240120_100000.json",
+  "report_file_path": "{OUTPUT_DIR}/reports/Company_20240120_100000.json",
   "validation": {
     "schema_valid": true,
     "quality_rating": "Good"
@@ -489,7 +489,7 @@ else:
 ```json
 {
   "report_generation": {
-    "output_directory": "outputs/techstack_reports/",
+    "output_directory": "{OUTPUT_DIR}/reports/",
     "naming_convention": "{company}_{timestamp}",
     "validate_before_save": true,
     "include_edit_history": true,

@@ -8,7 +8,7 @@ After solving a challenge, review logs to extract **generic, reusable** techniqu
 
 ### Step 1: Review Logs
 
-Read `outputs/YYYYMMDD_<challenge-name>/challenge-log.ndjson` and `findings/attack-chain.md`.
+Read `{OUTPUT_DIR}/challenge-log.ndjson` and `findings/attack-chain.md`.
 
 Identify:
 - Novel techniques not in current skills

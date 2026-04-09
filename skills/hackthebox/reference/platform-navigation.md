@@ -71,7 +71,7 @@ await page.wait_for_url("**/dashboard**", timeout=30000)
 1. Navigate to Access / Connection Pack section
 2. Select appropriate VPN server (nearest region)
 3. Download .ovpn file
-4. Save to outputs/vpn/
+4. Save to {OUTPUT_DIR}/artifacts/vpn/
 ```
 
 ## Flag Submission

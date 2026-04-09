@@ -11,12 +11,12 @@ Passive OSINT reconnaissance to identify a target's technology stack. No credent
 
 ```
 1. Provide company name (+ optional domain hint)
-2. 5 orchestrating agents run 26 sub-skills across 17 intelligence domains
+2. 5 coordinating agents run 26 sub-skills across 17 intelligence domains
 3. Signals correlated, confidence scored, conflicts resolved
 4. Final report: JSON + Markdown with evidence for every inference
 ```
 
-## Orchestration (5 Agents → 26 Sub-Skills)
+## Coordination (5 Agents → 26 Sub-Skills)
 
 **Phase 1: Asset Discovery** (`asset_discovery_agent`)
 - domain_discovery, subdomain_enumeration, certificate_transparency, ip_attribution, api_portal_discovery
@@ -31,7 +31,7 @@ Passive OSINT reconnaissance to identify a target's technology stack. No credent
 - signal_correlator, confidence_scorer, conflict_resolver
 
 **Phase 5: Report** (`report_generation_agent`)
-- json_report_generator, evidence_formatter, report_exporter
+- See `formats/techstack-json-report.md`, `formats/techstack-evidence-formatter.md`, `formats/techstack-report-exporter.md`
 
 Phases run sequentially. Sub-skills within each phase run in parallel.
 
@@ -72,4 +72,4 @@ Phases run sequentially. Sub-skills within each phase run in parallel.
 
 ## Integration
 
-Called by pentest orchestrator as a recon step, by CVE testing to map technologies to CVEs, or standalone for due diligence and competitive analysis.
+Called by pentest coordinator as a recon step, by CVE testing to map technologies to CVEs, or standalone for due diligence and competitive analysis.

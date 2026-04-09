@@ -61,7 +61,7 @@ VANILLA_MODE = False
 CLAUDE_MODEL = None  # None = use CLI default
 ANTHROPIC_API_KEY = None  # None = inherit from environment
 
-# Skills injection paths (role prompts live in skills/coordination/reference/)
+# Skills injection paths (agent definitions live in agents/)
 SKILLS_DIR = PENTEST_PROJECT_PATH / ".claude" / "skills"
 
 
@@ -197,14 +197,24 @@ def _load_skills_content() -> str:
         except Exception:
             pass
 
-    # Load role reference files from coordination skill
+    # Load agent definitions from agents/
+    agents_dir = SKILLS_DIR / ".." / ".." / ".." / "agents"
+    if agents_dir.exists():
+        for agent_file in sorted(agents_dir.glob("*.md")):
+            try:
+                content = agent_file.read_text()
+                sections.append(f"## Agent: {agent_file.name}\n{content}")
+            except Exception:
+                pass
+
+    # Load coordination reference files (ATTACK_INDEX, VALIDATION, etc.)
     role_dir = SKILLS_DIR / "coordination" / "reference"
     if role_dir.exists():
         role_files = sorted(role_dir.glob("*.md"))
         for role_file in role_files:
             try:
                 content = role_file.read_text()
-                sections.append(f"## Role: {role_file.name}\n{content}")
+                sections.append(f"## Reference: {role_file.name}\n{content}")
             except Exception:
                 pass
 

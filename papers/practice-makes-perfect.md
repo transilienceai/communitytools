@@ -235,7 +235,7 @@ The system comprises 230 markdown files (~173K lines) organized into three layer
   [coordination], [Multi-agent orchestration, test planning, reporting],
   [hackerone], [Bug bounty automation, scope parsing, submission generation],
   [cve-poc-generator], [CVE research, standalone PoC script and report generation],
-  [transilience-report-style], [Branded PDF report design and formatting],
+  [formats/transilience-report-style], [Branded PDF report design and formatting],
 )
 ```
 
