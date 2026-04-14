@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 from typing import Dict, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 
 
@@ -107,7 +107,7 @@ class CredentialManager:
 
         # Generate credential ID
         credential_id = hashlib.sha256(
-            f"{target}:{username}:{datetime.utcnow().isoformat()}".encode()
+            f"{target}:{username}:{datetime.now(timezone.utc).isoformat()}".encode()
         ).hexdigest()[:16]
 
         # Initialize target if not exists
@@ -115,8 +115,8 @@ class CredentialManager:
             credentials[target] = {
                 "accounts": {},
                 "metadata": {
-                    "created": datetime.utcnow().isoformat(),
-                    "last_updated": datetime.utcnow().isoformat()
+                    "created": datetime.now(timezone.utc).isoformat(),
+                    "last_updated": datetime.now(timezone.utc).isoformat()
                 }
             }
 
@@ -126,12 +126,12 @@ class CredentialManager:
             "password": password,
             "email": email or username,
             "account_type": account_type,
-            "created": datetime.utcnow().isoformat(),
+            "created": datetime.now(timezone.utc).isoformat(),
             "last_used": None,
             "metadata": metadata or {}
         }
 
-        credentials[target]["metadata"]["last_updated"] = datetime.utcnow().isoformat()
+        credentials[target]["metadata"]["last_updated"] = datetime.now(timezone.utc).isoformat()
 
         self.save_credentials(credentials)
         return credential_id
@@ -165,7 +165,7 @@ class CredentialManager:
             credential = accounts.get(credential_id)
             if credential:
                 # Update last_used timestamp
-                credential["last_used"] = datetime.utcnow().isoformat()
+                credential["last_used"] = datetime.now(timezone.utc).isoformat()
                 self.save_credentials(credentials)
             return credential
 
@@ -173,7 +173,7 @@ class CredentialManager:
         if account_type:
             for cred_id, cred_data in accounts.items():
                 if cred_data.get("account_type") == account_type:
-                    cred_data["last_used"] = datetime.utcnow().isoformat()
+                    cred_data["last_used"] = datetime.now(timezone.utc).isoformat()
                     self.save_credentials(credentials)
                     return cred_data
 
@@ -183,7 +183,7 @@ class CredentialManager:
                 accounts.items(),
                 key=lambda x: x[1].get("created", "")
             )[1]
-            latest_cred["last_used"] = datetime.utcnow().isoformat()
+            latest_cred["last_used"] = datetime.now(timezone.utc).isoformat()
             self.save_credentials(credentials)
             return latest_cred
 
@@ -230,7 +230,7 @@ class CredentialManager:
 
         if credential_id in credentials[target]["accounts"]:
             del credentials[target]["accounts"][credential_id]
-            credentials[target]["metadata"]["last_updated"] = datetime.utcnow().isoformat()
+            credentials[target]["metadata"]["last_updated"] = datetime.now(timezone.utc).isoformat()
             self.save_credentials(credentials)
             return True
 
@@ -281,7 +281,7 @@ class CredentialManager:
             current_meta = credentials[target]["accounts"][credential_id].get("metadata", {})
             current_meta.update(metadata)
             credentials[target]["accounts"][credential_id]["metadata"] = current_meta
-            credentials[target]["metadata"]["last_updated"] = datetime.utcnow().isoformat()
+            credentials[target]["metadata"]["last_updated"] = datetime.now(timezone.utc).isoformat()
             self.save_credentials(credentials)
             return True
 
