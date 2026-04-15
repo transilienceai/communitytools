@@ -2,11 +2,12 @@
 
 <div align="center">
 
+[![Built by Transilience](https://img.shields.io/badge/Built%20by-Transilience.ai-4A90D9)](https://www.transilience.ai)
 [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
 [![GitHub stars](https://img.shields.io/github/stars/transilienceai/communitytools)](https://github.com/transilienceai/communitytools/stargazers)
 [![Claude AI](https://img.shields.io/badge/Powered%20by-Claude%20AI-blue)](https://claude.ai)
 
-**Open-source Claude Code skills and agents for AI-powered penetration testing, bug bounty hunting, AI threat testing, and security reconnaissance**
+**Open-source Claude Code skills and agents for AI-powered penetration testing, bug bounty hunting, AI threat testing, and security reconnaissance — from the team at [Transilience.ai](https://www.transilience.ai)**
 
 [Quick Start](#-quick-start) | [Skills & Agents](#-skills--agents) | [Architecture](#-architecture) | [Contributing](CONTRIBUTING.md) | [Website](https://www.transilience.ai)
 
@@ -20,7 +21,7 @@
 
 We built an autonomous pentesting agent that scores **100% (104/104)** on a published CTF benchmark suite — using only structured markdown skill files, no fine-tuning. Starting from a bare 89.4% baseline, we ran a simple loop roughly 15 times: run the benchmarks, find a failure, diagnose the missing technique, write it into a skill file, and run again. The same skills transfer cross-model: Claude Sonnet 4.6 reaches 96.2% and Claude Haiku 4.5 reaches 62.5%. This repository contains the full skill set described in the paper.
 
-**[Read the paper (PDF)](papers/practice-makes-perfect.pdf)**
+**[Read the paper](https://www.transilience.ai/research/practice-makes-perfect)** · **[PDF](papers/practice-makes-perfect.pdf)**
 
 ---
 
@@ -269,8 +270,9 @@ If you discover a vulnerability using these tools:
 
 - [GitHub Discussions](https://github.com/transilienceai/communitytools/discussions) — Ask questions, share ideas
 - [GitHub Issues](https://github.com/transilienceai/communitytools/issues) — Report bugs, request features
-- [Website](https://www.transilience.ai) — Commercial products
-- [Email](mailto:contact@transilience.ai) — Enterprise support
+- [Transilience.ai](https://www.transilience.ai) — See what else we're building
+- [LinkedIn](https://linkedin.com/company/transilienceai) — Follow our work
+- [Email](mailto:contact@transilience.ai) — Get in touch
 
 ---
 
@@ -310,7 +312,7 @@ MIT License — Copyright (c) 2026 Transilience AI. See [LICENSE](LICENSE) for d
 
 **Built by [Transilience AI](https://www.transilience.ai)**
 
-Transilience AI specializes in autonomous security testing and AI security operations.
+We build AI-driven cloud security and compliance automation. These open-source tools reflect how we think about security — if you're curious about the platform behind them, [take a look](https://www.transilience.ai).
 
 [![Star this repository](https://img.shields.io/badge/Star%20this%20repo-yellow?style=for-the-badge)](https://github.com/transilienceai/communitytools)
 
