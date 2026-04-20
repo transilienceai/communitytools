@@ -36,6 +36,7 @@ ${7*7}    # Freemarker, Jinja2
 > **Handlebars detection tip:** `{{7*7}}` returns literal "7*7" (not 49). Use `{{this}}` instead — returns `[object Object]` confirming Handlebars.
 | `{{7*7}}` | ✗ (shows "7*7") | Django | Python |
 | `${7*7}` | ✓ | Mako | Python |
+| `#set $x=7*7\n$x` | ✓ (shows 49) | Cheetah | Python (Cobbler et al.) |
 
 **Non-obvious SSTI:** When an app transforms text (font substitution, encoding), test each output column separately — one mapping may pass `${}` through while others convert to safe Unicode.
 

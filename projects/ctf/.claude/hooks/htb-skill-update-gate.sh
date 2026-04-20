@@ -70,7 +70,7 @@ EOJSON
         exit 0
       fi
     fi
-    echo '{"decision": "allow"}'
+    echo '{"continue": true}'
     ;;
 
 esac

@@ -15,7 +15,7 @@ context: fork
 5. If necessary, start the machines
 6. If necessary, check network connectivity to the machines
 7. Spawn and manage coordinator pool — max N concurrent agents, queue-based spawning (new agent spawns when previous completes)
-8. Post-solve verification — each coordinator runs `/skill-update` + Slack as Phase 3 of its mission. Parent verifies and catches any coordinator that skipped it (see workflow.md step 8)
+8. Post-solve Phase 3 — parent orchestrator (not coordinator) always runs `/skill-update` + Slack after each coordinator returns its PHASE3_SUMMARY (see workflow.md step 8)
 
 ## References
 - [workflow.md](reference/workflow.md) — Workflow overview with credentials, VPN, setup, and coordinator spawn

@@ -415,6 +415,19 @@ setTimeout(function() {
 </html>
 ```
 
+#### SameSite=Lax Bypass via Top-Level Navigation
+
+Modern browsers default session cookies to `SameSite=Lax`, which blocks cross-site sub-requests (iframes, img, fetch) but **allows top-level GET navigations**. Callback URLs like `/callback?code=...` are GET, so Lax does not stop them.
+
+When combined with a stored XSS or open redirect ON the victim origin (same-origin context), the attacker chains:
+1. Pre-authorize the OAuth provider as the attacker to obtain an authorization code bound to the attacker's identity (or a victim code via a separate redirect).
+2. Trigger from within the victim origin: `window.location = '/accounts/oauth2/<provider>/callback/?code=<ATTACKER_CODE>'` — this is a same-origin top-level navigation, cookies (including Lax) are sent, the provider's callback handler links the attacker's external identity to the currently-authenticated victim session (re-linking attack).
+3. Attacker then logs in via the external provider and is now authenticated as the victim — useful when the victim is an admin.
+
+Key property: if the `state` parameter is not validated (or absent), the callback handler accepts any `code` regardless of which browsing context initiated the flow. Same-origin XSS is sufficient to trigger this even with strict CSP on cross-origin requests.
+
+Detection: submit OAuth flow with tampered/omitted `state`; if callback still succeeds and links identity, the app is vulnerable to re-linking CSRF even under SameSite=Lax cookies.
+
 ---
 
 ### Authorization Code Theft Exploit

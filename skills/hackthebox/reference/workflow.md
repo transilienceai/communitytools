@@ -120,26 +120,34 @@ Each agent writes to its own `OUTPUT_DIR` (unique per challenge).
 
 **Reference**: See [coordinator-spawn.md](coordinator-spawn.md) for coordinator spawn prompt template.
 
-## 8. Post-Solve Verification (parent orchestrator)
+## 8. Post-Solve Phase 3 (parent orchestrator — always runs this, not the coordinator)
 
-Each coordinator runs `/skill-update` and sends Slack as Phase 3 of its mission (see coordinator-spawn.md). The parent orchestrator **verifies** this happened.
+The coordinator does NOT run skill-update or Slack — it only returns a `PHASE3_SUMMARY` block and writes `completion-report.md` + `stats.json`. The parent orchestrator always runs Phase 3 after each coordinator completes.
 
 After each coordinator completes:
 
-1. **Read coordinator return** — check it confirms skill-update and Slack completed
+1. **Read coordinator return** — extract `PHASE3_SUMMARY` block (techniques, lessons, skills_to_update)
 2. **Verify outputs exist** — `{OUTPUT_DIR}/reports/completion-report.md` + `{OUTPUT_DIR}/stats.json`
-3. **If coordinator skipped Phase 3** (crashed, ran out of context, or didn't confirm):
-   - Read `{OUTPUT_DIR}/reports/completion-report.md` + `{OUTPUT_DIR}/stats.json`
-   - Run `/skill-update` with techniques and lessons from the completion report
-   - Send Slack notification per [slack-notifications.md](slack-notifications.md)
-4. **Spawn next** challenge from queue (if any remain)
+3. **Run `/skill-update`** — use techniques and lessons from the PHASE3_SUMMARY. Only generalizable patterns, no target-specific data.
+4. **Send Slack notification** per [slack-notifications.md](slack-notifications.md):
+   - `python3 tools/env-reader.py SLACK_BOT_TOKEN HTB_SLACK_CHANNEL_ID`
+   - If both set: compose message from completion-report + stats + skill-update output, send via `python3 tools/slack-send.py`
+   - If either NOT_SET: skip silently
+5. **Spawn next** challenge from queue (if any remain)
 
-If the completion report is missing (coordinator crashed), log a warning and skip skill-update/Slack for that challenge. Do not block the queue.
+If the completion report is missing (coordinator crashed), log a warning, skip skill-update/Slack for that challenge, do not block the queue.
 
 ## API Submission Notes
 
 - **Rate limiting**: Add 2-2.5 second delays between API flag submissions. "Too Many Attempts" requires 2-3 minute cooldown.
 - **Writeup PDF extraction**: Always use `pdftotext` CLI for exact text — visual PDF rendering causes font kerning errors (e.g., "ww" renders as "wu"). Never guess characters from images.
+- **"Incorrect Flag" is ambiguous** — the `/machine/own` endpoint returns the same `{"message":"Incorrect Flag."}` for both a wrong flag AND a resubmission of an already-owned flag. Before burning cycles on "wrong flag" debugging, verify ownership:
+  ```bash
+  curl -s -H "Authorization: Bearer $HTB_TOKEN" \
+    "https://labs.hackthebox.com/api/v4/machine/profile/$MACHINE_ID" \
+    | python3 -c "import json,sys;d=json.load(sys.stdin)['info'];print('user_owned:',d.get('authUserInUserOwns'),'root_owned:',d.get('authUserInRootOwns'))"
+  ```
+  If both are `True`, the machine is already fully owned — skip resubmission and move to reporting.
 
 ## Flag Progression (Multi-Flag Machines)
 

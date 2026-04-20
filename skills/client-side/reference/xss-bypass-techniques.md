@@ -492,6 +492,25 @@ onload (on svg root)
    - Evaluates constructed string
    - Executes `alert(1)`
 
+### ng-include Same-Origin XHR Exploit
+
+When AngularJS is present (any version) and the attacker controls HTML in a template context, `ng-include` can fetch ANY same-origin URL and render it into the DOM as an AngularJS template. This is a primitive for reading/triggering same-origin URLs with the victim's session.
+
+**Payload**:
+```html
+<div ng-app ng-include="'/admin/some-endpoint'"></div>
+<!-- or to chain into a CSRF-able action triggering a server-side OAuth callback: -->
+<div ng-app ng-include src="'/accounts/oauth2/provider/callback/?code=ATTACKER_CODE'"></div>
+```
+
+Key properties:
+- Loads the URL with the victim's cookies (same-origin XHR).
+- Response is parsed as an Angular template — any embedded Angular expressions also execute, chaining into sandbox escape.
+- Works under strict CSP that forbids inline scripts as long as `ng-include` / Angular directives are allowed (which they are, since Angular itself is allowed).
+- Useful when attacker has stored HTML injection but not full JS (e.g. user bio / comment that strips `<script>` but not Angular directives).
+
+Typical chain: stored HTML injection with Angular directives -> admin views page -> `ng-include` fetches admin-only endpoint (or triggers OAuth re-linking callback, CSRF-protected state-changing GET, etc.) with admin session cookies.
+
 ### AngularJS CSP Bypass
 
 **Example**: Reflected XSS with AngularJS sandbox escape and CSP
