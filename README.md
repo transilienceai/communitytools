@@ -156,6 +156,14 @@ Agent roles (coordinator, executor, validator) are defined in `skills/coordinati
 | **Kali Linux Tools** | nmap, masscan, nikto, gobuster, ffuf, sqlmap, testssl, and more |
 | **NVD / CVE Risk Score** | Auto-invoked CVE lookup (`/cve-risk-score`) — CVSS score, severity, CWE from NVD |
 
+### MCP Servers
+
+Local Model Context Protocol servers that expose Transilience APIs to MCP-capable clients (Claude Desktop, Cline, Zed, etc.). Each server is self-contained under `mcp/<name>/` with its own `pyproject.toml` and install instructions.
+
+| Server | Purpose |
+|--------|---------|
+| [`mcp/transilience-vuln`](./mcp/transilience-vuln) | Single-CVE and bulk CVE enrichment (CVSS, EPSS, KEV, impact taxonomy, vendor advisories) via the Transilience Vulnerability API. |
+
 ---
 
 ## Architecture

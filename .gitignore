@@ -70,6 +70,7 @@ raw/
 !.claude-plugin/plugin.json
 !.claude-plugin/marketplace.json
 !plugins/**/.claude-plugin/plugin.json
+!mcp/**/*.json
 
 # Credentials and secrets
 credentials.json
