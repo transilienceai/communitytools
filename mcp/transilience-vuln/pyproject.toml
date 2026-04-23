@@ -1,0 +1,38 @@
+[project]
+name = "transilience-vuln-mcp"
+version = "1.0.0"
+description = "MCP server exposing the Transilience vulnerability enrichment API (CVSS, EPSS, KEV, impact taxonomy, vendor advisories)"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "Transilience AI" }]
+keywords = ["mcp", "claude", "cve", "vulnerability", "transilience", "epss", "kev"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+]
+dependencies = [
+    "mcp>=1.0.0",
+    "httpx>=0.27.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/transilienceai/communitytools"
+Issues = "https://github.com/transilienceai/communitytools/issues"
+API = "https://transilienceapi.com"
+
+[project.scripts]
+transilience-vuln-mcp = "server:cli"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["server"]
