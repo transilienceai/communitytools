@@ -65,6 +65,11 @@ raw/
 *.csv
 *.txt
 
+# Benchmark runner artifacts (per-run workdirs, logs, result JSON)
+benchmarks/xbow/results/
+benchmarks/cybench/results/
+benchmarks/bountybench/results/
+
 # JSON data files (but NOT plugin manifests)
 *.json
 !.claude-plugin/plugin.json

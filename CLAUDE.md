@@ -32,7 +32,8 @@ Skills live in `skills/`. Each skill has a `SKILL.md` defining its purpose and a
 | **Specialized** | `blockchain-security`, `ai-threat-testing`, `social-engineering`, `dfir` | Domain-specific testing and forensics |
 | **Tooling** | `essential-tools`, `source-code-scanning`, `cve-poc-generator`, `cve-risk-score`, `script-generator`, `patt-fetcher` | Tool usage, SAST, CVE research, risk scoring, script generation, payload fetching |
 | **Platform** | `hackthebox`, `hackerone` | CTF and bug bounty automation |
-| **Reporting** | `coordination` | PDF generation with Transilience branding (format: `formats/transilience-report-style/`) |
+| **Marketing** | `marketing-coordination`, `seo-foundation`, `seo-benchmarking`, `seo-technical`, `aeo-discoverability`, `structured-data`, `content-presence`, `competitor-discovery` | SEO / AEO / GEO campaigns — measurement plumbing, benchmarking, on-page audits, AI-visibility, JSON-LD schemas, off-site content and outreach, LLM-sourced competitor discovery |
+| **Reporting** | `coordination`, `marketing-coordination` | PDF generation with Transilience branding (format: `formats/transilience-report-style/`) |
 | **Workflow** | `github-workflow`, `skill-update` | Git operations, skill management |
 
 ## Skill Selection

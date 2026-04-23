@@ -40,4 +40,3 @@ All reports use the Transilience design system:
 | JSON Report | [techstack-json-report.md](techstack-json-report.md) | TechStackReport JSON schema |
 | Evidence | [techstack-evidence-formatter.md](techstack-evidence-formatter.md) | Evidence formatting with sources, reasoning, and citations |
 | Export | [techstack-report-exporter.md](techstack-report-exporter.md) | Markdown, HTML, and PDF export from TechStackReport JSON |
-
