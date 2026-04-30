@@ -39,9 +39,9 @@ Files: attack-chain.md experiments.md flags.txt stats.json
 1. Logic only. No Hydra, no sqlmap defaults. Understand first.
 2. No brute force. HTB challenges are logic puzzles — every credential, every path is discoverable through enumeration, code review, or exploitation. Brute force is always wrong here.
    **NEVER** — not yourself, not any executor you spawn:
-   - Password spraying or credential guessing against **live network endpoints** (crackmapexec, hydra, kerbrute, msf scanners, custom loops — none of it)
+   - Password spraying or credential guessing (crackmapexec, hydra, custom scripts, "small targeted lists" — none of it)
+   - Wordlist-based hash cracking (rockyou, SecLists, theme-based lists)
    - Blind directory/file brute-forcing without evidence a path exists
-   **OFFLINE cracking of captured material is NOT brute force** and is allowed: AS-REP/Kerberoast hashes pulled from the wire (john/hashcat `-m 18200/13100`), encrypted ZIPs (`zip2john`), KeePass DBs (`keepass2john`), Ansible Vault (`ansible2john`), passpie/PGP keystores (`gpg2john`), bcrypt hashes from app DBs/configs, JKS keystores, encrypted PFX files, etc. Use rockyou first, then theme-relevant wordlists. The distinction is **on-disk artifact you already exfiltrated** vs **live-service login attempt**.
    **INSTEAD** when stuck on credentials: re-read shares, SYSVOL scripts, config files, LDAP attributes (description, scriptPath, info), source code, environment variables, database dumps. The answer is in the data you already have.
 3. No DoS.
 4. **Propagation**: include this RULES section verbatim in every executor prompt you spawn. Executors must refuse brute-force missions.
