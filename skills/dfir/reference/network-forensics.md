@@ -94,6 +94,59 @@ tshark -r capture.pcap -Y "smb2.cmd == 3 && ip.src == <victim_ip>" -T fields \
   -e frame.time -e ip.dst -e smb2.tree
 ```
 
+### Carving HTTP Objects from a Noisy PCAP
+
+For challenges that bury a malicious download or C2 POST body inside otherwise benign QUIC/TLS traffic:
+
+```bash
+# Carve every HTTP request/response body to disk in one pass
+mkdir -p objects
+tshark -r capture.pcapng --export-objects "http,objects" -q
+
+# What got captured:
+ls -la objects/
+# Each file is named after the URI; both request bodies and response bodies appear.
+```
+
+Then inspect: `file objects/*`, `head -c 200 objects/*`, and `strings objects/* | grep -i 'HTB{\|flag\|<?php\|powershell'`.
+
+**Why this beats stream-following on a 22 MB PCAP:** `--export-objects` reassembles chunked transfer-encoding, gzip, and large multipart bodies in one shot. Manual `follow,tcp,raw,N` per stream loses framing on the first multi-segment response.
+
+### Decoding a PowerShell Stager Captured Mid-Flight
+
+Loader pattern seen in HTB *Fake Boost* and similar SAINT-style stagers:
+
+```powershell
+$blob   = "<long base64 string, REVERSED>"
+$arr    = $blob.ToCharArray()
+[array]::Reverse($arr)                    # mutates in place
+-join $arr 2>&1> $null                    # red herring — result discarded
+$stage2 = [Text.Encoding]::UTF8.GetString(
+            [Convert]::FromBase64String("$arr"))   # "$arr" interpolates with $OFS=' '
+Invoke-Expression $stage2                 # often via aliased pWn / iEx
+```
+
+To recover stage 2: take the original base64 string from the captured file, reverse the *string* (Python `s[::-1]`), then `base64.b64decode`. The whitespace from PowerShell's interpolation is harmless — `FromBase64String` ignores it.
+
+### Decrypting a C2 POST Body When the Stage-2 Key Is in the PCAP
+
+PowerShell `Encrypt-String` recipes from public stagers wrap as `IV(16) ‖ ciphertext` and base64-encode. If the static AES key is hardcoded in the stage-2 script you already recovered:
+
+```python
+import base64, sys
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.padding import PKCS7
+
+key  = base64.b64decode(b"<key_b64_from_stage2>")          # 32 bytes for AES-256
+raw  = base64.b64decode(open("c2_body.bin","rb").read())
+iv, ct = raw[:16], raw[16:]
+pt = Cipher(algorithms.AES(key), modes.CBC(iv)).decryptor().update(ct) + b""
+pt = PKCS7(128).unpadder().update(pt)
+print(pt)
+```
+
+CTF gotcha: malware authors often embed flag fragments in JSON fields of the exfiltrated data (e.g. `Email` = base64 of part 2), with a separate `$part1` defined-but-unused in the stage-2 source. Always check both halves before assuming a single-source flag.
+
 ## Timestamp Handling
 
 **pcap timestamps** include timezone offset (e.g., `+0200`). Always convert to UTC:

