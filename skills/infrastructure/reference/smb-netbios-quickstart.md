@@ -66,6 +66,9 @@ EOF
 
 # Host SMB listener to capture NTLMv2 hash
 smbserver.py -smb2support share ./
+# macOS gotcha: omit `-ip <addr>` and let it bind wildcard — `-ip <specific_VPN_IP>`
+# silently fails to bind 445 on Sequoia/Sonoma; the listener appears running but
+# inbound SMB connections get refused. Linux is unaffected.
 
 # Upload the SCF via the web app, wait for user to browse the share
 # Hash appears in smbserver output as NTLMv2-SSP
@@ -82,6 +85,36 @@ nxc smb target -u user -p pass --spider SHARENAME --pattern '.'
 # Look for: .ps1, .bat, .cmd, .vbs, .xml, .config, .ini files
 # Common patterns: ConvertTo-SecureString, PSCredential, plaintext passwords in backup/deploy scripts
 ```
+
+### File-format obfuscation on shares
+
+CTF/AD shares often hide credentials inside files whose magic bytes have been deliberately
+mangled so a casual `file` / extension scan looks "innocent". Always verify the magic bytes
+on every interesting download — extension is not authoritative.
+
+Common tampered formats:
+- **xlsx/docx/pptx (Office 2007+ ZIP)**: real header `50 4B 03 04` ("PK\x03\x04"). If `file`
+  reports `data` or `Zip archive (non-standard signature)` and the first two bytes are
+  anything other than `PK` (e.g. `PH`, `XX`, `ZZ`), patch the first 2 bytes back to `PK`
+  and the file opens normally — strings in xl/sharedStrings.xml frequently contain plaintext
+  credentials.
+- **ZIP/JAR/APK** (`PK\x03\x04`), **PNG** (`89 50 4E 47`), **PDF** (`%PDF`), **PE/EXE**
+  (`MZ`) — same pattern: byte-flipped magic = trivially reversible obfuscation.
+
+```bash
+# One-liner to detect + fix Office magic mangling
+xxd -l 4 file.xlsx                       # check first 4 bytes
+printf '\x50\x4B' | dd of=file.xlsx bs=1 count=2 conv=notrunc   # patch back to "PK"
+unzip -p file.xlsx xl/sharedStrings.xml  # plaintext strings (creds often live here)
+```
+
+Other files to grep for cleartext creds after spidering:
+- `*.kdbx`, `*.kdb` (KeePass DBs — try empty + reuse + recovered passphrase)
+- `unattend.xml`, `sysprep.xml`, `Autounattend.xml` (Windows install creds)
+- `web.config`, `appsettings.json`, `connectionStrings.config`
+- `*.ini`, `*Configuration*.ini`, `*Setup*.ini` (SQL Server / IIS / app installers — see
+  `skills/system/reference/system-exploitation.md` "Post-RCE filesystem cred hunt")
+- `*.bak`, `*.old`, `*.orig`, `*.backup` next to active config files
 
 ## Guest vs Null Auth
 

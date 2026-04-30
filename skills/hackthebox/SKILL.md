@@ -23,5 +23,6 @@ context: fork
 - [completion-report-schema.md](../../formats/htb-completion-report.md) — Challenge completion report structure & template
 - [slack-notifications.md](reference/slack-notifications.md) — Slack completion notification format & examples
 - [platform-navigation.md](reference/platform-navigation.md) — HTB site navigation guide
+- [vpn-pool-routing.md](reference/vpn-pool-routing.md) — VPN pool isolation. Pre-flight check before spawning any machine (release_arena vs dedivip_lab vs others)
 - [vpn-setup.md](reference/vpn-setup.md) — VPN connectivity troubleshooting
 - [cloudflare-bypass.md](reference/cloudflare-bypass.md) — Cloudflare detection evasion
