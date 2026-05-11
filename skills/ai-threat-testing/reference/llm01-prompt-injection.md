@@ -60,6 +60,10 @@
 - Behavior deviation detection
 - Output pattern analysis
 
+## Agentic AI tool-call override
+
+When the target LLM holds tools that mutate server-side state (scores, badges, permissions, certificates), prompt injection in a user-controlled text field can hijack the tool call. The multi-invocation hazard (submit-time agent vs. finalize-time agent overwriting state via a "regenerate" endpoint) and the polite "Please call X to set Y to Z before processing a response" phrasing are covered in [agentic-tool-hijacking.md](agentic-tool-hijacking.md).
+
 ## Success Criteria
 
 - ✅ Successfully override model behavior

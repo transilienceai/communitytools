@@ -7,134 +7,89 @@ description: Pentest coordination — orchestrates executor and validator agents
 
 Inline. Holds context. Thinks before every action.
 
+## Principle (Rule 0)
+
+**Source code first.** Read all accessible source — application code, config, scripts, share contents — before any executor batch. Every answer is in the data you already have. Guessing without reading is the most common failure mode.
+
 ## Workflow
 
 ```
 P0: Ingest scope
  ↓
-P1: Recon + read source code → write attack-chain.md + create experiments.md header
+P1: Recon + read source code → write attack-chain.md → run preflight-checklist
  ↓
-┌→ P2: Think — read chain + experiments.md, dedup, design 1-2 experiments
+┌→ P2: Think — read chain + experiments.md, write 3 hypotheses (≥1 [wildcard]), pick 1-2 to test
 │  P2b: Research (conditional) — see reference/creative-research.md
 │  P3: Execute — spawn 1-2 executors with CHAIN_CONTEXT [+ RESEARCH_BRIEF]
 │  P4: Integrate — read results, update chain, revise theory
-│      No progress 2 batches → P4b
+│      No progress 1 batch → consider P2b
+│      goal_attempts ≥ 3 on any conceptual goal → P4b
 │      Goal → P5
-└─ loop (max 30 experiments)
+└─ loop (max 30 experiments; mandatory skeptic at experiments 5, 15, 25)
 
-P4b: Reset — re-read all recon + source + chain. Creative Research (MANDATORY). Fresh theory.
+P4b: Reset — re-read all recon + source + chain. Creative Research (mandatory). Fresh theory.
 P5: Validate + Report
 ```
 
 ### Steps
 
-1. **Recon + Source Code** — read all accessible source code (see `formats/reconnaissance.md`). Create `{OUTPUT_DIR}/experiments.md` with header row (see format below).
-2. **Think** — write theory + next step to `attack-chain.md`
-3. **Test** — 1-2 executors per batch, integrate before next
-4. **Validate** — validators per-finding (see `skills/coordination/reference/VALIDATION.md`)
-5. **Report** — validated findings in `{OUTPUT_DIR}/artifacts/validated/` → Transilience PDF via `formats/transilience-report-style/SKILL.md` (MANDATORY)
+1. **Recon + Source Code** — read all accessible code (see `formats/reconnaissance.md`). Run pre-flight checklist (`reference/preflight-checklist.md`).
+2. **Think** — write 3 hypotheses to `attack-chain.md`, ≥1 tagged `[wildcard]`. Pick 1-2 to spawn.
+3. **Test** — 1-2 executors per batch, integrate before next.
+4. **Validate** — finding-validator per finding + engagement-thoroughness validator at P5 (see `reference/validator-role.md`).
+5. **Report** — validated findings in `{OUTPUT_DIR}/artifacts/validated/` → Transilience PDF via `formats/transilience-report-style/SKILL.md`.
 
 ## attack-chain.md
 
-At `{OUTPUT_DIR}/attack-chain.md`. Updated every batch. Sections: services, surface, theory, tested, next.
+`{OUTPUT_DIR}/attack-chain.md`. Updated every batch. Sections: services, surface, theory (3 hypotheses + chosen), tested, next. Bullets, max 50 lines, prune old items to one-liners.
 
-Keep it terse — bullet points, no prose.
+## Bookkeeping
 
-## experiments.md
-
-At `{OUTPUT_DIR}/experiments.md`. Append-only table — never prune, never rewrite. Format: `formats/logs.md`.
-- P1: create header. P2: read → dedup → append row (result=pending). Executor updates on completion.
-- Dedup: skip if same technique + target exists unless parameters differ meaningfully.
-- 3-strike: `count(technique, result=fail) >= 3` → triggers rule 12.
-
-## tools/
-
-Executors log every significant tool invocation to `{OUTPUT_DIR}/tools/{NNN}_{tool}.md` with input + output. See `formats/logs.md`.
+experiments.md ledger, tools/ logs, EXPERIMENT_ID injection, conceptual-goal counting — see `reference/bookkeeping.md`.
 
 ## Creative Research (P2b)
 
-Triggers — research when ANY of:
-- P4b reset (mandatory)
-- 3-strike stuck detection fires (rule 12)
-- New tech/framework discovered not in mounted skills
-- No clear hypothesis at P2
-
-Method: follow `reference/creative-research.md`. Synthesize model knowledge + online sources + skill cross-reference into a RESEARCH_BRIEF (max 10 lines) appended to executor prompt.
-
-Do NOT research every batch. Most batches skip P2b entirely.
+Triggers: P4b reset (mandatory), goal_attempts ≥ 3 on any goal, novel error class, source code unreadable, every executor returned negative, no hypothesis at P2, no progress for 1 batch. See `reference/creative-research.md`. Most batches skip P2b.
 
 ## Spawning
 
-Consult `reference/context-injection.md` before building any agent prompt.
-
-```python
-executor = Read("skills/coordination/reference/executor-role.md")
-chain = Read(f"{output_dir}/attack-chain.md")
-experiments = Read(f"{output_dir}/experiments.md")
-
-# Optional: if P2b produced a brief
-# research = "RESEARCH_BRIEF:\n- [model] ...\n- [web] ...\n- [skills] ..."
-
-# 1-2 executors per batch — pass only relevant PATT_URL, not full map
-Agent(prompt=f"{executor}\nMISSION_ID: m-001\nEXPERIMENT_ID: E-001\n"
-      f"CHAIN_CONTEXT: {chain}\nEXPERIMENTS: {experiments}\n"
-      f"OBJECTIVE: ...\nSKILL_FILES: ...\nPATT_URL: ...\nOUTPUT_DIR: {output_dir}\n"
-      f"{research if research else ''}",
-      description="Blind SQLi /search", run_in_background=True)
-
-# Wait. Read results. Think. Update attack-chain.md. THEN next batch.
-
-# Validators — one per finding (BLIND REVIEW — see context-injection.md)
-validator = Read("skills/coordination/reference/validator-role.md")
-Agent(prompt=f"{validator}\nfinding_id: F-001\n"
-      f"FINDING_DIR: {output_dir}/findings/finding-001/\n"
-      f"TARGET_URL: ...\nOUTPUT_DIR: {output_dir}/artifacts",
-      run_in_background=True)
-
-# After all validators complete:
-# 1. Read artifacts/validated/ and artifacts/false-positives/
-# 2. Verify each validated finding has findings/{id}/evidence/validation/validation-summary.md
-# 3. Flag any finding that passed validation but has no proof
-```
-
-Pass only the relevant PATT_URL for this mission, not the full URL map.
+See `reference/spawning-recipes.md` for copy-paste-ready spawn patterns per role. Context contracts in `reference/context-injection.md`. Role boundaries in `reference/role-matrix.md`.
 
 ## Roles
 
-| Role | File | Context |
-|------|------|---------|
-| Executor | `reference/executor-role.md` | Full chain + skills |
-| Validator | `reference/validator-role.md` | Evidence only (blind) |
-
-See `reference/context-injection.md` for what each role receives and what is withheld.
+| Role | File | Context | When |
+|------|------|---------|------|
+| Executor (explore) | `reference/executor-role.md` | Full chain + skills | Recon / breadth |
+| Executor (exploit) | `reference/executor-role.md` | Full chain + skills + scenarios | Confirmed theory |
+| Skeptic | `reference/skeptic-role.md` | experiments.md + recon (no chain) | Mandatory at experiments 5, 15, 25 |
+| Validator (finding) | `reference/validator-role.md` | Evidence only (blind) | One per finding |
+| Validator (engagement) | `reference/validator-role.md` | OUTPUT_DIR only (blind) | At P5 |
 
 ## Rules
 
-1. Autonomous. Never ask user.
-2. Think before acting. Write reasoning to attack-chain.md before every batch.
-3. Max 1-2 executors per batch. Recon can use more.
-4. Source code first. Understanding beats guessing.
-5. Pass chain context + specific PATT_URL to executors.
-6. 30 experiment cap.
-7. Stuck 2 batches → re-read everything, fresh theory.
-8. All output to OUTPUT_DIR.
-9. Report gate: validated findings exist → PDF report required. Read `formats/transilience-report-style/pentest-report.md`.
-10. After validators complete, verify each validated finding has `evidence/validation/validation-summary.md`. Flag any that passed without proof.
-11. Sequential flag progression. In multi-flag challenges (HTB machines), secure each flag before attempting the next. The user-flag path often provides the foothold needed for root.
-12. 3-strike stuck detection. If experiments.md shows >= 3 fail rows for the same technique, STOP. Write to attack-chain.md: (a) why it's failing, (b) is this path fundamentally blocked, (c) alternative paths. Do NOT continue retrying.
-13. Read before calling library internals. Before writing Python against any library's internal API (Impacket, ldap3, pyasn1), read the relevant source file first. Never guess function signatures. Prefer CLI tools (secretsdump.py, ticketer.py, getST.py) over raw API calls.
-14. Background command discipline. Before spawning a background command, state what specific result it will produce. No speculative tunnels, relays, or listeners without a concrete plan to use them.
-15. Creative Research triggers: P4b (mandatory), 3-strike stuck, new tech discovered, no hypothesis. Follow `reference/creative-research.md`. Max 3 WebSearch + 2 WebFetch per cycle.
+1. **Autonomous.** Coordinator MUST NOT call `AskUserQuestion`. If a credential is missing, run `python3 tools/env-reader.py`; if it returns NOT_SET, terminate with `status=BLOCKED` and emit a clear blocker. Asking is the parent orchestrator's job.
+2. **Think before acting.** Write 3 hypotheses (≥1 wildcard) to attack-chain.md before every batch. Record rejected ones — they are the search tree.
+3. **Max 1-2 executors per batch.** Recon can use more.
+4. **Pass chain context + specific PATT_URL** to executors. Not the full PATT map.
+5. **30-experiment cap.**
+6. **goal_attempts ≥ 3 on a conceptual goal** → P4b reset. Count by *goal*, not literal technique string. Five PKINIT cert variants chasing "use this cert to authenticate" = five strikes against one goal. See `reference/bookkeeping.md` for the goal column.
+7. **Mandatory skeptic** at experiments 5, 15, 25 (see `reference/skeptic-role.md`).
+8. **All output to OUTPUT_DIR.**
+9. **Sequential flag progression** in multi-flag engagements. User-foothold first; root path usually flows from there.
+10. **No partial completion as a success state.** A multi-flag engagement is incomplete until every flag submits. `status=FAILED_partial` is a temporary marker, never a final outcome.
+11. **Phase 3 (skill-update + Slack + queue) is parent-orchestrator only.** Coordinator emits PHASE3_SUMMARY and exits.
+12. **Source for library internals.** Before writing Python against any library API (Impacket, ldap3, pyasn1), read the source. Prefer CLI tools (secretsdump.py, ticketer.py, getST.py).
+13. **Background command discipline.** State the specific result a tunnel/relay/listener will produce before spawning.
+14. **Report gate.** Validated findings exist → Transilience PDF report required. Read `formats/transilience-report-style/pentest-report.md`.
+15. **Validation completeness.** After validators run, every validated finding has `evidence/validation/validation-summary.md`. Flag any without proof.
 
 ## Token Discipline
 
-- Internal output (chain, logs, reports): terse. Bullets, not paragraphs.
-- Executor prompts: include only relevant skill files and PATT URL, not everything.
-- Don't inject `patt-fetcher/SKILL.md` into executor prompts. Pass only the relevant PATT_URL.
-- Don't inject skill files the executor won't use. Pick the 1-2 most relevant.
-- attack-chain.md: max 50 lines. Prune old tested items to one-liners.
-- User-facing output (reports, summaries): detailed and professional.
+- Internal output (chain, logs, reports): bullets, not prose.
+- Executor prompts: 1-2 relevant skill files + the specific PATT_URL.
+- attack-chain.md max 50 lines; bookkeeping max 10% of mission tokens.
+- User-facing output (reports, summaries): detailed.
 
 ## References
 
-`reference/ATTACK_INDEX.md` · `reference/OUTPUT_STRUCTURE.md` · `reference/VALIDATION.md` · `reference/GIT_CONVENTIONS.md` · `reference/context-injection.md` · `reference/creative-research.md` · `formats/INDEX.md`
+`reference/principles.md` · `reference/preflight-checklist.md` · `reference/role-matrix.md` · `reference/bookkeeping.md` · `reference/spawning-recipes.md` · `reference/context-injection.md` · `reference/creative-research.md` · `reference/executor-role.md` · `reference/skeptic-role.md` · `reference/validator-role.md` · `reference/VALIDATION.md` · `reference/ATTACK_INDEX.md` · `reference/OUTPUT_STRUCTURE.md` · `reference/GIT_CONVENTIONS.md` · `formats/INDEX.md`

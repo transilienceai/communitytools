@@ -9,7 +9,7 @@ OAuth testing covers authorization flow vulnerabilities, token theft, CSRF via m
 | File | Purpose |
 |------|---------|
 | `oauth-quickstart.md` | Fast-path attack reference and one-liner exploits |
-| `oauth-cheat-sheet.md` | Comprehensive techniques, payloads, and methodology |
+| `scenarios/oauth/` | Per-technique scenario files (split from cheat-sheet) |
 | `oauth-resources.md` | Tools, specifications, and learning resources |
 
 ## Key Attack Categories

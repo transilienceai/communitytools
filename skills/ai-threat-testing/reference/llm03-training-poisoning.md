@@ -44,6 +44,7 @@
 - Extract example sentences/facts
 - Identify memorized content
 - Document sensitive information
+- Gradient-leakage inversion (DLG / iDLG / Inverting Gradients) when raw gradients are exposed by federated-learning clients, telemetry, or logged intermediate states — see [gradient-leakage-attacks.md](gradient-leakage-attacks.md).
 
 ## Tools & Techniques
 

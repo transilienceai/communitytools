@@ -2,7 +2,7 @@
 
 ## Download Config
 
-1. Via Playwright: navigate to HTB → Access → Connection Pack
+1. Via Playwright: navigate to the platform → Access → Connection Pack
 2. Download `.ovpn` file to `{OUTPUT_DIR}/artifacts/vpn/`
 
 ## Split-Tunnel Connection
@@ -19,7 +19,7 @@ sudo openvpn --config {OUTPUT_DIR}/artifacts/vpn/lab.ovpn \
 ip addr show tun0 2>/dev/null || ifconfig tun0
 
 # Verify split-tunnel: lab traffic goes through VPN
-ping -c 1 10.10.10.1
+ping -c 1 10.10.10.1   # any known lab gateway in the routed range
 
 # Verify internet unaffected
 curl -s --max-time 5 ifconfig.me
@@ -29,9 +29,9 @@ curl -s --max-time 5 ifconfig.me
 
 | Range | Purpose |
 |-------|---------|
-| 10.10.10.0/24 | HTB retired machines |
-| 10.10.11.0/24 | HTB active machines |
-| 10.129.0.0/16 | HTB starting point / seasonal |
+| 10.10.10.0/24 | Retired-machine lab pool |
+| 10.10.11.0/24 | Active-machine lab pool |
+| 10.129.0.0/16 | Starting-point / seasonal lab pool |
 
 ## Troubleshooting
 
@@ -41,7 +41,7 @@ curl -s --max-time 5 ifconfig.me
 | Can't reach target | Verify route: `ip route get <target-ip>` should show tun0 |
 | Internet broken | Kill openvpn, restart with `--route-nopull` |
 | DNS resolution fails | Add `--dhcp-option DNS 1.1.1.1` to preserve system DNS |
-| Auth failure | Re-download .ovpn from HTB (tokens expire) |
+| Auth failure | Re-download .ovpn from the platform (tokens expire) |
 
 ## Disconnect
 

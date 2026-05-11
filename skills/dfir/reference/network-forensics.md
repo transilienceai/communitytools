@@ -108,13 +108,13 @@ ls -la objects/
 # Each file is named after the URI; both request bodies and response bodies appear.
 ```
 
-Then inspect: `file objects/*`, `head -c 200 objects/*`, and `strings objects/* | grep -i 'HTB{\|flag\|<?php\|powershell'`.
+Then inspect: `file objects/*`, `head -c 200 objects/*`, and `strings objects/* | grep -i 'flag\|<?php\|powershell'`.
 
 **Why this beats stream-following on a 22 MB PCAP:** `--export-objects` reassembles chunked transfer-encoding, gzip, and large multipart bodies in one shot. Manual `follow,tcp,raw,N` per stream loses framing on the first multi-segment response.
 
 ### Decoding a PowerShell Stager Captured Mid-Flight
 
-Loader pattern seen in HTB *Fake Boost* and similar SAINT-style stagers:
+Loader pattern commonly seen in SAINT-style stagers:
 
 ```powershell
 $blob   = "<long base64 string, REVERSED>"

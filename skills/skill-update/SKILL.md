@@ -6,146 +6,108 @@ model: opus
 
 # Skill Update
 
-Generate Claude Code skills following Anthropic best practices.
+Generate or refine Claude Code skills following Anthropic best practices.
 
-## Core Rules
+## Hard caps (enforced by `scripts/skill_linter.py`)
 
-**Brevity First**: Every file MUST be short, simple, human-readable.
-- SKILL.md: < 150 lines 
-- Role prompt files: < 200 lines
-- README.md: < 100 lines
-- Reference files: < 200 lines each
-
-**Challenge every token**. If it's not essential, delete it.
-
-## Quick Start
-
-```
-1. Read this file
-2. Gather: name, description, 3-5 features
-3. Create: SKILL.md (< 150 lines), README.md (< 100 lines)
-4. Validate: wc -l SKILL.md (must be < 150)
-```
+- `SKILL.md` ≤ 150 lines
+- `reference/*.md` ≤ 200 lines (`reference/scenarios/*.md` ≤ 400 lines)
+- `README.md` ≤ 100 lines
+- Every `SKILL.md` has YAML frontmatter with `name` + `description`
+- No `DO NOT` / `MUST NOT` / `NEVER` outside an `## Anti-Patterns` section
+- No challenge-specific identifiers (machine names, lab IDs, lab IPs, preserved flags)
+- Every `[link](path)` resolves
+- Every reference file is linked from at least one other file (no orphans)
 
 ## Principles
 
-**Concise**: Only context Claude doesn't have. Link to reference/ for details.
+- **Brevity first.** Every file short, simple, human-readable. Challenge every token.
+- **Progressive disclosure.** SKILL.md navigates; `reference/` holds detail; `reference/scenarios/` holds concrete exploit flows.
+- **Separation of concern.** SKILL.md = WHAT + when. `reference/role-*.md` = HOW agents behave when spawned.
+- **Single canonical home** for any cross-cutting rule (output discipline, credential loading, brute-force, etc.). Other files reference, never restate.
 
-**Progressive disclosure**: Main files < 150 lines. Details in reference/.
-
-**Separation**:
-- SKILL.md: WHAT to do (techniques, checklists, indexes)
-- Role prompt files in `reference/`: HOW agents should behave when spawned
-
-## File Structure
+## File structure
 
 ```
-.claude/skills/skill-name/
-├── SKILL.md          # < 150 lines, YAML + instructions
-├── README.md         # < 100 lines, user docs
-├── reference/        # Details, < 200 lines each
-└── outputs/.gitkeep
+skills/<skill-name>/
+├── SKILL.md           # ≤150 lines, YAML + navigation
+├── reference/
+│   ├── *-principles.md  # ≤150 lines (decision tree)
+│   ├── INDEX.md
+│   ├── *.md             # patterns, ≤200 lines
+│   └── scenarios/
+│       └── <category>/
+│           └── *.md     # ≤400 lines, self-contained
+└── README.md          # optional, ≤100 lines
 ```
 
-## SKILL.md Template
+## SKILL.md template
 
 ```yaml
 ---
-name: skill-name
-description: What it does AND when to use. Include triggers. < 1024 chars.
+name: <skill-name>
+description: What it does AND when to use. Include trigger phrases.
 ---
 
-# Skill Name
+# <Skill Name>
 
-Quick start (< 20 lines)
+<one-paragraph scope>
 
-## Key Workflows
+## When to use
 
-Workflow 1 (< 30 lines)
-Workflow 2 (< 30 lines)
+- <bullet>
 
-## Reference
+## Workflow / Quick start
 
-- [Details](reference/) - Move detailed content here
+<≤30 lines>
 
-## Critical Rules
+## References
 
-- Rule 1
-- Rule 2
-```
-
-**Total**: < 150 lines
-
-## Validation
-
-```bash
-# Check line count (CRITICAL)
-wc -l SKILL.md  # MUST be < 150
-wc -l README.md # MUST be < 100
-
-# Check frontmatter
-head -n 1 SKILL.md | grep -q "^---$"
-
-# Check files exist
-test -f SKILL.md README.md
-```
-
-**If files > limit**: Split into reference/ files immediately.
-
-## Common Mistakes
-
-**TOO LONG** (most common):
-- ❌ Verbose explanations
-- ❌ Multiple examples inline
-- ❌ Detailed templates in main file
-- ❌ Step-by-step workflows with 50+ lines
-
-**Fix**: Move details to reference/, keep main file < 150 lines.
-
-**TOO COMPLEX**:
-- ❌ Nested references
-- ❌ Over-explaining simple concepts
-- ❌ Multiple conditional workflows
-
-**Fix**: Simplify, assume Claude is smart, provide defaults.
-
-## Reference
-
-See reference/ for:
-- [STRUCTURE.md](reference/STRUCTURE.md) - Directory requirements
-- [FRONTMATTER.md](reference/FRONTMATTER.md) - YAML rules
-- [CONTENT.md](reference/CONTENT.md) - Writing guidelines
-
-**Official**: https://www.anthropic.com/engineering/claude-code-best-practices
+- [reference/...](reference/...)
 
 ## Anti-Patterns
 
-- ❌ Creating CHANGELOG.md, SUMMARY.md, VERIFICATION.md
-- ❌ Meta-documentation about creation process
-- ❌ Files > 150 lines (SKILL.md)
-- ❌ Files > 200 lines (reference/)
-- ❌ Verbose templates and examples inline
+- <when negative framing is genuinely needed, put it here>
+```
 
-## Workflow
+## When to update an existing skill
 
-1. **Gather**: name, description, 3-5 features
-2. **Create**: SKILL.md (< 150 lines), README.md (< 100 lines)
-3. **Validate**: wc -l SKILL.md (must show < 150)
-4. **Test**: 3+ scenarios
-5. **Fix**: If too long, split into reference/
+Process the techniques and failure modes from completed engagements. Promote a learning to the skill base only if **all four** hold:
 
-## How to update skills
-When updating skills, process all activities done previously. Any successful techniques, failed attempts, and key discoveries and evaluate whether to update to the pentest skills, agent behavior, or reference files.
-Update if: 
-1. Represent generalizable attack patterns or techniques (not specific to this target) that is not mentioned in the files
-2. Materially improve efficiency, coverage, or decision-making for future engagements
-3. Are not already adequately captured in existing skill/agent/reference files
-Strict constraints:
-* No target-specific data: Do not include machine names, challenge names, hostnames, IPs, flags, or any identifiers tied to this specific engagement
-* No clutter: Do not pad files with marginal or redundant information. If existing content already covers a technique sufficiently, skip it
-* Generalize everything: Frame all updates as reusable patterns — e.g., "when encountering X condition, try Y approach" rather than "on this box, Y worked"
-* Minimal footprint: Prefer updating existing entries over adding new ones. Keep skills/agents/reference files lean and high-signal
-Output: Provide a concise change report structured as:
-* Updated: What changed and why (file + summary of edit)
-* Skipped: Notable findings that were intentionally not added, with brief reasoning
-* No changes: If nothing warranted an update, state that explicitly
+1. **Generalizable.** Reusable pattern, not target-specific lore. No machine names, lab IDs, target IPs, preserved flags, writeup attributions.
+2. **Material improvement.** Adds coverage, efficiency, or decision-quality for future engagements.
+3. **Not already captured** elsewhere in the skill base. (`scripts/skill_linter.py` flags duplicates.)
+4. **Minimal footprint.** Prefer extending an existing entry over adding a new file. Keep the base lean and high-signal.
+
+## Reframing recipe
+
+Always frame as a reusable pattern: *"when encountering X condition, try Y approach"* — never *"on box-N, Y worked"*. Use `<TARGET_IP>`, `<DC_FQDN>`, `<DOMAIN>` placeholders in tool examples.
+
+## Pre-write check
+
+Before writing, run `python3 scripts/skill_linter.py`. Reject any change that:
+- Re-introduces challenge-specific lore.
+- Pushes a `SKILL.md` past 150 or a reference past its cap.
+- Duplicates a single-owner rule (brute-force, output discipline, env-reader).
+- Adds `DO NOT` / `MUST NOT` / `NEVER` outside an Anti-Patterns block.
+
+## Output
+
+Concise change report:
+- **Updated.** File + one-line summary of edit.
+- **Skipped.** Notable findings intentionally not added, with brief reasoning.
+- **No changes.** State explicitly when nothing warranted an update.
+
+## Reference
+
+- [STRUCTURE.md](reference/STRUCTURE.md) — directory layout requirements.
+- [FRONTMATTER.md](reference/FRONTMATTER.md) — YAML rules.
+- [CONTENT.md](reference/CONTENT.md) — writing guidelines.
+
+## Anti-Patterns
+
+- Creating CHANGELOG.md / SUMMARY.md / VERIFICATION.md auxiliary files.
+- Meta-documentation about the creation process inside the skill itself.
+- Verbose inline templates and examples (link to `reference/` instead).
+- Re-introducing duplicate rule prose (brute-force, output-dir, env-reader).
+- Files past their cap — split into `reference/` immediately.

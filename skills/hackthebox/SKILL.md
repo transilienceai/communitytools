@@ -9,9 +9,9 @@ context: fork
 
 ### Steps
 1. Get Credentials — `python3 .claude/tools/env-reader.py HTB_USER HTB_PASS HTB_TOKEN ANTHROPIC_API_KEY SLACK_BOT_TOKEN HTB_SLACK_CHANNEL_ID`
-2. Only for "Machine" kind of competition -> Verify vpn is running, otherwise download the vpn file from HTB and instruct the user on how to enable it
+2. Only for "Machine" kind of competition -> Verify vpn is running, otherwise download the vpn file from the platform and instruct the user on how to enable it
 3. Generate output dirs — `mkdir -p YYMMDD_<name>/{recon,findings,logs,artifacts,reports}` for each challenge
-4. Login hackthebox.com
+4. To achieve the tasks given by the user, when possible use the HTB_TOKEN, otherwise login to the platform using playwright at https://account.hackthebox.com/login and fill the login form with the HTB_USER and HTB_PASS
 5. If necessary, start the machines
 6. If necessary, check network connectivity to the machines
 7. Spawn and manage coordinator pool — max N concurrent agents, queue-based spawning (new agent spawns when previous completes)
@@ -22,7 +22,7 @@ context: fork
 - [coordinator-spawn.md](reference/coordinator-spawn.md) — Coordinator agent spawn prompt template (exploitation, flag submission, completion report, stats)
 - [completion-report-schema.md](../../formats/htb-completion-report.md) — Challenge completion report structure & template
 - [slack-notifications.md](reference/slack-notifications.md) — Slack completion notification format & examples
-- [platform-navigation.md](reference/platform-navigation.md) — HTB site navigation guide
+- [platform-navigation.md](reference/platform-navigation.md) — Platform site navigation guide
 - [vpn-pool-routing.md](reference/vpn-pool-routing.md) — VPN pool isolation. Pre-flight check before spawning any machine (release_arena vs dedivip_lab vs others)
 - [vpn-setup.md](reference/vpn-setup.md) — VPN connectivity troubleshooting
 - [cloudflare-bypass.md](reference/cloudflare-bypass.md) — Cloudflare detection evasion

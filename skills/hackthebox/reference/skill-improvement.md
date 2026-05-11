@@ -33,7 +33,7 @@ Identify:
 
 | Raw Finding | Generalized Version |
 |-------------|-------------------|
-| "HTB machine X had..." | "Applications using..." |
+| "Machine X had..." | "Applications using..." |
 | "Challenge flag was in /flag.txt" | "Check common flag/secret locations: env vars, /flag*, /opt/flag*" |
 | "The CTF filter blocked..." | "Keyword filters using str_replace can be bypassed via..." |
 
@@ -59,7 +59,7 @@ Use `/skill-update` or direct edits. Target files based on technique type:
 
 ## Anti-Patterns
 
-- **DO NOT** add: "In HTB challenge X, this worked..."
+- **DO NOT** add: "In challenge X, this worked..." (name-specific writeups)
 - **DO NOT** add: CTF-specific file paths as primary locations
 - **DO NOT** add: Techniques that only work in containerized/CTF environments
 - **DO NOT** clutter skills with edge cases that apply to < 5% of real targets

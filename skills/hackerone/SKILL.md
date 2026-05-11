@@ -1,167 +1,111 @@
 ---
 name: hackerone
-description: HackerOne bug bounty automation - parses scope CSVs, deploys parallel pentesting agents for each asset, validates PoCs, and generates platform-ready submission reports. Use when testing HackerOne programs or preparing professional vulnerability submissions.
+description: HackerOne bug bounty automation - parses scope CSVs, deploys parallel pentesting agents per asset, validates PoCs, and generates platform-ready submission reports.
 ---
 
-# HackerOne Bug Bounty Hunting
+# HackerOne Bug Bounty
 
-Automates HackerOne workflows: scope parsing → parallel testing → PoC validation → submission reports.
+Automates: scope parsing → parallel testing per asset → PoC validation → submission reports.
 
-## Quick Start
+## Quick start
 
-```
-1. Input: HackerOne program URL or CSV file
-2. Parse scope and program guidelines
-3. Deploy Pentester agents in parallel (one per asset)
-4. Validate PoCs (poc.py + poc_output.txt required)
-5. Generate HackerOne-formatted reports
-```
+1. Input: HackerOne program URL or scope CSV.
+2. Parse scope and program guidelines.
+3. Spawn one coordinator per eligible asset (parallel).
+4. Each coordinator runs the standard engagement flow (see `skills/coordination/SKILL.md`).
+5. Validate PoCs, generate HackerOne-formatted reports.
 
-## Workflows
-
-**Option 1: HackerOne URL**
-```
-- [ ] Fetch program data and guidelines
-- [ ] Download scope CSV
-- [ ] Parse eligible assets
-- [ ] Deploy agents in parallel
-- [ ] Validate PoCs
-- [ ] Generate submissions
-```
-
-**Option 2: CSV File**
-```
-- [ ] Parse CSV scope file
-- [ ] Extract eligible_for_submission=true assets
-- [ ] Collect program guidelines
-- [ ] Deploy agents
-- [ ] Validate and generate reports
-```
-
-## Scope CSV Format
+## Scope CSV format
 
 Expected columns:
-- `identifier` - Asset URL/domain
-- `asset_type` - URL, WILDCARD, API, CIDR
-- `eligible_for_submission` - Must be "true"
-- `max_severity` - critical, high, medium, low
-- `instruction` - Asset-specific notes
+- `identifier` — asset URL/domain.
+- `asset_type` — URL, WILDCARD, API, CIDR.
+- `eligible_for_submission` — must be `true`.
+- `max_severity` — critical / high / medium / low.
+- `instruction` — asset-specific notes.
 
-Use `tools/csv_parser.py` to parse.
+Parse with `tools/csv_parser.py`. Filter for `eligible_for_submission=true`.
 
-## Agent Deployment
+## Agent deployment
 
-**Coordinator per asset** — spawned inline using role prompts:
+One coordinator per asset, spawned in parallel:
+
 ```python
 coordinator_role = Read("skills/coordination/SKILL.md")
 Agent(prompt=f"{coordinator_role}\n\nTARGET: {asset_url}\nSCOPE: {program_guidelines}\nOUTPUT_DIR: ...",
       run_in_background=True)
 ```
 
-**Parallel Execution**:
-- 10 assets = 10 coordinator agents in parallel
-- Each spawns executor agents from `skills/coordination/reference/executor-role.md`
-- Time: 2-4 hours vs 20-40 sequential
+10 assets → 10 parallel coordinators (~2-4 h vs 20-40 h sequential). Each coordinator follows `skills/coordination/SKILL.md` and `reference/role-matrix.md`.
 
-## PoC Validation (CRITICAL)
+## PoC validation
 
-**Every finding MUST have**:
-1. `poc.py` - Executable exploit script
-2. `poc_output.txt` - Timestamped execution proof
-3. `workflow.md` - Manual steps (if applicable)
-4. Evidence screenshots/videos
+Every finding requires:
+1. `poc.py` — executable exploit script.
+2. `poc_output.txt` — timestamped execution proof.
+3. `workflow.md` — manual repro steps if applicable.
+4. Evidence screenshots / HTTP captures / video.
 
-**Experimentation**: Test edge cases, verify impact, document failures.
+Use the standard engagement-thoroughness validator + finding validators (see `skills/coordination/reference/validator-role.md`). The HackerOne PoC contract is a superset of the standard finding contract.
 
-## Report Format
+## Submission report format
 
-Required sections (HackerOne standard):
-1. Summary (2-3 sentences)
-2. Severity (CVSS + business impact)
-3. Steps to Reproduce (numbered, clear)
-4. Visual Evidence (screenshots/video)
-5. Impact (realistic attack scenario)
-6. Remediation (actionable fixes)
+Required sections per HackerOne standard:
+1. Summary (2-3 sentences).
+2. Severity (CVSS v3.1 + business impact).
+3. Steps to Reproduce (numbered, clear).
+4. Visual Evidence.
+5. Impact (realistic attack scenario).
+6. Remediation (actionable fixes).
 
-Use `tools/report_validator.py` to validate.
+Validate with `tools/report_validator.py`.
 
-## Output Structure
+## Output structure
 
-Per OUTPUT.md - Bug Bounty format:
+Standard `OUTPUT_DIR` (`skills/coordination/reference/output-discipline.md`) plus a per-asset `reports/submissions/` containing the platform-ready markdown.
 
 ```
 {OUTPUT_DIR}/
 ├── findings/
-│   ├── finding-001/
-│   │   ├── report.md           # HackerOne report
-│   │   ├── poc.py              # Validated PoC
-│   │   ├── poc_output.txt      # Proof
-│   │   └── workflow.md         # Manual steps
 ├── reports/
 │   ├── submissions/
-│   │   ├── H1_CRITICAL_001.md  # Ready to submit
+│   │   ├── H1_CRITICAL_001.md
 │   │   └── H1_HIGH_001.md
 │   └── SUBMISSION_GUIDE.md
-└── evidence/
-    ├── screenshots/
-    └── http-logs/
+├── recon/
+├── logs/
+└── artifacts/
 ```
 
-## Program Selection
+## Program selection
 
-**High-Value**:
-- New programs (< 30 days)
-- Fast response (< 24 hours)
-- High bounties (Critical: $5,000+)
-- Large attack surface
+**High-value:** new programs (< 30 days), fast response (< 24 h), high bounties, large attack surface. **Avoid:** slow response (> 1 week), low bounties, restrictive scope.
 
-**Avoid**:
-- Slow response (> 1 week)
-- Low bounties (Critical: < $500)
-- Overly restrictive scope
+## Submission checklist
 
-## Critical Rules
+- [ ] Working PoC with `poc_output.txt`.
+- [ ] CVSS v3.1 score with justification.
+- [ ] Step-by-step reproduction.
+- [ ] Visual evidence.
+- [ ] Realistic impact.
+- [ ] Remediation guidance.
+- [ ] Sensitive data sanitized.
+- [ ] Asset is `eligible_for_submission=true`.
 
-**MUST DO**:
-- Validate ALL PoCs before reporting
-- Sanitize sensitive data
-- Test only `eligible_for_submission=true` assets
-- Follow program-specific guidelines
-- Generate CVSS scores
+## Common rejections (preempt)
 
-**NEVER**:
-- Report without validated PoC
-- Test out-of-scope assets
-- Include real user data
-- Cause service disruption
-
-## Quality Checklist
-
-Before submission:
-- [ ] Working PoC with poc_output.txt
-- [ ] Accurate CVSS score
-- [ ] Step-by-step reproduction
-- [ ] Visual evidence
-- [ ] Impact analysis
-- [ ] Remediation guidance
-- [ ] Sensitive data sanitized
+| Rejection | Prevention |
+|-----------|------------|
+| Out of Scope | Verify `eligible_for_submission=true` and asset-type match |
+| Cannot Reproduce | Include `poc.py` + `poc_output.txt`; engagement-thoroughness validator catches missing artifacts |
+| Duplicate | Search disclosed reports before submission; submit quickly |
+| Insufficient Impact | Document realistic attack scenario in the report |
 
 ## Tools
 
-- `tools/csv_parser.py` - Parse HackerOne scope CSVs
-- `tools/report_validator.py` - Validate report completeness
-- `skills/coordination/SKILL.md` — Coordinator skill (spawns executors/validators)
-
-## Integration
-
-Uses `skills/coordination/SKILL.md` for coordination workflow. Follows OUTPUT.md for submission format.
-
-## Common Rejections
-
-**Out of Scope**: Check `eligible_for_submission=true`
-**Cannot Reproduce**: Validate PoC, include poc_output.txt
-**Duplicate**: Search disclosed reports, submit quickly
-**Insufficient Impact**: Show realistic attack scenario
+- `tools/csv_parser.py` — parse HackerOne scope CSVs.
+- `tools/report_validator.py` — validate report completeness.
+- `skills/coordination/SKILL.md` — coordinator scaffold.
 
 ## Usage
 

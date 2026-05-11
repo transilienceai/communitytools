@@ -1,360 +1,162 @@
 # Sensitive Data Metadata Integration Guide
 
-This guide explains how to integrate sensitive data tracking into HackerOne testing workflows.
+How to track sensitive data discovery in HackerOne workflows using `SensitiveDataTracker`.
 
 ## Quick Start
-
-### 1. Initialize Tracker
 
 ```python
 from tools.sensitive_data_tracker import SensitiveDataTracker
 
-# At the start of testing
 tracker = SensitiveDataTracker(
     program_name="ACME Corp Bug Bounty",
     asset_identifier="https://api.example.com",
-    output_dir="{OUTPUT_DIR}"
+    output_dir="{OUTPUT_DIR}",
 )
 ```
 
-### 2. Log Discoveries
+## Logging Discoveries
 
 ```python
-# When credentials are found
+# Credentials
 tracker.add_credentials(
-    username="admin",
-    password_hash="$2y$10$abc123...",
-    account_type="admin",
-    location="SQL injection in /search endpoint",
-    finding_id="finding-001",
+    username="admin", password_hash="$2y$10$abc...", account_type="admin",
+    location="SQLi in /search", finding_id="finding-001",
     hash_algorithm="bcrypt",
-    evidence={
-        "poc_script": "findings/finding-001/poc.py",
-        "screenshot": "evidence/screenshots/finding-001-admin-panel.png"
-    }
+    evidence={"poc_script": "findings/finding-001/poc.py",
+              "screenshot": "evidence/screenshots/finding-001-admin.png"},
 )
 
-# When API key is found
+# API keys
 tracker.add_api_key(
-    key_id="sk_live_abc123xyz",
-    key_preview="sk_live_****...xyz",
+    key_id="sk_live_abc123xyz", key_preview="sk_live_****...xyz",
     scope=["read:users", "write:data", "admin"],
     location="Hardcoded in React app.js",
-    finding_id="finding-003",
-    token_type="Stripe API Key"
+    finding_id="finding-003", token_type="Stripe API Key",
 )
 
-# When private key is found
+# Private keys
 tracker.add_private_key(
-    key_type="RSA",
-    key_length=2048,
-    purpose="AWS EC2 key pair for production",
-    location=".git/config in repository",
+    key_type="RSA", key_length=2048,
+    purpose="AWS EC2 prod key pair",
+    location=".git/config in repo",
     finding_id="finding-005",
-    systems_accessible=["prod-api", "prod-db", "prod-cache"]
+    systems_accessible=["prod-api", "prod-db", "prod-cache"],
 )
 
-# When database credentials found
+# Database credentials
 tracker.add_database_credentials(
-    database_type="PostgreSQL",
-    host="db.internal.company.com",
-    port=5432,
+    database_type="PostgreSQL", host="db.internal.company.com", port=5432,
     database_name="production_users",
-    location="Config file accessible via path traversal",
-    finding_id="finding-002",
-    records_affected=2547,
-    evidence={
-        "poc_script": "findings/finding-002/poc.py",
-        "data_sample": "evidence/http-captures/finding-002-db-dump.txt"
-    }
+    location="Config file via path traversal",
+    finding_id="finding-002", records_affected=2547,
+    evidence={"poc_script": "findings/finding-002/poc.py",
+              "data_sample": "evidence/http-captures/finding-002-db-dump.txt"},
 )
 
-# When PII is accessed
+# PII access
 tracker.add_user_pii(
     pii_types=["email", "phone", "home_address", "dob"],
     records_affected=2547,
-    location="Database accessible via SQL injection",
-    finding_id="finding-001",
+    location="DB via SQLi", finding_id="finding-001",
     affected_jurisdictions=["EU", "California"],
-    evidence={
-        "sample_record": "evidence/screenshots/finding-001-pii-sample.png",
-        "count_proof": "evidence/http-captures/finding-001-record-count.txt"
-    }
+    evidence={"sample_record": "evidence/screenshots/finding-001-pii-sample.png",
+              "count_proof": "evidence/http-captures/finding-001-record-count.txt"},
 )
 ```
 
-### 3. Finalize & Export
+## Finalize and Export
 
 ```python
-# At end of testing
 tracker.finalize()
-
-# Generate markdown report
-report_path = tracker.export_summary()
-print(f"Report saved to: {report_path}")
-
-# JSON metadata automatically saved to:
-# {OUTPUT_DIR}/artifacts/sensitive_data_metadata.json
+report_path = tracker.export_summary()  # markdown
+# JSON saved to {OUTPUT_DIR}/artifacts/sensitive_data_metadata.json
 ```
-
----
 
 ## Integration Points
 
-### In HackerOne Hunter Agent
+### Hunter agent
+
+Initialize at testing start, process each returned finding through a dispatch helper that maps `credentials_found`, `api_keys_found`, `private_keys_found`, etc. into the corresponding `tracker.add_*` calls. Call `tracker.finalize()` and `tracker.export_summary()` at the end.
 
 ```python
-# Phase 1: Initialize
-tracker = SensitiveDataTracker(
-    program_name=program_name,
-    asset_identifier=asset["identifier"],
-    output_dir=f"{OUTPUT_DIR}"
-)
-
-# Phase 2: During testing
-# When Pentester agents discover sensitive data, they report back
-# findings that include sensitive data indicators
-
 def process_finding(finding_data, tracker):
-    """Process finding and extract sensitive data indicators"""
-
-    # Check for credentials in finding
-    if "credentials_found" in finding_data:
-        for cred in finding_data["credentials_found"]:
-            tracker.add_credentials(
-                username=cred["username"],
-                password_hash=cred["password_hash"],
-                account_type=cred["type"],
-                location=cred["location"],
-                finding_id=finding_data["finding_id"]
-            )
-
-    # Check for API keys
-    if "api_keys_found" in finding_data:
-        for key in finding_data["api_keys_found"]:
-            tracker.add_api_key(
-                key_id=key["key_id"],
-                key_preview=key["preview"],
-                scope=key["scope"],
-                location=key["location"],
-                finding_id=finding_data["finding_id"],
-                token_type=key["type"]
-            )
-
-    # ... handle other sensitive data types
-
-# Phase 3: Finalize
-tracker.finalize()
-tracker.export_summary()
+    for cred in finding_data.get("credentials_found", []):
+        tracker.add_credentials(
+            username=cred["username"], password_hash=cred["password_hash"],
+            account_type=cred["type"], location=cred["location"],
+            finding_id=finding_data["finding_id"],
+        )
+    for key in finding_data.get("api_keys_found", []):
+        tracker.add_api_key(
+            key_id=key["key_id"], key_preview=key["preview"],
+            scope=key["scope"], location=key["location"],
+            finding_id=finding_data["finding_id"], token_type=key["type"],
+        )
+    # ... handle other categories
 ```
 
-### In Pentester Agent
+### Pentester agent — extracting indicators from PoC output
 
-When Pentester deploys specialized agents, collect sensitive data indicators:
+Inspect `poc_output.txt` and tag indicators by regex match before passing to the tracker.
 
 ```python
-def collect_sensitive_data_indicators(finding):
-    """Extract sensitive data from vulnerability finding"""
-
-    indicators = {
-        "credentials_found": [],
-        "api_keys_found": [],
-        "private_keys_found": [],
-        "database_credentials": [],
-        "user_pii_accessed": [],
-        "config_data_exposed": []
-    }
-
-    # Check PoC output for credentials
-    with open(finding["poc_output.txt"]) as f:
-        poc_output = f.read()
-
-    # Regex patterns for detection
+def collect_indicators(finding):
+    indicators = {k: [] for k in
+        ("credentials_found","api_keys_found","private_keys_found",
+         "database_credentials","user_pii_accessed","config_data_exposed")}
+    poc_output = open(finding["poc_output.txt"]).read()
     if re.search(r"username[:\s]+\w+", poc_output):
-        indicators["credentials_found"].append({
-            "detected_in": "poc_output",
-            "type": "username"
-        })
-
-    # Check for API key patterns
+        indicators["credentials_found"].append({"detected_in": "poc_output", "type": "username"})
     if re.search(r"(sk_live|pk_test|Bearer|Authorization)", poc_output):
-        indicators["api_keys_found"].append({
-            "detected_in": "poc_output",
-            "type": "api_key"
-        })
-
-    # Check for private key patterns
+        indicators["api_keys_found"].append({"detected_in": "poc_output", "type": "api_key"})
     if re.search(r"-----BEGIN.*PRIVATE KEY-----", poc_output):
-        indicators["private_keys_found"].append({
-            "detected_in": "poc_output",
-            "type": "private_key"
-        })
-
+        indicators["private_keys_found"].append({"detected_in": "poc_output", "type": "private_key"})
     return indicators
 ```
 
----
+## Detection Patterns
 
-## Sensitive Data Detection Patterns
-
-### Credentials
 ```python
 CREDENTIAL_PATTERNS = [
     r"username[:\s]+(['\"]?)(\w+)\1",
     r"password[:\s]+(['\"]?)(.+?)\1",
     r"user[:\s]+(['\"]?)(\w+)\1",
     r"pass[:\s]+(['\"]?)(.+?)\1",
-    r"admin[:\s]+(['\"]?)(\w+)\1"
+    r"admin[:\s]+(['\"]?)(\w+)\1",
 ]
-```
-
-### API Keys
-```python
 API_KEY_PATTERNS = [
     r"(sk_live|sk_test)_[A-Za-z0-9]{20,}",
     r"(pk_live|pk_test)_[A-Za-z0-9]{20,}",
     r"Bearer\s+[A-Za-z0-9._\-]+",
     r"Authorization[:\s]+Bearer\s+\S+",
-    r"api[_-]?key[:\s]+(['\"]?)([A-Za-z0-9_\-]+)\1"
+    r"api[_-]?key[:\s]+(['\"]?)([A-Za-z0-9_\-]+)\1",
 ]
-```
-
-### Private Keys
-```python
 PRIVATE_KEY_PATTERNS = [
     r"-----BEGIN\s+(?:RSA\s+)?PRIVATE KEY-----",
     r"-----BEGIN\s+EC\s+PRIVATE KEY-----",
     r"-----BEGIN\s+OPENSSH PRIVATE KEY-----",
-    r"-----BEGIN\s+PGP PRIVATE KEY BLOCK-----"
+    r"-----BEGIN\s+PGP PRIVATE KEY BLOCK-----",
 ]
-```
-
-### Database Credentials
-```python
 DB_CREDENTIAL_PATTERNS = [
     r"(mongodb|postgres|mysql|mssql)://([^:]+):([^@]+)@",
     r"db[_-]?(user|pass)[:\s]+(['\"]?)(.+?)\2",
     r"database[_-]?(url|connection)[:\s]+(['\"]?)(.+?)\3",
-    r"jdbc:.*://(.*):(.*)@"
+    r"jdbc:.*://(.*):(.*)@",
 ]
-```
-
-### PII
-```python
 PII_PATTERNS = {
     "email": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
     "phone": r"\+?1?\s*\(?(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})",
     "ssn": r"\d{3}-\d{2}-\d{4}",
-    "credit_card": r"\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}"
+    "credit_card": r"\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}",
 }
 ```
 
----
+## Output
 
-## Output Examples
+- `{OUTPUT_DIR}/artifacts/sensitive_data_metadata.json` — per-finding records with `program`, `asset_identifier`, dates, `sensitive_data_categories` (credentials / api_keys_and_tokens / private_data / configuration_data / user_pii / other_sensitive), and `summary` block.
+- `{OUTPUT_DIR}/reports/sensitive_data_report.md` — summary grouped by severity, immediate actions, remediation timeline (0-1h / 1-24h / 1-7d / 30d+).
 
-### sensitive_data_metadata.json
-
-```json
-{
-  "program": "ACME Corp",
-  "asset_identifier": "https://api.example.com",
-  "testing_date_start": "2025-01-16T10:00:00Z",
-  "testing_date_end": "2025-01-16T14:30:00Z",
-  "sensitive_data_categories": {
-    "credentials": [
-      {
-        "type": "username_password",
-        "location": "SQL injection in /search",
-        "finding_id": "finding-001",
-        "discovered_date": "2025-01-16T10:35:00Z",
-        "severity": "CRITICAL",
-        "status": "discovered"
-      }
-    ],
-    "api_keys_and_tokens": [
-      {
-        "type": "api_key",
-        "location": "Hardcoded in React app",
-        "finding_id": "finding-003",
-        "severity": "HIGH",
-        "status": "discovered"
-      }
-    ]
-  },
-  "summary": {
-    "total_items_discovered": 12,
-    "by_category": {
-      "credentials": 1,
-      "api_keys_and_tokens": 2,
-      "private_data": 1,
-      "configuration_data": 2,
-      "user_pii": 1,
-      "other_sensitive": 5
-    },
-    "by_severity": {
-      "CRITICAL": 4,
-      "HIGH": 5,
-      "MEDIUM": 3,
-      "LOW": 0,
-      "INFO": 0
-    },
-    "highest_risk_finding": "finding-001"
-  }
-}
-```
-
-### sensitive_data_report.md
-
-```markdown
-# Sensitive Data Discovery Report
-
-**Program**: ACME Corp
-**Asset**: https://api.example.com
-**Testing Period**: 2025-01-16 10:00 AM - 2:30 PM UTC
-**Total Items Discovered**: 12
-
-## Summary by Severity
-
-### CRITICAL (4 items)
-- 1x Admin credentials (SQL injection)
-- 1x Database connection string (Path traversal)
-- 1x SSH private key (.git exposure)
-- 2547 user records with PII (Database access)
-
-### HIGH (5 items)
-- 2x API keys (JavaScript hardcoding)
-- 1x OAuth tokens (localStorage)
-- 2x Service account credentials
-
-### MEDIUM (3 items)
-- 3x Internal IP addresses (Error messages)
-
-## Immediate Actions Required
-
-- [ ] Rotate all discovered credentials
-- [ ] Revoke API keys and tokens
-- [ ] Disable SSH private key
-- [ ] Change database credentials
-- [ ] Lock affected user accounts
-- [ ] Notify 2547 affected users per GDPR
-- [ ] Audit access logs for each credential
-
-## Remediation Timeline
-
-**0-1 hour**: Emergency credential revocation
-**1-24 hours**: Access audit and user notification
-**1-7 days**: Implementation of security fixes
-**30+ days**: Long-term architectural improvements
-```
-
----
-
-## Privacy & Data Handling
-
-### Redaction Rules
-
-All sensitive data should be redacted in reports using these rules:
+## Privacy and Redaction
 
 ```python
 REDACTION_RULES = {
@@ -367,72 +169,31 @@ REDACTION_RULES = {
     "phone": "[REDACTED]",
     "email": "[REDACTED]",
     "ip_address": "redacted",
-    "database_host": "[REDACTED]"
+    "database_host": "[REDACTED]",
 }
 ```
 
-### Legal Compliance
-
-**GDPR Requirements**:
-- Document what personal data was accessed
-- Notify supervisory authority within 72 hours if high risk
-- Notify individuals if their data was breached
-- File incident report with national DPA
-
-**CCPA Requirements**:
-- Document what California residents' data was accessed
-- Provide individuals with right to access/delete
-- File breach notification if personal information involved
-
-**General Best Practices**:
-- Minimize PII exposure in reports
-- Secure all sensitive data during testing
-- Use secure channels for sensitive communications
-- Implement least-privilege access
-- Follow responsible disclosure timeline
-
----
+**GDPR**: document personal-data accessed; notify supervisory authority within 72h on high risk; notify individuals if breached. **CCPA**: document Californian residents' data; respect access/delete rights; file breach notice if PII involved. **General**: minimize PII in reports, secure data in transit/storage, follow responsible-disclosure timeline.
 
 ## Validation Checklist
 
-Before submitting to HackerOne, verify:
-
-- [ ] `sensitive_data_metadata.json` generated
-- [ ] All discovered sensitive data items documented
-- [ ] Each item has `discovered_date` timestamp
-- [ ] Evidence references link to PoC/screenshots
-- [ ] Impact assessment completed
-- [ ] Severity levels assigned correctly
-- [ ] Remediation guidance provided
-- [ ] Data properly redacted in markdown reports
-- [ ] GDPR/CCPA implications noted if PII found
-- [ ] Highest risk findings identified
-- [ ] `sensitive_data_report.md` generated
-
----
+- [ ] `sensitive_data_metadata.json` generated; each item has `discovered_date`
+- [ ] Evidence references resolve to PoC / screenshots
+- [ ] Severity assigned correctly; impact assessed; remediation guidance present
+- [ ] Markdown report properly redacted; GDPR/CCPA implications noted on PII
+- [ ] Highest-risk finding identified; `sensitive_data_report.md` generated
 
 ## Troubleshooting
 
-### Q: Sensitive data not being tracked
-A: Ensure tracker is initialized at start of testing and discoveries are logged immediately when found
-
-### Q: JSON metadata incomplete
-A: Check that `tracker.finalize()` is called at end of testing before exporting
-
-### Q: Report not generated
-A: Run `tracker.export_summary()` after finalize, verify output directory exists
-
-### Q: Unsure what data to track
-A: Reference `formats/sensitive-data-metadata.md` for all 6 categories and examples
-
----
+- Not tracked → tracker not initialized at start, or discovery not logged.
+- Incomplete JSON → `tracker.finalize()` not called before export.
+- Report missing → call `tracker.export_summary()` after `finalize()`; ensure output dir exists.
+- Unsure what to track → see `formats/sensitive-data-metadata.md` for the 6 categories.
 
 ## References
 
-- `formats/sensitive-data-metadata.md` - Complete standards
-- `.claude/skills/hackerone/tools/sensitive_data_tracker.py` - Implementation tool
+- `formats/sensitive-data-metadata.md`
+- `.claude/skills/hackerone/tools/sensitive_data_tracker.py`
 - GDPR: https://gdpr-info.eu/
 - CCPA: https://oag.ca.gov/privacy/ccpa
 - HackerOne: https://www.hackerone.com/
-
----

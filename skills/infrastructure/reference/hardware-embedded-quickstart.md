@@ -67,7 +67,7 @@ Once decoded, dump frames grouped by CAN ID. Repeated payloads on a single ID wi
 
 **Practical**: parallelize with `ThreadPoolExecutor(max_workers=8–10)`, fresh socket per query. 6–10 traces per candidate is usually enough; bump to 25–40 only on ambiguous positions. Restrict the charset to expected (printable ASCII + `{}_!`); recovery time scales linearly with `|charset|`.
 
-Once a clear prefix forms (e.g., `HTB{`, dictionary words), **predict and submit early** — don't burn cycles recovering the closing brace.
+Once a clear prefix forms (e.g., `FLAG{`, dictionary words), **predict and submit early** — don't burn cycles recovering the closing brace.
 
 ## 4. Legacy CPU Hardware Bugs
 

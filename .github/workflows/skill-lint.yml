@@ -1,0 +1,26 @@
+name: Skill Linter
+
+on:
+  pull_request:
+    paths:
+      - 'skills/**'
+      - 'CLAUDE.md'
+      - 'scripts/skill_linter.py'
+      - '.github/workflows/skill-lint.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'skills/**'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run skill linter
+        run: python3 scripts/skill_linter.py

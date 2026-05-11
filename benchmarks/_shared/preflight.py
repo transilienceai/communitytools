@@ -64,13 +64,22 @@ def check_agent_prerequisites(
     return all_ok
 
 
-def check_claude_auth(api_key: Optional[str] = None) -> bool:
+def check_claude_auth(
+    api_key: Optional[str] = None,
+    *,
+    base_url: Optional[str] = None,
+    auth_token: Optional[str] = None,
+) -> bool:
     """Verify Claude CLI can authenticate with a tiny smoke test."""
     print("Checking Claude CLI authentication...")
     env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
     resolved_key = resolve_anthropic_key(api_key)
     if resolved_key:
         env["ANTHROPIC_API_KEY"] = resolved_key
+    if base_url:
+        env["ANTHROPIC_BASE_URL"] = base_url
+    if auth_token:
+        env["ANTHROPIC_AUTH_TOKEN"] = auth_token
     try:
         result = subprocess.run(
             ["claude", "--print", "-p", 'Say "auth ok"'],

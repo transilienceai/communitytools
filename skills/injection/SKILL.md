@@ -33,3 +33,5 @@ Test for injection vulnerabilities across all input vectors. Covers SQL, NoSQL, 
 - `reference/os-command-injection*.md` - OS command injection
 - `reference/ssti*.md` - Server-side template injection
 - `reference/xxe*.md` - XML external entity injection
+- `reference/ldap-injection-quickstart.md` - LDAP filter injection: detection, auth bypass, blind boolean extraction via `(description=PREFIX*)` chaining
+- `reference/xpath-injection-quickstart.md` - XPath injection (CWE-643): lxml/Java/Node sinks, `' or '1'='1' or 'a'='b` boolean oracle, blind char-by-char extraction recipe

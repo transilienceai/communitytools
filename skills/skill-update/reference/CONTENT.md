@@ -1,556 +1,188 @@
 # Content Writing Guidelines
 
-Complete guide to writing effective content for Claude skills following Anthropic best practices.
+How to write effective content for Claude skills.
 
-## Core Writing Principles
+## Core Principles
 
-### 1. Concise is Key
+1. **Concise** — challenge every token. Skip explanations Claude already has (what PDFs are, what `pip` does, importing libraries). Spend tokens on domain knowledge, project conventions, file locations, custom workflows.
 
-**The context window is a public good.** Challenge every token you add:
-- Does Claude really need this explanation?
-- Can I assume Claude knows this?
-- Does this paragraph justify its token cost?
+2. **Third person** — descriptions are injected into system prompts.
+   - Good: "Processes Excel files and generates reports"
+   - Bad: "I can help you process Excel files" / "You can use this to..."
 
-**Good example** (50 tokens):
-````markdown
-## Extract PDF text
+3. **Consistent terminology** — pick one term per concept and stay with it (always "field", not a mix of "field/box/element/control").
 
-Use pdfplumber for text extraction:
-
-```python
-import pdfplumber
-
-with pdfplumber.open("file.pdf") as pdf:
-    text = pdf.pages[0].extract_text()
-```
-````
-
-**Bad example** (150 tokens):
-```markdown
-## Extract PDF text
-
-PDF (Portable Document Format) files are a common file format that contains
-text, images, and other content. To extract text from a PDF, you'll need to
-use a library. There are many libraries available for PDF processing, but we
-recommend pdfplumber because it's easy to use and handles most cases well.
-First, you'll need to install it using pip. Then you can use the code below...
-```
-
-**Why bad**: Over-explains what Claude already knows (PDFs, libraries, pip)
-
-### 2. Default Assumption: Claude is Smart
-
-Only add context Claude doesn't have:
-- Domain-specific knowledge ✓
-- Project-specific conventions ✓
-- Specific file locations ✓
-- Custom workflows ✓
-- What PDFs are ✗
-- How to import libraries ✗
-- What pip does ✗
-
-### 3. Write in Third Person
-
-Skill descriptions are injected into system prompts. Use third person:
-
-- ✓ **Good**: "Processes Excel files and generates reports"
-- ✗ **Bad**: "I can help you process Excel files"
-- ✗ **Bad**: "You can use this to process Excel files"
+4. **No time-sensitive content** — instead of "after August 2025 use new API", document the current method and put deprecated info in a `<details>` block.
 
 ## Content Structure
 
-### Quick Start Section
+### Quick Start section
 
-**Purpose**: Get users productive immediately
+Get users productive fast: most-common use case + checklist + reference to main workflow.
 
-**Structure**:
-1. Most common use case
-2. Checklist for tracking progress
-3. Reference to main workflow
-
-**Example**:
 ````markdown
 ## Quick Start
-
-**Most common use case**:
 1. Copy this checklist:
 ```
-Progress:
-- [ ] Step 1: Analyze form structure
-- [ ] Step 2: Extract field definitions
-- [ ] Step 3: Validate field mappings
+- [ ] Step 1: Analyze form
+- [ ] Step 2: Extract fields
+- [ ] Step 3: Validate mapping
 - [ ] Step 4: Fill form
 - [ ] Step 5: Verify output
 ```
-
-2. Follow workflow below
+2. Follow workflow below.
 ````
 
-### Workflow Sections
+### Workflows always have checklists
 
-**Always include checklists** for multi-step processes:
+Multi-step processes get an explicit checklist plus a per-step section that names the exact script or action.
 
 ````markdown
-## PDF Form Filling Workflow
-
-Copy this checklist and track progress:
-
-```
-Task Progress:
-- [ ] Step 1: Analyze the form
-- [ ] Step 2: Create field mapping
-- [ ] Step 3: Validate mapping
-- [ ] Step 4: Fill the form
-- [ ] Step 5: Verify output
-```
-
 **Step 1: Analyze the form**
-
 Run: `python scripts/analyze_form.py input.pdf`
-
-This extracts form fields and saves to `fields.json`.
+Outputs `fields.json`.
 
 **Step 2: Create field mapping**
-
 Edit `fields.json` to add values for each field.
 
-**Step 3: Validate mapping**
-
-Run: `python scripts/validate_fields.py fields.json`
-
-Fix any validation errors before continuing.
-
-**Step 4: Fill the form**
-
-Run: `python scripts/fill_form.py input.pdf fields.json output.pdf`
-
-**Step 5: Verify output**
-
-Run: `python scripts/verify_output.py output.pdf`
-
-If verification fails, return to Step 2.
+**Step 3: Validate**
+Run: `python scripts/validate_fields.py fields.json` and fix errors before continuing.
 ````
 
-### Set Appropriate Degrees of Freedom
+### Match degrees of freedom to task fragility
 
-Match specificity to task fragility:
+- **High freedom** — text-only instructions for stable, judgment-driven work (code review, prose writing).
+- **Medium freedom** — pseudocode / templates for tasks where shape matters but details vary.
+- **Low freedom** — exact commands when correctness depends on the literal command. Example: `python scripts/migrate.py --verify --backup`.
 
-**High freedom** (text-based instructions):
-```markdown
-## Code Review Process
+## Patterns
 
-1. Analyze code structure and organization
-2. Check for potential bugs or edge cases
-3. Suggest improvements for readability
-4. Verify adherence to project conventions
-```
+### Template
 
-**Medium freedom** (pseudocode/templates):
-````markdown
-## Generate Report
+For strict requirements, give the exact template. For flexible guidance, give a default and explicitly note "use your best judgment, adjust sections as needed".
 
-Use this template and customize as needed:
+### Examples (input/output pairs)
 
-```python
-def generate_report(data, format="markdown", include_charts=True):
-    # Process data
-    # Generate output in specified format
-    # Optionally include visualizations
-```
-````
-
-**Low freedom** (exact scripts):
-````markdown
-## Database Migration
-
-Run exactly this script:
-
-```bash
-python scripts/migrate.py --verify --backup
-```
-
-Do not modify the command or add additional flags.
-````
-
-## Common Content Patterns
-
-### Template Pattern
-
-**For strict requirements**:
-````markdown
-## Report Structure
-
-ALWAYS use this exact template structure:
-
-```markdown
-# [Analysis Title]
-
-## Executive Summary
-[One-paragraph overview]
-
-## Key Findings
-- Finding 1 with data
-- Finding 2 with data
-
-## Recommendations
-1. Specific recommendation
-2. Specific recommendation
-```
-````
-
-**For flexible guidance**:
-````markdown
-## Report Structure
-
-Here is a sensible default format, but use your best judgment:
-
-```markdown
-# [Analysis Title]
-
-## Executive Summary
-[Overview]
-
-## Key Findings
-[Adapt based on what you discover]
-
-## Recommendations
-[Tailor to specific context]
-```
-
-Adjust sections as needed for the specific analysis type.
-````
-
-### Examples Pattern
-
-Provide input/output pairs for quality-dependent tasks:
+For quality-dependent tasks, show pairs:
 
 ````markdown
-## Commit Message Format
-
-Generate commit messages following these examples:
-
-**Example 1:**
-Input: Added user authentication with JWT tokens
+Input: Added user auth with JWT tokens
 Output:
 ```
 feat(auth): implement JWT-based authentication
 
 Add login endpoint and token validation middleware
 ```
-
-**Example 2:**
-Input: Fixed bug where dates displayed incorrectly
-Output:
-```
-fix(reports): correct date formatting in timezone conversion
-
-Use UTC timestamps consistently across report generation
-```
-
-Follow this style: type(scope): brief description, then detailed explanation.
 ````
 
-### Conditional Workflow Pattern
+### Conditional workflow
 
-Guide Claude through decision points:
+Branch on a decision point with named workflows:
 
 ```markdown
-## Document Processing Workflow
+Determine type:
+  Creating new content?  → "Creation workflow"
+  Editing existing?      → "Editing workflow"
 
-1. Determine document type:
-
-   **Creating new content?** → Follow "Creation workflow" below
-   **Editing existing content?** → Follow "Editing workflow" below
-
-2. Creation workflow:
-   - Use docx-js library
-   - Build document from scratch
-   - Export to .docx format
-
-3. Editing workflow:
-   - Unpack existing document
-   - Modify XML directly
-   - Validate after each change
-   - Repack when complete
+Creation workflow: use docx-js, build from scratch, export to .docx.
+Editing workflow:  unpack, modify XML, validate after each change, repack.
 ```
 
-### Feedback Loop Pattern
-
-Dramatically improves quality:
+### Feedback loop
 
 ```markdown
-## Validation Process
-
-1. Create your output
-2. **Validate immediately**: `python validate.py output.json`
-3. If validation fails:
-   - Review errors carefully
-   - Fix issues
-   - Run validation again
-4. **Only proceed when validation passes**
-5. Finalize and save
+1. Create output
+2. Validate immediately: `python validate.py output.json`
+3. If validation fails: review errors, fix, re-validate
+4. Only proceed when validation passes
+5. Finalize
 ```
 
 ## Progressive Disclosure
 
-### When to Link to Reference Files
+**Link to a reference file when**: content > 100 lines, detailed API docs, extended examples, advanced features, domain-specific deep-dives.
 
-**Link when**:
-- Content > 100 lines
-- Detailed API documentation
-- Extended examples
-- Advanced features
-- Domain-specific information
+**Keep in SKILL.md when**: core workflow (< 50 lines), quick start, common patterns, overview.
 
-**Keep in SKILL.md when**:
-- Core workflow (< 50 lines)
-- Quick start guide
-- Common patterns
-- Overview content
+**Linking patterns**:
+- Brief overview + link to deeper file
+- Section list with one link per section
+- Contextual inline links (`For Excel see EXCEL.md, for JSON see JSON.md`)
 
-### How to Link Effectively
-
-**Pattern 1: Brief overview + link**:
-```markdown
-## Form Filling
-
-Basic usage:
-[20 lines of quick start]
-
-For advanced form filling features, see [FORMS.md](reference/FORMS.md).
-```
-
-**Pattern 2: Section list + links**:
-```markdown
-## Advanced Features
-
-**Form filling**: See [FORMS.md](reference/FORMS.md) for complete guide
-**API reference**: See [REFERENCE.md](reference/REFERENCE.md) for all methods
-**Examples**: See [EXAMPLES.md](reference/EXAMPLES.md) for common patterns
-```
-
-**Pattern 3: Contextual links**:
-```markdown
-## Data Processing
-
-Process CSV files:
-[code example]
-
-For Excel files, see [EXCEL.md](reference/EXCEL.md).
-For JSON processing, see [JSON.md](reference/JSON.md).
-```
-
-### Reference File Table of Contents
-
-For files > 100 lines, include TOC at top:
+For reference files > 100 lines, include a contents list at the top so partial reads still see scope:
 
 ```markdown
 # API Reference
 
 ## Contents
 - Authentication and setup
-- Core methods (create, read, update, delete)
-- Advanced features (batch operations, webhooks)
-- Error handling patterns
+- Core methods (CRUD)
+- Advanced features (batch, webhooks)
+- Error handling
 - Code examples
-
-## Authentication and Setup
-[content]
-
-## Core Methods
-[content]
 ```
 
-**Why**: Ensures Claude sees full scope even with partial reads
+## Scripts
 
-## Avoid Time-Sensitive Content
+### Solve, don't punt
 
-**Bad example** (will become wrong):
-```markdown
-If you're doing this before August 2025, use the old API.
-After August 2025, use the new API.
-```
+Handle errors so the script makes progress; don't fail silently and expect Claude to figure it out.
 
-**Good example** (use "old patterns" section):
-```markdown
-## Current Method
-
-Use the v2 API endpoint: `api.example.com/v2/messages`
-
-## Old Patterns
-
-<details>
-<summary>Legacy v1 API (deprecated 2025-08)</summary>
-
-The v1 API used: `api.example.com/v1/messages`
-
-This endpoint is no longer supported.
-</details>
-```
-
-## Consistent Terminology
-
-**Choose one term** and use it throughout:
-
-**Good - Consistent**:
-- Always "API endpoint"
-- Always "field"
-- Always "extract"
-
-**Bad - Inconsistent**:
-- Mix "API endpoint", "URL", "API route", "path"
-- Mix "field", "box", "element", "control"
-- Mix "extract", "pull", "get", "retrieve"
-
-## Writing for Scripts
-
-### Solve, Don't Punt
-
-**Good example** (handles errors):
 ```python
 def process_file(path):
-    """Process file, creating if it doesn't exist."""
+    """Process file, creating if missing."""
     try:
         with open(path) as f:
             return f.read()
     except FileNotFoundError:
-        # Create with default content instead of failing
         print(f"File {path} not found, creating default")
         with open(path, 'w') as f:
             f.write('')
         return ''
     except PermissionError:
-        # Provide alternative instead of failing
         print(f"Cannot access {path}, using default")
         return ''
 ```
 
-**Bad example** (punts to Claude):
+### Document config (no magic numbers)
+
 ```python
-def process_file(path):
-    # Just fail and let Claude figure it out
-    return open(path).read()
-```
-
-### Document Configuration
-
-Avoid "voodoo constants":
-
-**Good example** (self-documenting):
-```python
-# HTTP requests typically complete within 30 seconds
-# Longer timeout accounts for slow connections
+# HTTP requests typically complete within 30s; longer covers slow links
 REQUEST_TIMEOUT = 30
-
 # Three retries balances reliability vs speed
-# Most intermittent failures resolve by second retry
 MAX_RETRIES = 3
 ```
 
-**Bad example** (magic numbers):
-```python
-TIMEOUT = 47  # Why 47?
-RETRIES = 5   # Why 5?
-```
+### Make execution intent clear
 
-### Make Execution Intent Clear
+Distinguish "run this" from "read this for the algorithm":
 
-**For scripts to execute**:
 ```markdown
 Run `analyze_form.py` to extract fields:
-```bash
-python scripts/analyze_form.py input.pdf > fields.json
+`python scripts/analyze_form.py input.pdf > fields.json`
+
+(or: "See `analyze_form.py` for the field-extraction algorithm.")
 ```
 
-**For scripts as reference**:
-```markdown
-See `analyze_form.py` for the field extraction algorithm.
-```
+## Anti-Patterns
 
-## Anti-Patterns to Avoid
-
-### 1. Too Many Options
-
-**Bad**:
-"You can use pypdf, or pdfplumber, or PyMuPDF, or pdf2image, or..."
-
-**Good**:
-````markdown
-Use pdfplumber for text extraction:
-```python
-import pdfplumber
-```
-
-For scanned PDFs requiring OCR, use pdf2image with pytesseract instead.
-````
-
-### 2. Explaining the Obvious
-
-**Bad**:
-"Python is a programming language. To use a library, you need to import it. The import statement loads the library into your program."
-
-**Good**:
-````markdown
-```python
-import pdfplumber
-```
-````
-
-### 3. Vague Instructions
-
-**Bad**:
-"Process the data appropriately"
-
-**Good**:
-"Parse CSV rows, validate email format, filter invalid entries"
-
-### 4. Missing Context for Why
-
-**Bad**:
-"Use this command: `git commit --amend --no-edit`"
-
-**Good**:
-"Add changes to the previous commit without modifying the message:
-`git commit --amend --no-edit`"
+- **Too many options** — pick one preferred tool/approach; mention alternatives only when context demands.
+- **Explaining the obvious** — "Python is a programming language" wastes tokens.
+- **Vague instructions** — "process the data appropriately" → "parse CSV rows, validate email format, drop invalid entries".
+- **No "why"** — `git commit --amend --no-edit` should come with "to add changes to the previous commit without rewriting the message".
 
 ## Content Checklist
 
-Before finalizing content:
+**Quality**: concise, assumes Claude is smart, third person, consistent terminology, no time-sensitive content, clear workflows with checklists, freedom matches task.
 
-### Core Quality
-- [ ] Concise (no unnecessary explanations)
-- [ ] Assumes Claude is smart
-- [ ] Third person for all descriptions
-- [ ] Consistent terminology
-- [ ] No time-sensitive information
-- [ ] Clear workflows with checklists
-- [ ] Appropriate degree of freedom
+**Structure**: quick start present, workflows have checklists, examples concrete, progressive disclosure used, references one level deep, long files have contents list.
 
-### Structure
-- [ ] Quick start section present
-- [ ] Workflows have checklists
-- [ ] Examples are concrete
-- [ ] Progressive disclosure used
-- [ ] References one level deep
-- [ ] Long files have table of contents
+**Scripts/code**: scripts handle errors, config documented, intent clear, no magic numbers.
 
-### Scripts and Code
-- [ ] Scripts solve problems, don't punt
-- [ ] Error handling is explicit
-- [ ] Configuration is documented
-- [ ] Execution intent is clear
-- [ ] No magic numbers
-
-### Patterns
-- [ ] Templates provided where needed
-- [ ] Examples show input/output
-- [ ] Conditional workflows guide decisions
-- [ ] Feedback loops for quality-critical tasks
-
-## Examples
+**Patterns**: templates where strictness matters, input/output examples for quality-critical work, conditional workflows for decision points, feedback loops for verifiable tasks.
 
 ## Reference
 
-- [Conciseness](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices#concise-is-key)
+- [Concise is Key](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices#concise-is-key)
 - [Degrees of Freedom](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices#set-appropriate-degrees-of-freedom)
 - [Common Patterns](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices#common-patterns)

@@ -49,6 +49,15 @@ Closes #
 - [ ] No secrets, credentials, or unauthorized target information included
 - [ ] This PR links to an issue with `Closes #N`
 
+## Skill / agent checklist (if PR touches `skills/`)
+
+- [ ] `python3 scripts/skill_linter.py` runs clean (or rationale below).
+- [ ] No new challenge-specific identifiers outside `skills/hackthebox/` (no machine names, no XBEN/Vulnlab IDs, no preserved `FLAG{...}` literals, no lab IPs).
+- [ ] `SKILL.md` ≤ 150 lines; `reference/*.md` ≤ 200 lines; `reference/scenarios/*.md` ≤ 400 lines.
+- [ ] No new `DO NOT` / `MUST NOT` / `NEVER` outside `## Anti-Patterns` (unless file is in linter's hard-contract allowlist).
+- [ ] Cross-cutting rules (brute-force, output-discipline, env-reader, skill-update) live in exactly one canonical home; other files reference it.
+- [ ] If removing content, ran `/skill-prune` to confirm negative ROI.
+
 ## Screenshots / Evidence
 
 <!-- If applicable, add screenshots, logs, or output samples. -->

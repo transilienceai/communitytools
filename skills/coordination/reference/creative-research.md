@@ -6,11 +6,15 @@ Coordinator-only. Produces a RESEARCH_BRIEF (max 10 lines) for executor consumpt
 
 Research when ANY condition met:
 - **P4b reset** (mandatory — always research during reset)
-- **3-strike stuck** detection fired (rule 12)
+- **goal_attempts ≥ 3** on any conceptual goal (Rule 6)
 - **New technology** discovered not covered by mounted skill files
 - **No hypothesis** at P2 Think phase — nothing obvious to try next
+- **No progress for 1 batch** (single dry batch is enough; don't wait for two)
+- **Novel error class** — an error message or behavior the chain hasn't seen before
+- **Source code unreadable** for a critical surface (binary-only, obfuscated, paywalled)
+- **Every executor returned negative** in the previous batch
 
-Skip when: clear next experiment exists, previous batch gave useful signal.
+Skip when: clear next experiment exists with concrete signal from the previous batch.
 
 ## Three Sources
 
@@ -55,7 +59,7 @@ WebFetch rules:
 
 ## Synthesis -> RESEARCH_BRIEF
 
-Combine all three sources into max 10 lines:
+Combine all three sources into max 10 lines. **At least one line must be tagged `[wildcard]`** — a hypothesis no mounted skill explicitly prescribes. If only skill-derived ideas surface, run one inverted query (e.g., `"{tech} unusual exploit"`, `"{tech} unexpected behavior"`, `"{tech} non-standard configuration"`) to seed it before finalizing the brief.
 
 ```
 RESEARCH_BRIEF:
@@ -64,15 +68,24 @@ RESEARCH_BRIEF:
 - [skills] Untried: <attack category> -- relevant because <reason>
 - [chain] Idea: <A -> B -> C> combining findings from above
 - [web] CVE-YYYY-NNNNN: <version affected, exploit type> (src: <URL>)
+- [wildcard] <hypothesis no skill prescribes> — <reasoning>
 ```
 
+### What a wildcard looks like
+
+| Setting | Skill-prescribed | [wildcard] |
+|---------|------------------|------------|
+| LFI confirmed | Try `php://filter` chain RCE | Inspect `/proc/self/environ` and `/proc/self/cmdline` for ENV-leaked secrets that weren't intended as the LFI target |
+| Auth bypass dead-end | JWT alg-confusion, kid-injection | Cookie-name collision with proxy → upstream sees a different session token |
+| RCE on box, no privesc | sudo / suid / capabilities | Examine running scheduled jobs that run as another user against attacker-writable paths |
+
 Rules:
-- Max 10 lines total
-- Each line must be actionable (not "maybe look into X")
-- Include source tag so executor knows confidence level
-- Prioritize novel combinations over well-known techniques already tried
-- If online research found nothing useful, say so in 1 line and move on
-- Run `python3 tools/nvd-lookup.py <CVE-ID>` for any CVEs discovered
+- Max 10 lines total.
+- Each line actionable (not "maybe look into X").
+- Include source tag so executor knows confidence level.
+- Prioritize novel combinations over well-known techniques already tried.
+- If online research found nothing useful, say so in 1 line and still produce a `[wildcard]` from model knowledge.
+- Run `python3 tools/nvd-lookup.py <CVE-ID>` for any CVEs discovered.
 
 ## Budget
 
@@ -83,9 +96,9 @@ Rules:
 
 ## Anti-Patterns
 
-- DO NOT research every batch — only at trigger points
-- DO NOT pass raw WebFetch HTML to executors — always distill into RESEARCH_BRIEF
-- DO NOT spend > 2 lines on any single hypothesis
-- DO NOT research topics already well-covered by mounted skill files
-- DO NOT let research delay execution — if no useful results in 2 minutes, proceed with model knowledge only
-- DO NOT repeat research on the same technology in consecutive cycles — log what you searched
+- Research only at trigger points — never every batch.
+- Distill WebFetch results into the RESEARCH_BRIEF; never pass raw HTML to executors.
+- Each hypothesis ≤ 2 lines; if it needs more, it's not a hypothesis yet.
+- Skip topics already well-covered by mounted skill files — the brief is for what's missing.
+- If no useful results in 2 minutes, finalize with model knowledge only — research must not block execution.
+- Don't repeat research on the same technology in consecutive cycles. Log what you searched in the chain so the next P4b doesn't repeat it.

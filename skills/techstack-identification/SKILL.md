@@ -1,6 +1,6 @@
 ---
 name: techstack-identification
-description: OSINT-based technology stack identification. Discovers company tech stacks using passive reconnaissance across 17 intelligence domains. Given a company name (and optional domain hint), infers frontend, backend, infrastructure, and security technologies using publicly available signals.
+description: OSINT-based technology stack identification. Routes to 6 domain sub-skills (frontend, backend, infra, security, osint, correlation) to discover a target's stack from publicly available signals.
 ---
 
 # Tech Stack Identification
@@ -11,65 +11,58 @@ Passive OSINT reconnaissance to identify a target's technology stack. No credent
 
 ```
 1. Provide company name (+ optional domain hint)
-2. 5 coordinating agents run 26 sub-skills across 17 intelligence domains
-3. Signals correlated, confidence scored, conflicts resolved
-4. Final report: JSON + Markdown with evidence for every inference
+2. Run infra first (asset inventory) → frontend / backend / security / osint in parallel
+3. Pass all signals into correlation → final report (JSON + Markdown)
 ```
 
-## Coordination (5 Agents → 26 Sub-Skills)
+## Domain Sub-Skills
 
-**Phase 1: Asset Discovery** (`asset_discovery_agent`)
-- domain_discovery, subdomain_enumeration, certificate_transparency, ip_attribution, api_portal_discovery
+| Sub-skill | Identifies | Read |
+|-----------|-----------|------|
+| **frontend** | JS frameworks, meta-frameworks, CSS libraries, build tools, CMS via DOM/HTML/JS | [frontend/SKILL.md](frontend/SKILL.md) |
+| **backend** | Web servers, runtimes, languages, frameworks, DB, APIs, CMS | [backend/SKILL.md](backend/SKILL.md) |
+| **infra** | Cloud, CDN/WAF, DNS, TLS/CT, DevOps, asset discovery (domains/subdomains/IPs) | [infra/SKILL.md](infra/SKILL.md) |
+| **security** | Security headers, CSP, email auth, security.txt, third-party SaaS | [security/SKILL.md](security/SKILL.md) |
+| **osint** | Public repos (GitHub/GitLab), job postings/ATS, Wayback Machine | [osint/SKILL.md](osint/SKILL.md) |
+| **correlation** | Cross-validation, confidence scoring, conflict resolution | [correlation/SKILL.md](correlation/SKILL.md) |
 
-**Phase 2: Data Collection** (`data_collection_agent`)
-- http_fingerprinting, dns_intelligence, tls_certificate_analysis, javascript_dom_analysis, html_content_analysis, code_repository_intel, job_posting_analysis, web_archive_analysis
+## Routing by Objective
 
-**Phase 3: Tech Inference** (`tech_inference_agent`)
-- frontend_inferencer, backend_inferencer, cloud_infra_detector, cdn_waf_fingerprinter, security_posture_analyzer, devops_detector, third_party_detector
-
-**Phase 4: Correlation** (`correlation_agent`)
-- signal_correlator, confidence_scorer, conflict_resolver
-
-**Phase 5: Report** (`report_generation_agent`)
-- See `formats/techstack-json-report.md`, `formats/techstack-evidence-formatter.md`, `formats/techstack-report-exporter.md`
-
-Phases run sequentially. Sub-skills within each phase run in parallel.
+| Objective | Mount |
+|-----------|-------|
+| Full stack discovery | infra → (frontend, backend, security, osint) → correlation |
+| CDN/WAF identification only | infra |
+| API surface mapping | backend |
+| Supply-chain / SaaS exposure | security + osint |
+| CVE matching by version | backend + frontend (then correlation) |
+| Migration / historical context | osint (web archive) + correlation |
+| CMS fingerprint | frontend (HTML generators) + backend (CMS paths/cookies) |
+| Asset inventory only | infra (domain discovery, subdomain enum, IP attribution, CT) |
 
 ## Confidence Levels
 
-- **High**: Multiple independent sources + explicit identifier (headers, meta tags, cookies)
-- **Medium**: Single strong source OR indirect signals (URL patterns, error messages, job postings)
-- **Low**: Speculative from indirect signals, conflicting data, or outdated evidence
+- **High**: 3+ independent sources OR explicit identifier (header/meta/global) + supporting evidence + version known
+- **Medium**: Single strong source OR multiple indirect signals (URL patterns, cookies, DOM attrs, job postings)
+- **Low**: Speculative — single weak signal, conflicting data, or archive-only evidence
 
-## Output: TechStackReport
+Computed in `correlation/`. Target distribution: 50-70% High, 20-35% Medium, <15% Low.
+
+## Final Report Schema
 
 ```json
-{
-  "report_id": "uuid",
-  "company": "string",
-  "primary_domain": "string",
-  "discovered_assets": { "domains", "subdomains", "ip_addresses", "certificates", "api_portals" },
+{ "report_id": "uuid", "company": "string", "primary_domain": "string",
+  "discovered_assets": {"domains", "subdomains", "ip_addresses", "certificates", "api_portals"},
   "technologies": {
-    "frontend": [{ "name", "version?", "confidence": "High|Medium|Low", "evidence": [...] }],
-    "backend": [...],
-    "infrastructure": [...],
-    "security": [...],
-    "devops": [...],
-    "third_party": [...]
-  },
-  "confidence_summary": { "high_confidence", "medium_confidence", "low_confidence", "overall_score" }
-}
+    "frontend": [{"name", "version?", "confidence", "evidence": []}],
+    "backend": [...], "infrastructure": [...], "security": [...],
+    "devops": [...], "third_party": [...] },
+  "confidence_summary": {"high_confidence", "medium_confidence", "low_confidence", "overall_score"} }
 ```
 
 ## Rate Limits
 
-| Service | Limit |
-|---------|-------|
-| crt.sh | 10 req/min |
-| GitHub API (unauth) | 60 req/hr |
-| General HTTP | 30 req/min |
-| DNS queries | 30 req/min |
+crt.sh 10/min · GitHub (unauth) 60/h · HTTP 30/min/domain · DNS 30/min · Wayback CDX 15/min · WHOIS 5/min.
 
-## Integration
+## Ethics
 
-Called by pentest coordinator as a recon step, by CVE testing to map technologies to CVEs, or standalone for due diligence and competitive analysis.
+Passive only. No active scanning, credentialed access, zone transfers, or brute force. Public sources only. Log every external request for audit.

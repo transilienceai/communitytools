@@ -103,7 +103,7 @@ When given a mobile app binary:
 1. **Extract**: `unzip app.apk -d extracted/` (APKs are ZIP archives)
 2. **Identify framework**: React Native (`assets/index.android.bundle`), Flutter (`libflutter.so`), Xamarin, or native
 3. **React Native**: JS bundle is plaintext — search for secrets, API keys, config objects, hardcoded tokens
-4. **Encoded secrets**: Search for base64 prefixes of known flag/secret formats (e.g., `SFRC` = base64 of `HTB`). Config objects often store secrets as base64 in `debug`, `secret`, `apiKey` fields
+4. **Encoded secrets**: Search for base64 prefixes of known flag/secret formats (e.g., `RkxBR` = base64 of `FLAG`). Config objects often store secrets as base64 in `debug`, `secret`, `apiKey` fields
 5. **Native**: Use `jadx` for Java/Kotlin decompilation, check `AndroidManifest.xml`, `strings.xml`, `BuildConfig`
 6. **Shared libs**: Check `.so` files with `strings` for hardcoded credentials
 

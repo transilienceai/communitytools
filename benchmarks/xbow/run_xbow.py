@@ -87,6 +87,9 @@ VANILLA_MODE = False
 AGENT_PROVIDER = "claude"
 AGENT_MODEL: Optional[str] = None
 AGENT_API_KEY: Optional[str] = None
+AGENT_BASE_URL: Optional[str] = None
+AGENT_AUTH_TOKEN: Optional[str] = None
+AGENT_MAX_OUTPUT_TOKENS: Optional[int] = None
 
 
 @dataclass
@@ -366,6 +369,11 @@ Begin your security assessment now."""
             skills_cwd = SCRIPT_DIR
 
     runner = run_claude if AGENT_PROVIDER == "claude" else run_openai
+    extra_kwargs: dict = {}
+    if AGENT_PROVIDER == "claude":
+        extra_kwargs["base_url"] = AGENT_BASE_URL
+        extra_kwargs["auth_token"] = AGENT_AUTH_TOKEN
+        extra_kwargs["max_output_tokens"] = AGENT_MAX_OUTPUT_TOKENS
     agent_result = runner(
         prompt=prompt,
         output_dir=output_dir,
@@ -376,6 +384,7 @@ Begin your security assessment now."""
         skills_cwd=skills_cwd,
         skills_content=skills_content,
         task_id=test_id,
+        **extra_kwargs,
     )
 
     flag_found, found_flag = extract_flag(agent_result.stdout, flag)
@@ -580,10 +589,17 @@ def main() -> None:
     load_dotenv_into_environ()
 
     global VANILLA_MODE, AGENT_PROVIDER, AGENT_MODEL, AGENT_API_KEY
+    global AGENT_BASE_URL, AGENT_AUTH_TOKEN, AGENT_MAX_OUTPUT_TOKENS
     VANILLA_MODE = args.vanilla
     AGENT_PROVIDER = args.provider
     AGENT_MODEL = args.model
     AGENT_API_KEY = args.api_key
+    AGENT_BASE_URL = args.base_url
+    AGENT_AUTH_TOKEN = args.auth_token
+    AGENT_MAX_OUTPUT_TOKENS = args.max_output_tokens
+
+    if (AGENT_BASE_URL or AGENT_AUTH_TOKEN or AGENT_MAX_OUTPUT_TOKENS) and AGENT_PROVIDER != "claude":
+        print("WARNING: --base-url / --auth-token / --max-output-tokens are ignored unless --provider claude.")
 
     if args.setup:
         setup_xbow()
@@ -639,7 +655,11 @@ def main() -> None:
 
     if not args.skip_auth_check:
         auth_ok = (
-            check_claude_auth(api_key=AGENT_API_KEY)
+            check_claude_auth(
+                api_key=AGENT_API_KEY,
+                base_url=AGENT_BASE_URL,
+                auth_token=AGENT_AUTH_TOKEN,
+            )
             if AGENT_PROVIDER == "claude"
             else check_codex_auth(api_key=AGENT_API_KEY)
         )
@@ -653,6 +673,10 @@ def main() -> None:
     print(f"{'=' * 60}")
     print(f"Provider:    {AGENT_PROVIDER}")
     print(f"Model:       {model_str}")
+    if AGENT_PROVIDER == "claude" and AGENT_BASE_URL:
+        print(f"Endpoint:    {AGENT_BASE_URL}")
+    if AGENT_PROVIDER == "claude" and AGENT_MAX_OUTPUT_TOKENS:
+        print(f"Max Output:  {AGENT_MAX_OUTPUT_TOKENS} tokens")
     print(f"Benchmarks:  {len(configs)}")
     print(f"Parallel:    {args.parallel}")
     print(f"Max Retries: {args.max_retries}")

@@ -3,7 +3,7 @@
 **Attack Type**: UPnP IGD / vendor SOAP enumeration → info disclosure → command injection
 **MITRE**: T1190 (Exploit Public-Facing Application), T1059 (Command and Scripting Interpreter)
 
-When the target speaks UPnP (TCP 1900/2869, or any HTTP service serving `/rootDesc.xml`, or hardware/IoT/CPE challenges), apply the following enumeration and exploitation discipline before reaching for hardware tools (UART/SPI/JTAG). HTB "Hardware" challenges frequently simulate the firmware web UI rather than physical hardware.
+When the target speaks UPnP (TCP 1900/2869, or any HTTP service serving `/rootDesc.xml`, or hardware/IoT/CPE challenges), apply the following enumeration and exploitation discipline before reaching for hardware tools (UART/SPI/JTAG). "Hardware" CTF challenges frequently simulate the firmware web UI rather than physical hardware.
 
 ## Phase 1 — Discover and parse UPnP services
 
@@ -120,4 +120,4 @@ When a vendor action requires a "key" (e.g., `X-Diag-Key`, `X-Auth`, query `?tok
 - Wrong namespace — must match the `serviceType` URN exactly
 - HTML-encoded payloads in XML — use raw `;` and `&amp;` carefully (or wrap argument in `<![CDATA[...]]>`)
 - Some servers normalise the controlURL — try `/`-prefixed and unprefixed forms
-- HTB "Hardware" category may serve the firmware UI on the docker port directly; HTTP recon first, hardware tooling only if HTTP shows nothing
+- "Hardware" CTF categories may serve the firmware UI on the docker port directly; HTTP recon first, hardware tooling only if HTTP shows nothing

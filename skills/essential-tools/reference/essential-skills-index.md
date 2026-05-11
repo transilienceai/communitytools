@@ -58,7 +58,7 @@ Essential Skills covers **foundational methodology and workflow optimization** f
 - OWASP resources (Testing Guide, Cheat Sheets, Top 10)
 - Industry standards (NIST, CWE, MITRE ATT&CK, CAPEC)
 - Books (Web Application Hacker's Handbook, Real-World Bug Hunting)
-- Training platforms (Web Security Academy, HackTheBox, TryHackMe, PentesterLab)
+- Training platforms (Web Security Academy, PentesterLab, public CTF labs)
 - Tools (Burp Suite, ZAP, scanners, encoding tools)
 - Certification preparation (BSCP, OSWE, CEH, GWAPT)
 - Community resources (YouTube, blogs, Reddit, Discord)

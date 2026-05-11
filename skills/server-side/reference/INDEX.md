@@ -45,6 +45,8 @@ Read `server-side-principles.md` first for the decision tree and sequencing prin
 | Filename concatenated to path | `scenarios/file-upload/path-traversal-and-htaccess.md` | `../`, .htaccess, web.config, Struts2 |
 | Upload + AV scan + delete | `scenarios/file-upload/race-conditions.md` | Save-vs-delete window |
 | Signature/YARA scanner | `scenarios/file-upload/defense-evasion-and-yara.md` | HTA, MSI, LNK, FTP session injection |
+| Predictable Windows upload subdir + foothold user | `scenarios/file-upload/ntfs-junction-write-redirect.md` | `mklink /J` swap to web root → RCE as service account |
+| Reviewer opens uploaded media on Windows | `scenarios/file-upload/ntlm-hash-leak-via-media-upload.md` | `.asx`/`.wax`/`.wvx` `<REF HREF=UNC>` → NTLMv2 capture |
 
 ## Deserialization
 

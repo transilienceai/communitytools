@@ -37,9 +37,11 @@ Authentication testing covers login security, token handling, 2FA bypass, CAPTCH
 
 ## Related Skills
 
-- `reference/jwt*.md` — JWT token attacks
-- `reference/oauth*.md` — OAuth flow vulnerabilities
-- `reference/2FA_BYPASS.md` — 10 MFA bypass methods
+- `INDEX.md` — full scenario index (JWT, OAuth, 2FA, password attacks)
+- `authentication-principles.md` — decision tree and cross-cutting gotchas
+- `scenarios/jwt/` — JWT token attacks (alg-confusion, signature bypass, etc.)
+- `scenarios/oauth/` — OAuth flow vulnerabilities
+- `scenarios/2fa/` — MFA bypass methods (10+ scenarios)
+- `scenarios/password-attacks/` — brute force, hash cracking, PtH, spraying, stuffing
 - `reference/CAPTCHA_BYPASS.md` — CAPTCHA bypass techniques
 - `reference/BOT_DETECTION.md` — Bot detection evasion
-- `reference/password-attacks.md` — Password attack vectors

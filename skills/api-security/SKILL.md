@@ -30,3 +30,4 @@ Test API endpoints for security vulnerabilities across REST, GraphQL, WebSocket,
 - `reference/api-testing*.md` - REST API security testing guide
 - `reference/websockets*.md` - WebSocket vulnerability testing
 - `reference/web-llm*.md` - Web-LLM attack techniques and labs
+- `reference/zabbix-jsonrpc-quickstart.md` - Zabbix JSON-RPC API: fingerprint, user.update privesc, selectRole SQLi, script.create+execute RCE

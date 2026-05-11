@@ -12,7 +12,7 @@ description: Smart contract security testing and blockchain CTF exploitation. Co
 4. Deploy exploit contracts via web3.py or cast/forge
 5. Verify win condition (isSolved/flag endpoint)
 
-## HTB Blockchain Challenge Pattern
+## Blockchain CTF Challenge Pattern
 ```bash
 # Get connection info
 curl http://$HOST:$PORT/connection_info  # -> PrivateKey, Address, TargetAddress, setupAddress
@@ -97,4 +97,4 @@ w3.eth.send_raw_transaction(signed.raw_transaction)
 - Always read storage before attacking (private vars are readable on-chain)
 - Mirror exact storage layout when exploiting delegatecall
 - For CREATE nonce brute-force, check nonces 0-100000+ systematically
-- HTB instances are ephemeral -- script the full attack for speed
+- CTF instances are often ephemeral -- script the full attack for speed

@@ -36,6 +36,31 @@ def add_common_args(
         ),
     )
     parser.add_argument(
+        "--base-url", type=str, dest="base_url",
+        help=(
+            "Claude provider only: route Claude Code at a custom Anthropic-"
+            "compatible endpoint (sets ANTHROPIC_BASE_URL). Use with --model "
+            "to point at a self-hosted or proxied model."
+        ),
+    )
+    parser.add_argument(
+        "--auth-token", type=str, dest="auth_token",
+        help=(
+            "Claude provider only: bearer token for the custom endpoint "
+            "(sets ANTHROPIC_AUTH_TOKEN). Use instead of --api-key when the "
+            "endpoint expects an Authorization: Bearer header."
+        ),
+    )
+    parser.add_argument(
+        "--max-output-tokens", type=int, dest="max_output_tokens",
+        help=(
+            "Claude provider only: cap output tokens per request (sets "
+            "CLAUDE_CODE_MAX_OUTPUT_TOKENS). Set this when the upstream "
+            "model has a smaller context window than Claude's default — "
+            "e.g. 16384 for a 131K-context model leaves ~115K for input."
+        ),
+    )
+    parser.add_argument(
         "--vanilla", action="store_true",
         help="Run without pentest skills (baseline comparison)",
     )

@@ -67,6 +67,7 @@
 - Source location verification
 - Tampering indicators
 - Deployment documentation
+- Static triage of `.keras` / pickle / SavedModel artifacts before any `load_model(safe_mode=False)` call — see [malicious-keras-model-triage.md](malicious-keras-model-triage.md).
 
 **Third-Party Risk**:
 - Vendor security questionnaires

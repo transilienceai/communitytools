@@ -4,24 +4,24 @@ Slack messages notify the team when a challenge starts or when it's solved. Both
 
 ## Challenge Started Notification
 
-**When**: Immediately after machine/challenge is started in HTB.
+**When**: Immediately after machine/challenge is started on the platform.
 
 **Format**:
 ```bash
-printf ':crossed_swords: *Starting HTB: %s*\n*Difficulty:* %s | *OS:* %s | *Target:* `%s`\n_Started at %s_' \
+printf ':crossed_swords: *Starting: %s*\n*Difficulty:* %s | *OS:* %s | *Target:* `%s`\n_Started at %s_' \
   "{name}" "{difficulty}" "{os}" "{ip}" "$(date -u '+%Y-%m-%d %H:%M UTC')" \
   | python3 tools/slack-send.py --token "{SLACK_BOT_TOKEN}" --channel "{HTB_SLACK_CHANNEL_ID}" -
 ```
 
 **Example Output**:
 ```
-⚔️ Starting HTB: Fries
-Difficulty: Insane | OS: Windows | Target: `192.168.100.10`
+⚔️ Starting: <ChallengeName>
+Difficulty: Insane | OS: Windows | Target: `<TARGET_IP>`
 Started at 2026-04-02 14:30 UTC
 ```
 
 **Fields**:
-- `{name}` — Challenge/machine name (from HTB metadata)
+- `{name}` — Challenge/machine name (from platform metadata)
 - `{difficulty}` — Easy/Medium/Hard/Insane
 - `{os}` — Linux/Windows/FreeBSD
 - `{ip}` — Target IP address
@@ -41,7 +41,7 @@ Difficulty/OS/Duration | Flag Status | Stats | How It Was Hacked | Key Technique
 
 **Required Sections** (ALL must be present):
 
-1. **Header**: `:trophy: PWNED — {challenge_name}`
+1. **Header**: `:trophy: PWNED — {challenge_name}` (use the challenge name from platform metadata; do not hardcode)
 2. **Metadata**: `*Difficulty:* {level} | *OS:* {os} | *Time:* {duration}`
 3. **Flag Status**: `:white_check_mark:` (user flag) `:white_check_mark:` (root flag) or `:x:` (failed)
 4. **Stats** (from `stats.json`): experiments count, findings count, agents spawned
@@ -57,7 +57,7 @@ Difficulty/OS/Duration | Flag Status | Stats | How It Was Hacked | Key Technique
 
 **Example Output**:
 ```
-:trophy: PWNED — Fries
+:trophy: PWNED — <ChallengeName>
 Difficulty: Insane | OS: Windows | Time: 4h 22m
 Flags: :white_check_mark: :white_check_mark:
 

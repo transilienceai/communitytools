@@ -1,10 +1,10 @@
-# HTB VPN Pool Routing — Critical Pre-Flight Check
+# Platform VPN Pool Routing — Critical Pre-Flight Check
 
-HTB uses **multiple isolated VPN lab pools**. They all advertise overlapping
-`10.10.0.0/16` and `10.129.0.0/16` routes, but **traffic does not cross between
-pools**. A common silent failure is having an active VPN to one pool while the
-target machine lives in another — every reachability test fails with no clear
-explanation.
+The platform uses **multiple isolated VPN lab pools**. They all advertise overlapping
+lab subnets (typically `10.10.0.0/16` and `10.129.0.0/16`), but **traffic does not
+cross between pools**. A common silent failure is having an active VPN to one pool
+while the target machine lives in another — every reachability test fails with no
+clear explanation.
 
 ## Pools observed in production
 
@@ -19,10 +19,10 @@ The principle is the same: each pool is a separate network.
 
 ## Symptoms of pool mismatch
 
-- Machine spawned successfully via API; HTB reports IP under `10.129.x.x`.
-- `ping <IP>` → "Destination host unreachable" from the VPN gateway.
-- `nmap -Pn -sT --top-ports 100 <IP>` → all ports `filtered` (no responses, not RST).
-- VPN tunnel itself looks healthy: gateway pings work, HTB API reachable.
+- Machine spawned successfully via API; the platform reports an IP under the lab subnet (e.g. `10.129.x.x`).
+- `ping <TARGET_IP>` → "Destination host unreachable" from the VPN gateway.
+- `nmap -Pn -sT --top-ports 100 <TARGET_IP>` → all ports `filtered` (no responses, not RST).
+- VPN tunnel itself looks healthy: gateway pings work, platform API reachable.
 - `GET /api/v4/connection/status` lists **two** registered connections — one of
   them shows `down=0, up=0` (the one you don't have a tunnel for).
 
@@ -46,7 +46,7 @@ several minutes after you "terminate".
 
 ## Switching pools
 
-The HTB API `POST /connections/servers/switch/<server_id>` updates server-side
+The platform API `POST /connections/servers/switch/<server_id>` updates server-side
 preference but **does not move the machine** — `vm/spawn` re-routes retired
 machines to `dedivip_lab` regardless of the `lab` parameter. To actually reach
 the new pool you must:

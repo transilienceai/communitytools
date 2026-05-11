@@ -1,847 +1,168 @@
 # Essential Skills - Resources and References
 
-**Comprehensive resource guide for web application security testing**
+External links and reading list for web application security testing.
 
 ---
 
-## Burp Suite and Web Security Resources
+## Burp Suite / PortSwigger
 
-### Core Documentation
+- Web Security Academy: https://portswigger.net/web-security
+- Essential Skills: https://portswigger.net/web-security/essential-skills (encoding, targeted scanning)
+- Burp Scanner docs: https://portswigger.net/burp/documentation/scanner
+- Collaborator: https://portswigger.net/burp/documentation/collaborator
+- Repeater: https://portswigger.net/burp/documentation/desktop/tools/repeater
+- Decoder: https://portswigger.net/burp/documentation/desktop/tools/decoder
+- Research blog: https://portswigger.net/research
 
-**Burp Suite / Web Security Academy:**
-- [Obfuscating attacks using encodings](https://portswigger.net/web-security/essential-skills/obfuscating-attacks-using-encodings)
-  - URL encoding techniques
-  - HTML entity encoding
-  - XML entity encoding
-  - Unicode escaping
-  - Multiple encoding layers
-
-- [Using Burp Scanner during manual testing](https://portswigger.net/web-security/essential-skills/using-burp-scanner-during-manual-testing)
-  - Targeted scanning methodology
-  - Scan selected insertion point
-  - Non-standard data structures
-  - Scanner configuration
-
-**Research Blog:**
-- [Security Research Blog](https://portswigger.net/research)
-  - Latest vulnerability research
-  - Advanced techniques
-  - Tool updates
+**Recommended BApps** (https://portswigger.net/bappstore):
+- Active Scan++ — extra checks, edge cases, encoding bypass
+- Param Miner — hidden params, cache poisoning, header fuzzing
+- Turbo Intruder — high-speed attacks, race conditions
+- HTTP Request Smuggler — smuggling detection and exploitation
 
 ---
 
-## Burp Suite Documentation
+## Related Vulnerability References (within repo)
 
-### Core Features
-
-**Scanner:**
-- [Burp Scanner Documentation](https://portswigger.net/burp/documentation/scanner)
-  - Scanner overview
-  - Audit checks
-  - Scan configuration
-  - Issue reporting
-
-- [Using Burp Scanner](https://portswigger.net/burp/documentation/scanner/scanning)
-  - Starting scans
-  - Scan queue management
-  - Live scanning vs on-demand
-  - Reviewing scan results
-
-- [Scan Configuration](https://portswigger.net/burp/documentation/scanner/scan-configurations)
-  - Audit checks selection
-  - Speed vs thoroughness
-  - Custom configurations
-  - Insertion point handling
-
-**Collaborator:**
-- [Burp Collaborator](https://portswigger.net/burp/documentation/collaborator)
-  - Out-of-band interaction detection
-  - Polling for interactions
-  - Blind vulnerability testing
-  - Data exfiltration
-
-**Repeater:**
-- [Burp Repeater](https://portswigger.net/burp/documentation/desktop/tools/repeater)
-  - Manual request modification
-  - Response analysis
-  - Request variations
-  - Keyboard shortcuts
-
-**Decoder:**
-- [Burp Decoder](https://portswigger.net/burp/documentation/desktop/tools/decoder)
-  - Encoding/decoding operations
-  - Multiple transformation layers
-  - Smart decode
-  - Hash generation
-
-### Extensions
-
-**BApp Store:**
-- [BApp Store](https://portswigger.net/bappstore)
-  - Official extension marketplace
-  - Community extensions
-  - Categories and ratings
-
-**Recommended Extensions:**
-- [Active Scan++](https://portswigger.net/bappstore/3123d5b5f25c4128894d97ea1acc4976)
-  - Additional scan checks
-  - Edge case detection
-  - Encoding bypass techniques
-
-- [Param Miner](https://portswigger.net/bappstore/17d2949a985c4b7ca092728dba871943)
-  - Hidden parameter discovery
-  - Cache poisoning detection
-  - Header fuzzing
-
-- [Turbo Intruder](https://portswigger.net/bappstore/9abaa233088242e8be252cd4ff534988)
-  - High-speed attacks
-  - Race condition testing
-  - Time-based detection
-
-- [HTTP Request Smuggler](https://portswigger.net/bappstore/aaaa60ef945341e8a450217a54a11646)
-  - Request smuggling detection
-  - Automated exploitation
-  - Technique variants
+- XXE: [xxe-quickstart](../../injection/reference/xxe-quickstart.md), [xxe-cheat-sheet](../../injection/reference/xxe-cheat-sheet.md)
+- XSS: [client-side scenarios/xss/](../../client-side/reference/scenarios/xss/), [xss-bypass-techniques](../../client-side/reference/xss-bypass-techniques.md)
+- SQLi: [sql-injection-quickstart](../../injection/reference/sql-injection-quickstart.md), [sql-injection-advanced](../../injection/reference/sql-injection-advanced.md)
+- Path traversal: [path-traversal-cheat-sheet](../../server-side/reference/path-traversal-cheat-sheet.md), [path-traversal-quickstart](../../server-side/reference/path-traversal-quickstart.md)
+- OS command injection: [os-command-injection-cheat-sheet](../../injection/reference/os-command-injection-cheat-sheet.md)
+- Authentication: [authentication-quickstart](../../authentication/reference/authentication-quickstart.md)
+- Access control / IDOR: [access-control-cheat-sheet](../../web-app-logic/reference/access-control-cheat-sheet.md)
 
 ---
 
-## Related Vulnerability References
+## OWASP
 
-### Within This Skill
+- Testing Guide (WSTG): https://owasp.org/www-project-web-security-testing-guide/
+- Cheat Sheet Series: https://cheatsheetseries.owasp.org/
+- Top 10 (2021): https://owasp.org/www-project-top-ten/
 
-**XXE Injection:**
-- [XXE Quick Start](./xxe-quickstart.md) - Rapid exploitation guide
-- [XXE Cheat Sheet](./xxe-cheat-sheet.md) - All payloads, DTD techniques
+**Key WSTG sections**: INPV-01 reflected XSS, INPV-02 stored XSS, INPV-05 SQLi, INPV-06 LDAP, INPV-07 XML, INPV-12 command injection.
 
-**Cross-Site Scripting:**
-- [XSS Quick Start](./xss-quickstart.md) - Exploitation and bypass techniques
-- [XSS Bypass Techniques](./xss-bypass-techniques.md) - Filter evasion, WAF bypass
+**Key cheat sheets**: XSS Prevention, SQLi Prevention, OS Command Injection Defense, XXE Prevention.
 
-**SQL Injection:**
-- [SQL Injection Guide](./sql-injection.md) - UNION attacks, blind SQLi, database-specific syntax
-
-**Path Traversal:**
-- [Path Traversal Cheat Sheet](./path-traversal-cheat-sheet.md) - Payloads and encoding methods
-- [Path Traversal Quick Start](./path-traversal-quickstart.md)
-
-**OS Command Injection:**
-- [OS Command Injection Cheat Sheet](./os-command-injection-cheat-sheet.md) - Separators, bypass techniques
-
-**Authentication:**
-- [Authentication Quick Start](./authentication-quickstart.md)
-
-**Access Control:**
-- [Access Control Cheat Sheet](./access-control-cheat-sheet.md) - IDOR exploitation, privilege escalation
+**Top 10 highlights**: A01 Broken Access Control (IDOR, privesc), A03 Injection (SQLi/XSS/XXE/cmd), A05 Misconfiguration, A07 Auth Failures.
 
 ---
 
-## OWASP Resources
+## Standards
 
-### Testing Guides
-
-**OWASP Testing Guide (WSTG):**
-- [OWASP Web Security Testing Guide](https://owasp.org/www-project-web-security-testing-guide/)
-  - Comprehensive testing methodology
-  - Vulnerability categories
-  - Testing procedures
-
-**Relevant Sections:**
-- **WSTG-INPV-01:** [Testing for Reflected XSS](https://owasp.org/www-project-web-security-testing-guide/stable/4-Web_Application_Security_Testing/07-Input_Validation_Testing/01-Testing_for_Reflected_Cross_Site_Scripting)
-- **WSTG-INPV-02:** [Testing for Stored XSS](https://owasp.org/www-project-web-security-testing-guide/stable/4-Web_Application_Security_Testing/07-Input_Validation_Testing/02-Testing_for_Stored_Cross_Site_Scripting)
-- **WSTG-INPV-05:** [Testing for SQL Injection](https://owasp.org/www-project-web-security-testing-guide/stable/4-Web_Application_Security_Testing/07-Input_Validation_Testing/05-Testing_for_SQL_Injection)
-- **WSTG-INPV-06:** [Testing for LDAP Injection](https://owasp.org/www-project-web-security-testing-guide/stable/4-Web_Application_Security_Testing/07-Input_Validation_Testing/06-Testing_for_LDAP_Injection)
-- **WSTG-INPV-07:** [Testing for XML Injection](https://owasp.org/www-project-web-security-testing-guide/stable/4-Web_Application_Security_Testing/07-Input_Validation_Testing/07-Testing_for_XML_Injection)
-- **WSTG-INPV-12:** [Testing for Command Injection](https://owasp.org/www-project-web-security-testing-guide/stable/4-Web_Application_Security_Testing/07-Input_Validation_Testing/12-Testing_for_Command_Injection)
-
-### Cheat Sheets
-
-**OWASP Cheat Sheet Series:**
-- [OWASP Cheat Sheet Series](https://cheatsheetseries.owasp.org/)
-
-**Essential Skills Relevant Cheat Sheets:**
-- [XSS Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html)
-  - Output encoding
-  - Context-specific rules
-  - Safe sinks
-
-- [SQL Injection Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html)
-  - Parameterized queries
-  - Stored procedures
-  - Input validation
-
-- [OS Command Injection Defense](https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html)
-  - Avoiding OS commands
-  - Safe libraries
-  - Input validation
-
-- [XML External Entity Prevention](https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html)
-  - Disabling DTDs
-  - Safe parser configuration
-  - Language-specific guidance
-
-### OWASP Top 10
-
-**OWASP Top 10 2021:**
-- [OWASP Top 10:2021](https://owasp.org/www-project-top-ten/)
-
-**Relevant Categories:**
-- **A01:2021 - Broken Access Control** - IDOR, privilege escalation
-- **A03:2021 - Injection** - SQLi, XSS, XXE, OS command injection
-- **A05:2021 - Security Misconfiguration** - Information disclosure
-- **A07:2021 - Identification and Authentication Failures** - Session hijacking
-
----
-
-## Industry Standards
-
-### NIST
-
-**NIST Special Publications:**
-- [NIST SP 800-53](https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final)
-  - Security and Privacy Controls
-  - SI-11: Error Handling
-  - SI-10: Information Input Validation
-
-- [NIST SP 800-63B](https://pages.nist.gov/800-63-3/sp800-63b.html)
-  - Digital Identity Guidelines
-  - Authentication and Lifecycle Management
-  - Session management
-
-### CWE (Common Weakness Enumeration)
-
-**Relevant CWEs:**
-- [CWE-79: Cross-site Scripting](https://cwe.mitre.org/data/definitions/79.html)
-- [CWE-89: SQL Injection](https://cwe.mitre.org/data/definitions/89.html)
-- [CWE-78: OS Command Injection](https://cwe.mitre.org/data/definitions/78.html)
-- [CWE-611: XXE](https://cwe.mitre.org/data/definitions/611.html)
-- [CWE-22: Path Traversal](https://cwe.mitre.org/data/definitions/22.html)
-- [CWE-284: Access Control](https://cwe.mitre.org/data/definitions/284.html)
-- [CWE-287: Authentication](https://cwe.mitre.org/data/definitions/287.html)
-- [CWE-200: Information Exposure](https://cwe.mitre.org/data/definitions/200.html)
-
-### MITRE ATT&CK
-
-**MITRE ATT&CK Framework:**
-- [MITRE ATT&CK](https://attack.mitre.org/)
-
-**Relevant Techniques:**
-- [T1190: Exploit Public-Facing Application](https://attack.mitre.org/techniques/T1190/)
-- [T1059: Command and Scripting Interpreter](https://attack.mitre.org/techniques/T1059/)
-- [T1189: Drive-by Compromise](https://attack.mitre.org/techniques/T1189/) (XSS)
-- [T1078: Valid Accounts](https://attack.mitre.org/techniques/T1078/) (Session hijacking)
-
-### CAPEC (Common Attack Pattern Enumeration)
-
-**Relevant Attack Patterns:**
-- [CAPEC-66: SQL Injection](https://capec.mitre.org/data/definitions/66.html)
-- [CAPEC-86: XSS](https://capec.mitre.org/data/definitions/86.html)
-- [CAPEC-88: OS Command Injection](https://capec.mitre.org/data/definitions/88.html)
-- [CAPEC-221: XML Injection](https://capec.mitre.org/data/definitions/221.html)
-- [CAPEC-126: Path Traversal](https://capec.mitre.org/data/definitions/126.html)
+- NIST SP 800-53 (security controls): https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final
+- NIST SP 800-63B (digital identity): https://pages.nist.gov/800-63-3/sp800-63b.html
+- CWE: https://cwe.mitre.org/ — 79 (XSS), 89 (SQLi), 78 (cmd inj), 611 (XXE), 22 (traversal), 284 (access ctrl), 287 (authn), 200 (info exposure)
+- CAPEC: https://capec.mitre.org/ — 66, 86, 88, 221, 126
+- MITRE ATT&CK: https://attack.mitre.org/ — T1190, T1059, T1189, T1078
 
 ---
 
 ## Books
 
-### Web Application Security
-
-**Comprehensive References:**
-- *The Web Application Hacker's Handbook* (2nd Edition)
-  - By Dafydd Stuttard & Marcus Pinto
-  - Comprehensive methodology
-  - Vulnerability categories
-  - Exploitation techniques
-
-- *Real-World Bug Hunting: A Field Guide to Web Hacking*
-  - By Peter Yaworski
-  - Real bug bounty examples
-  - Practical exploitation
-  - Report writing
-
-- *Web Security Testing Cookbook*
-  - By Paco Hope & Ben Walther
-  - Practical recipes
-  - Tool usage
-  - Testing methodologies
-
-**Specialized Topics:**
-- *SQL Injection Attacks and Defense* (2nd Edition)
-  - By Justin Clarke
-  - In-depth SQLi coverage
-  - Database-specific techniques
-  - Advanced exploitation
-
-- *XSS Attacks: Cross Site Scripting Exploits and Defense*
-  - By Seth Fogie, Jeremiah Grossman, Robert Hansen, Anton Rager, Petko D. Petkov
-  - Comprehensive XSS reference
-  - Filter bypass techniques
-  - Defense strategies
-
-### Penetration Testing
-
-**General Methodology:**
-- *The Hacker Playbook 3: Practical Guide To Penetration Testing*
-  - By Peter Kim
-  - Red team techniques
-  - Tool walkthroughs
-  - Real-world scenarios
-
-- *Penetration Testing: A Hands-On Introduction to Hacking*
-  - By Georgia Weidman
-  - Beginner-friendly
-  - Lab environment setup
-  - Exploitation fundamentals
+- *The Web Application Hacker's Handbook* (2nd ed) — Stuttard & Pinto
+- *Real-World Bug Hunting* — Yaworski
+- *Web Security Testing Cookbook* — Hope & Walther
+- *SQL Injection Attacks and Defense* (2nd ed) — Clarke
+- *XSS Attacks: Cross Site Scripting Exploits and Defense* — Fogie et al.
+- *The Hacker Playbook 3* — Kim
+- *Penetration Testing: A Hands-On Introduction to Hacking* — Weidman
 
 ---
 
 ## Training Platforms
 
-### Interactive Labs
-
-**Web Security Academy ():**
-- [Web Security Academy](https://portswigger.net/web-security)
-  - Free interactive labs
-  - Progressive difficulty
-  - Certification path (BSCP)
-
-**HackTheBox:**
-- [HackTheBox](https://www.hackthebox.com/)
-  - Web challenges
-  - CTF-style problems
-  - Community solutions
-  - Skill tracks
-
-**TryHackMe:**
-- [TryHackMe](https://tryhackme.com/)
-  - Guided learning paths
-  - Web security rooms
-  - Beginner-friendly
-  - Interactive terminals
-
-**PentesterLab:**
-- [PentesterLab](https://pentesterlab.com/)
-  - Progressive exercises
-  - Real-world scenarios
-  - Detailed explanations
-  - Badge system
-
-**OverTheWire:**
-- [OverTheWire: Natas](https://overthewire.org/wargames/natas/)
-  - Web security wargame
-  - 34 levels
-  - Progressive difficulty
-  - Command-line focus
-
-### Bug Bounty Platforms
-
-**Practice and Rewards:**
-- [HackerOne](https://www.hackerone.com/)
-  - Bug bounty programs
-  - Public disclosure database
-  - Hacker101 (free training)
-
-- [Bugcrowd](https://www.bugcrowd.com/)
-  - Crowdsourced security
-  - University (free training)
-  - Researcher resources
-
-- [Synack](https://www.synack.com/)
-  - Private bug bounty
-  - Vetted researchers
-  - Enterprise targets
-
-- [Intigriti](https://www.intigriti.com/)
-  - European focus
-  - Public programs
-  - XSS challenge
+- Web Security Academy (free, BSCP path): https://portswigger.net/web-security
+- TryHackMe: https://tryhackme.com/
+- PentesterLab: https://pentesterlab.com/
+- OverTheWire Natas: https://overthewire.org/wargames/natas/
+- HackerOne Hacker101 (free): https://www.hacker101.com/
+- Bugcrowd University: https://www.bugcrowd.com/resources/
 
 ---
 
-## Tools and Software
+## Bug Bounty Platforms
 
-### Web Proxy Tools
+- HackerOne: https://www.hackerone.com/
+- Bugcrowd: https://www.bugcrowd.com/
+- Synack: https://www.synack.com/
+- Intigriti: https://www.intigriti.com/
+- YesWeHack: https://www.yeswehack.com/
 
-**Burp Suite:**
-- [Burp Suite Community](https://portswigger.net/burp/communitydownload) (Free)
-  - Proxy
-  - Repeater
-  - Decoder
-  - Intruder (throttled)
+---
 
-- [Burp Suite Professional](https://portswigger.net/burp/pro) (Paid)
-  - Scanner
-  - Collaborator
-  - Full Intruder
-  - Extensions
+## Tools
 
-**Alternatives:**
-- [OWASP ZAP](https://www.zaproxy.org/)
-  - Free and open-source
-  - Active/passive scanning
-  - Extensive plugins
-  - API support
+**Proxies**: Burp Suite Community / Pro (https://portswigger.net/burp), OWASP ZAP (https://www.zaproxy.org/), Caido (https://caido.io/), mitmproxy (https://mitmproxy.org/).
 
-- [Caido](https://caido.io/)
-  - Modern interface
-  - Built-in automation
-  - Collaborative features
+**Scanners**: Nikto (https://cirt.net/Nikto2), Nuclei (https://nuclei.projectdiscovery.io/), Wapiti (https://wapiti-scanner.github.io/).
 
-- [mitmproxy](https://mitmproxy.org/)
-  - Python-based
-  - Scriptable
-  - Command-line and web interface
+**Encoding**: CyberChef (https://gchq.github.io/CyberChef/), Burp Decoder.
 
-### Scanner Tools
-
-**Automated Scanners:**
-- [Nikto](https://cirt.net/Nikto2)
-  - Web server scanner
-  - Comprehensive checks
-  - Open-source
-
-- [Nuclei](https://nuclei.projectdiscovery.io/)
-  - Template-based scanner
-  - Community templates
-  - Fast and efficient
-
-- [Wapiti](https://wapiti-scanner.github.io/)
-  - Web vulnerability scanner
-  - Black-box testing
-  - Open-source
-
-### Encoding Tools
-
-**Command-Line:**
 ```bash
-# URL encoding/decoding
+# Quick CLI encoding
 python3 -c "import urllib.parse; print(urllib.parse.quote('payload'))"
-python3 -c "import urllib.parse; print(urllib.parse.unquote('%3Cscript%3E'))"
-
-# Base64
 echo -n "payload" | base64
-echo "cGF5bG9hZA==" | base64 -d
-
-# Hex
 echo -n "payload" | xxd -p
-echo "7061796c6f6164" | xxd -r -p
 ```
 
-**Online Tools:**
-- [CyberChef](https://gchq.github.io/CyberChef/)
-  - Multi-purpose encoder/decoder
-  - Recipe chaining
-  - Visual interface
+---
 
-- [URL Encoder/Decoder](https://www.urlencoder.org/)
-- [Base64 Encoder/Decoder](https://www.base64encode.org/)
-- [HTML Entity Encoder](https://www.freeformatter.com/html-entities.html)
+## Certifications
+
+- BSCP (Burp Suite Certified Practitioner): https://portswigger.net/web-security/certification — practitioner-level lab proficiency, encoding bypass mastery
+- OSWE (Offensive Security Web Expert): https://www.offensive-security.com/awae-oswe/ — source review + custom exploit dev
+- GWAPT (GIAC Web Application Pen Tester): https://www.giac.org/certification/web-application-penetration-tester-gwapt
+- CEH: https://www.eccouncil.org/programs/certified-ethical-hacker-ceh/
 
 ---
 
-## Research Papers and Articles
+## Community
 
-### Foundational Research
-
-**Encoding and Bypasses:**
-- "Bypassing Web Application Firewalls" by Ryan Barnett (OWASP)
-  - WAF evasion techniques
-  - Encoding methods
-  - Case studies
-
-- "Advanced Encoding Techniques" by Security Research
-  - Multi-layer encoding
-  - Context-specific bypasses
-  - Real-world examples
-
-**Scanner Integration:**
-- "Automating Web Security Testing" by OWASP
-  - Tool integration
-  - Methodology
-  - Best practices
-
-### Bug Bounty Writeups
-
-**HackerOne Disclosed Reports:**
-- [HackerOne Hacktivity](https://hackerone.com/hacktivity)
-  - Public disclosures
-  - Bounty amounts
-  - Exploitation techniques
-
-**Notable Writeups:**
-- Stored XSS leading to account takeover
-- XXE leading to SSRF and cloud metadata theft
-- SQL injection via XML encoding bypass
-- Session hijacking via non-standard data structures
-
-### Conference Presentations
-
-**Black Hat / DEF CON:**
-- "Web Application Security: How To Break In" series
-- "Advanced XSS Exploitation" talks
-- "SQL Injection: Not Dead Yet"
-
-**OWASP Global AppSec:**
-- "Automating Security Testing"
-- "Modern Web Vulnerability Trends"
+**YouTube**: PortSwigger TV, STÖK, IppSec, The Cyber Mentor.
+**Researchers (X/Twitter)**: @PortSwigger, @albinowax (James Kettle), @garethheyes, @insertScript, @stokfredrik, @nahamsec, @zseano.
+**Orgs**: @OWASP, @hackerone, @Bugcrowd, @synack.
+**Blogs**: PortSwigger Research (https://portswigger.net/research), Google Project Zero (https://googleprojectzero.blogspot.com/), OWASP Blog (https://owasp.org/blog/).
+**Reddit**: r/AskNetsec, r/websecurity, r/netsec, r/bugbounty.
+**Newsletters**: tl;dr sec (https://tldrsec.com/), SANS NewsBites (https://www.sans.org/newsletters/newsbites/), The Daily Swig (https://portswigger.net/daily-swig), The Hacker News (https://thehackernews.com/).
+**Podcasts**: Darknet Diaries, Security Now, Critical Thinking (Bug Bounty Podcast), Hacker Valley Studio.
 
 ---
 
-## Certification Preparation
+## Secure Coding (per language/framework)
 
-### Burp Suite Certified Practitioner (BSCP)
-
-**Official Resources:**
-- [Certification Overview](https://portswigger.net/web-security/certification)
-  - Exam format
-  - Requirements
-  - Study guide
-
-- [Exam FAQs](https://portswigger.net/web-security/certification/faq)
-  - Common questions
-  - Technical requirements
-  - Scoring
-
-**Preparation Strategy:**
-1. Complete Apprentice-level labs (foundation)
-2. Complete Practitioner-level labs (core skills)
-3. Practice unknown vulnerability identification (Mystery Labs)
-4. Master targeted scanning and encoding bypass techniques
-5. Practice time management (target: under 20 min per lab)
-
-**Recommended Timeline:**
-- **Beginner:** 3-6 months of consistent practice
-- **Intermediate:** 1-3 months of focused study
-- **Advanced:** 2-4 weeks of review and mystery labs
-
-### Other Web Security Certifications
-
-**OSWE (Offensive Security Web Expert):**
-- [OSWE Certification](https://www.offensive-security.com/awae-oswe/)
-  - Advanced web exploitation
-  - Source code review
-  - Custom exploit development
-
-**CEH (Certified Ethical Hacker):**
-- [CEH Certification](https://www.eccouncil.org/programs/certified-ethical-hacker-ceh/)
-  - Broad security coverage
-  - Web application module
-  - Industry recognition
-
-**GWAPT (GIAC Web Application Penetration Tester):**
-- [GWAPT Certification](https://www.giac.org/certification/web-application-penetration-tester-gwapt)
-  - Comprehensive web testing
-  - SANS training material
-  - Practical examination
+- PHP: https://cheatsheetseries.owasp.org/cheatsheets/PHP_Configuration_Cheat_Sheet.html
+- Python/Django: https://docs.djangoproject.com/en/stable/topics/security/
+- Flask: https://flask.palletsprojects.com/en/stable/security/
+- Node/Express: https://expressjs.com/en/advanced/best-practice-security.html
+- Java/Spring: https://docs.spring.io/spring-security/reference/index.html
+- Ruby on Rails: https://guides.rubyonrails.org/security.html
+- Laravel: https://laravel.com/docs/security
+- Brakeman (Rails SAST): https://brakemanscanner.org/
 
 ---
 
-## Community Resources
+## Practice Routine (Essential Skills)
 
-### YouTube Channels
+- **Week 1**: targeted scanning across vuln labs under time constraint
+- **Week 2**: non-standard data structures (`scan selected insertion point`)
+- **Week 3**: encoding bypasses (URL/HTML/XML/double) on filtered targets
+- **Week 4**: combined workflows — targeted scan + encoding + non-standard structures
 
-**Educational Content:**
-- [](https://www.youtube.com/c/TV)
-  - Official tutorials
-  - Lab walkthroughs
-  - Research presentations
-
-- [STÖK](https://www.youtube.com/c/STOKfredrik)
-  - Bug bounty tips
-  - Hacker interviews
-  - Methodology discussions
-
-- [IppSec](https://www.youtube.com/c/ippsec)
-  - HackTheBox walkthroughs
-  - Detailed explanations
-  - Tool usage
-
-- [The Cyber Mentor](https://www.youtube.com/c/TheCyberMentor)
-  - Penetration testing
-  - Web security basics
-  - Career guidance
-
-### Blogs and Websites
-
-**Security Blogs:**
-- [Security Research Blog](https://portswigger.net/research)
-  - Cutting-edge research
-  - New vulnerability classes
-  - Tool releases
-
-- [Google Project Zero](https://googleprojectzero.blogspot.com/)
-  - Zero-day research
-  - In-depth analysis
-  - Academic quality
-
-- [OWASP Blog](https://owasp.org/blog/)
-  - Community updates
-  - Best practices
-  - Project announcements
-
-**Bug Bounty Platforms Blogs:**
-- [HackerOne Hacker101](https://www.hacker101.com/)
-- [Bugcrowd Resources](https://www.bugcrowd.com/resources/)
-- [Intigriti Blog](https://blog.intigriti.com/)
-
-### Reddit Communities
-
-**Relevant Subreddits:**
-- [r/AskNetsec](https://www.reddit.com/r/AskNetsec/)
-  - Career questions
-  - Technical discussions
-
-- [r/websecurity](https://www.reddit.com/r/websecurity/)
-  - Web-specific security
-  - News and updates
-
-- [r/netsec](https://www.reddit.com/r/netsec/)
-  - Security news
-  - Research papers
-  - Tool releases
-
-- [r/bugbounty](https://www.reddit.com/r/bugbounty/)
-  - Bug bounty discussion
-  - Tips and tricks
-  - Program updates
-
-### Discord Servers
-
-**Community Servers:**
--  Community Discord
-- HackTheBox Official Discord
-- Bug Bounty Forum Discord
-- InfoSec Community Discord
+**Self-check**: identify non-standard data structures fast; URL/HTML/XML/Unicode encoding fluency; pick targeted vs full scan; complete practitioner labs in &lt;20 min.
 
 ---
 
-## Secure Coding Resources
+## Career Tracks
 
-### Language-Specific Guides
-
-**PHP:**
-- [PHP Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/PHP_Configuration_Cheat_Sheet.html)
-- [Secure Coding in PHP](https://www.php.net/manual/en/security.php)
-
-**Python:**
-- [Python Security Best Practices](https://python.readthedocs.io/en/stable/library/security_warnings.html)
-- [Django Security](https://docs.djangoproject.com/en/stable/topics/security/)
-
-**JavaScript/Node.js:**
-- [Node.js Security Best Practices](https://nodejs.org/en/docs/guides/security/)
-- [Express Security](https://expressjs.com/en/advanced/best-practice-security.html)
-
-**Java:**
-- [Java Secure Coding Guidelines](https://www.oracle.com/java/technologies/javase/seccodeguide.html)
-- [Spring Security](https://spring.io/projects/spring-security)
-
-**Ruby:**
-- [Ruby on Rails Security Guide](https://guides.rubyonrails.org/security.html)
-- [Brakeman (Static Analysis)](https://brakemanscanner.org/)
-
-### Framework Security Guides
-
-**Web Frameworks:**
-- Django: [Security in Django](https://docs.djangoproject.com/en/stable/topics/security/)
-- Flask: [Security Considerations](https://flask.palletsprojects.com/en/stable/security/)
-- Express: [Security Best Practices](https://expressjs.com/en/advanced/best-practice-security.html)
-- Spring: [Spring Security](https://docs.spring.io/spring-security/reference/index.html)
-- Laravel: [Security](https://laravel.com/docs/security)
-- Ruby on Rails: [Security Guide](https://guides.rubyonrails.org/security.html)
+- Bug bounty: VDP → public programs → invitation-only / Synack
+- Pentesting: Junior PT → PT → Senior PT / Lead Consultant / App Sec Architect / Red Team
+- Freelance / consulting: web pentest, code review, training, BB program management
 
 ---
 
-## Practice Challenges
+## Within This Skill
 
-### Weekly Challenge Routine
-
-**Essential Skills Practice (Week 1-4):**
-
-**Week 1: Targeted Scanning**
-- Apply targeted scanning to various vulnerability labs
-- Practice under time constraints
-
-**Week 2: Non-Standard Data Structures**
-- Identify and test non-standard data in cookie/header values
-- Practice "Scan selected insertion point" technique
-
-**Week 3: Encoding Bypasses**
-- Practice URL/HTML/XML encoding on labs with filters
-- Double encoding practice on path traversal/SQLi targets
-
-**Week 4: Integration**
-- Combined techniques: targeted scan + encoding bypass
-- Non-standard data + encoding bypass workflows
-
-### Monthly Assessment
-
-**Self-Assessment Checklist (End of Month):**
-
-- [ ] Can identify non-standard data structures quickly
-- [ ] Comfortable with URL/HTML/XML/Unicode encoding
-- [ ] Understand when to use targeted scanning vs full scan
-- [ ] Can use "Scan selected insertion point" effectively
-- [ ] Can complete Practitioner-level targets under time pressure
-
----
-
-## Career Resources
-
-### Bug Bounty Programs
-
-**Getting Started:**
-- Start with "Vulnerability Disclosure Programs" (no bounty, but practice)
-- Progress to public bug bounty programs
-- Build reputation and access private programs
-
-**Top Platforms:**
-- HackerOne (largest platform)
-- Bugcrowd (diverse programs)
-- Intigriti (European focus)
-- YesWeHack (European focus)
-- Synack (vetted researchers only)
-
-**Expected Earnings (With Essential Skills Mastery):**
-- **Beginner (0-6 months):** $0-5,000/year (learning phase)
-- **Intermediate (6-18 months):** $5,000-30,000/year
-- **Advanced (18+ months):** $30,000-100,000+/year
-- **Elite (Top 100 globally):** $100,000-500,000+/year
-
-### Penetration Testing Careers
-
-**Entry-Level Roles:**
-- Junior Penetration Tester
-- Security Analyst (Web Security Focus)
-- Application Security Tester
-
-**Mid-Level Roles:**
-- Penetration Tester
-- Security Consultant
-- Application Security Engineer
-
-**Senior Roles:**
-- Senior Penetration Tester
-- Lead Security Consultant
-- Application Security Architect
-- Red Team Operator
-
-**Salary Ranges (US, 2026):**
-- Entry: $60,000-90,000
-- Mid: $90,000-130,000
-- Senior: $130,000-180,000+
-
-**Essential Skills Impact:**
-- Faster career progression (1-2 years faster)
-- Higher starting salary (10-20% above average)
-- Better job opportunities (competitive advantage)
-
-### Freelance Consulting
-
-**Services:**
-- Web application penetration testing
-- Security code review
-- Training and mentorship
-- Bug bounty program management
-
-**Rates (With Essential Skills Mastery):**
-- Junior Consultant: $50-100/hour
-- Mid-Level Consultant: $100-200/hour
-- Senior Consultant: $200-400/hour
-
----
-
-## Staying Current
-
-### Newsletters
-
-**Security Newsletters:**
-- [tl;dr sec](https://tldrsec.com/) - Weekly security newsletter
-- [SANS NewsBites](https://www.sans.org/newsletters/newsbites/) - Twice weekly
-- [The Hacker News](https://thehackernews.com/subscribe) - Daily updates
-- [The Daily Swig](https://portswigger.net/daily-swig) - Web security news
-
-### Twitter/X Accounts to Follow
-
-**Researchers and Educators:**
-- @Res - Security Research
-- @albinowax - James Kettle (Security Research Director)
-- @garethheyes - Gareth Heyes (XSS/DOM research)
-- @insertScript - InsertScript (Web security)
-- @stokfredrik - STÖK (Bug bounty)
-- @nahamsec - NahamSec (Bug bounty)
-- @zseano - Zseano (Bug bounty education)
-
-**Organizations:**
-- @OWASP - OWASP Foundation
-- @hackerone - HackerOne
-- @Bugcrowd - Bugcrowd
-- @synack - Synack
-
-### Podcasts
-
-**Web Security Podcasts:**
-- **Darknet Diaries** - Hacking and cybersecurity stories
-- **Security Now** - Weekly security news and analysis
-- **Hacker Valley Studio** - Security career and culture
-- **Critical Thinking** - Bug Bounty Podcast
-
----
-
-## Contribution and Giving Back
-
-### Open Source
-
-**Contribute to:**
-- Burp Suite extensions (BApp Store)
-- OWASP projects
-- Security tool development
-- Documentation and guides
-
-### Writing and Sharing
-
-**Platforms:**
-- Medium (security articles)
-- Personal blog
-- HackerOne disclosed reports
-- GitHub (code and tools)
-
-### Mentorship
-
-**Ways to Help:**
-- Answer questions on forums
-- Create video tutorials
-- Mentor junior testers
-- Contribute to training platforms
-
----
-
-## Final Resources
-
-### Quick Reference Links
-
-**Web Security / Burp Suite:**
-- Web Security Academy: https://portswigger.net/web-security
-- Certification (BSCP): https://portswigger.net/web-security/certification
-
-**OWASP:**
-- Testing Guide: https://owasp.org/www-project-web-security-testing-guide/
-- Cheat Sheets: https://cheatsheetseries.owasp.org/
-- Top 10: https://owasp.org/www-project-top-ten/
-
-**Standards:**
-- CWE: https://cwe.mitre.org/
-- CAPEC: https://capec.mitre.org/
-- MITRE ATT&CK: https://attack.mitre.org/
-
-**Within This Skill:**
 - [Quick Start](./essential-skills-quickstart.md)
 - [Cheat Sheet](./essential-skills-cheat-sheet.md)
-
----
-
-**Document Version:** 1.0
-**Last Updated:** 2026-01-10
-**Status:** Complete and comprehensive
-
----
-
-**Keep this resource list bookmarked for ongoing reference and continuous learning!**
+- [Index](./essential-skills-index.md)

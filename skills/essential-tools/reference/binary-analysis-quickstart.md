@@ -88,7 +88,7 @@ objdump -s -j .rodata <binary>
 3. Capture flag output
 
 ### Pattern 6: "Decoy" Flags That Are Real
-**Indicator:** Binary contains an obvious flag-like string (e.g., `HTB{younevergoingtofindme}`) alongside complex obfuscation  
+**Indicator:** Binary contains an obvious flag-like string (e.g., `FLAG{younevergoingtofindme}`) alongside complex obfuscation  
 **Approach:** Always try submitting obvious strings FIRST before deep analysis. Challenges sometimes hide the real flag in plain sight as a misdirection tactic.
 
 ### Pattern 7: .NET Metadata String Extraction

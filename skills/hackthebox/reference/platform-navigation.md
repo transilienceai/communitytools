@@ -2,7 +2,7 @@
 
 ## CRITICAL: Headed Browser Required
 
-HTB uses Cloudflare Turnstile. **Headless browsers are blocked.** ALWAYS use headed mode.
+The platform uses Cloudflare Turnstile. **Headless browsers are blocked.** ALWAYS use headed mode.
 See `cloudflare-bypass.md` for setup (Xvfb for Docker, anti-detection flags).
 
 ## Login Flow
@@ -91,7 +91,7 @@ success = await page.locator('.success-message').is_visible()
 
 ```
 Tab layout:
-  Tab 0: HTB challenge/machine page (control plane)
+  Tab 0: Platform challenge/machine page (control plane)
   Tab 1: Target web app (primary attack surface)
   Tab 2+: Additional endpoints, admin panels, etc.
 ```
@@ -148,7 +148,7 @@ browser_snapshot                # Confirm timer reset
 **Submit flag:**
 ```
 browser_snapshot                # Find flag input field ref
-browser_fill_form ref="<ref>" value="FLAG{...}"  # Fill the flag
+browser_fill_form ref="<ref>" value="<FLAG>"  # Fill the flag
 browser_snapshot                # Find "Submit" / "Submit Flag" button ref
 browser_click ref="<ref>"       # Submit
 browser_snapshot                # Verify success message
@@ -183,7 +183,7 @@ browser_tabs
 browser_navigate url="http://TARGET" new_tab=true
 
 # Switch back to Tab 0 (use its URL from browser_tabs output)
-browser_navigate url="https://app.hackthebox.com/machines/MachineName"
+browser_navigate url="https://app.hackthebox.com/machines/<MachineName>"
 # OR click the tab from browser_tabs list
 
 # Always snapshot after switching to read the page state
@@ -193,7 +193,7 @@ browser_snapshot
 ## Tips
 
 - Take screenshots at each step: `await page.screenshot(path="evidence/screenshots/step-N.png")`
-- HTB uses dynamic loading — use `wait_for_selector` not just `goto`
+- The platform uses dynamic loading — use `wait_for_selector` not just `goto`
 - Session tokens expire — re-login if 401/403 encountered
 - Rate limiting exists — add small delays between rapid navigation
 - **Always check Tab 0** before concluding "target is down" — it may just need respawning
