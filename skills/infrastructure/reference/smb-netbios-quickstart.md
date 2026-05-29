@@ -131,7 +131,7 @@ Other files to grep for cleartext creds after spidering:
 - `unattend.xml`, `sysprep.xml`, `Autounattend.xml` (Windows install creds)
 - `web.config`, `appsettings.json`, `connectionStrings.config`
 - `*.ini`, `*Configuration*.ini`, `*Setup*.ini` (SQL Server / IIS / app installers — see
-  `skills/system/reference/system-exploitation.md` "Post-RCE filesystem cred hunt")
+  `skills/system/reference/scenarios/linux-privesc/credential-files-hunt.md` for post-RCE filesystem cred hunting)
 - `*.bak`, `*.old`, `*.orig`, `*.backup` next to active config files
 
 ## Guest vs Null Auth

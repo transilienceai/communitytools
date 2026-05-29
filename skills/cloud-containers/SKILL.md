@@ -27,4 +27,4 @@ Test cloud infrastructure and container environments for security misconfigurati
 
 ## Reference
 
-- `reference/cloud-security.md` - Platform-specific attack guides (AWS, Azure, GCP, Docker, K8s)
+- `reference/INDEX.md` - Router for platform-specific attack scenarios (AWS, Azure, GCP, Docker, K8s)

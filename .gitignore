@@ -110,3 +110,7 @@ Desktop.ini
 *.backup
 
 **/.playwright-mcp
+
+**/projects/ctf/
+!**/projects/ctf/CLAUDE.md
+!**/projects/ctf/.claude

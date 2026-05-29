@@ -71,7 +71,7 @@ Methodology: enumerate state-changing endpoints → test token modes (omit/swap/
 
 ## Server-Side Request Forgery (SSRF)
 
-**Deep refs**: [ssrf-quickstart](../../server-side/reference/ssrf-quickstart.md), [ssrf-cheat-sheet](../../server-side/reference/ssrf-cheat-sheet.md) — **A10** — **CWE-918** — **CAPEC-664**
+**Deep refs**: [server-side INDEX](../../server-side/reference/INDEX.md) → `scenarios/ssrf/` — **A10** — **CWE-918** — **CAPEC-664**
 
 **Vulnerable params**: `url`, `uri`, `path`, `redirect`, `fetch`, `stockApi`, `callback`, `webhook`, `logo_uri`.
 **Tools**: Burp Collaborator, SSRFmap, Gopherus, ffuf.
@@ -129,7 +129,7 @@ Tools: Burp Pro + Collaborator, XXEinjector, dtd-finder.
 
 ## Insecure Deserialization
 
-**Deep refs**: [insecure-deserialization-quickstart](../../server-side/reference/insecure-deserialization-quickstart.md) — **A08** — **CWE-502** — **CAPEC-586**
+**Deep refs**: [insecure-deserialization-resources](../../server-side/reference/insecure-deserialization-resources.md) — **A08** — **CWE-502** — **CAPEC-586**
 
 Affected: Java, PHP, Python (`pickle`), .NET, Ruby. Tools: ysoserial, phpggc, Burp Java Deserialization Scanner.
 
@@ -142,7 +142,7 @@ Methodology: identify serialized blobs → fingerprint format → generate gadge
 
 ## Path Traversal
 
-**Deep refs**: [path-traversal-cheat-sheet](../../server-side/reference/path-traversal-cheat-sheet.md) — **A01** — **CWE-22** — **CAPEC-126**
+**Deep refs**: [server-side INDEX](../../server-side/reference/INDEX.md) → `scenarios/path-traversal/` — **A01** — **CWE-22** — **CAPEC-126**
 
 Tools: Burp Intruder, DotDotPwn.
 

@@ -57,6 +57,28 @@ s.connect(("target", 9999))
 s.send(payload)
 ```
 
+## ret2shellcode via a `%p` stack leak (NX off / RWX stack)
+
+When `checksec` shows **NX disabled / executable stack, no canary, no PIE**
+(`babyrop`-style), and the program prints a pointer via a leaky `printf("%p")`
+(often the address of the input buffer, passed in `rsi`), you don't need libc:
+
+1. The leaked value *is* the stack address where your input lands (e.g. the
+   `fgets` buffer at `rbp-0x40`).
+2. Compute offset to saved RIP = buffer size + saved-RBP (e.g. `0x40 + 8 = 72`).
+3. Payload = `shellcode + b"\x90"*(offset-len(shellcode)) + p64(leaked_addr)` —
+   overflow the return address to jump straight back into the buffer.
+
+```python
+leak = int(re.search(rb"0x([0-9a-f]+)", out).group(1), 16)
+payload = sc + b"\x90"*(72-len(sc)) + struct.pack("<Q", leak)
+```
+
+Read the leak from the *same* process before sending the payload (pipe stdin
+after parsing stdout). A local SUID binary fronted by `socat EXEC:` is reachable
+remotely with the same exploit; the local SUID invocation yields the owner's
+euid for reading their files.
+
 ## Protection Mechanisms
 
 - **DEP/NX**: Non-executable stack/heap

@@ -95,4 +95,5 @@ The poisoned URL must be one a target (admin user, automated bot, mass victim) w
 
 - Differs from [poisoning-unkeyed-headers.md](poisoning-unkeyed-headers.md) (`X-Forwarded-Host` etc.) — those use unkeyed *headers*; this uses unkeyed *body*.
 - Differs from [poisoning-unkeyed-params.md](poisoning-unkeyed-params.md) (`?utm_*` etc.) — those use query params not in the cache key; this uses body args that the back-end honors over query params already in the key.
+- Pairs with [poisoning-setnx-race.md](poisoning-setnx-race.md) when the proxy uses SetNX/Add-style fill — you have the origin injection primitive, but still need to beat the legitimate filler on the cache fill.
 - Self-XSS that's normally rejected as low-impact becomes stored XSS for any cacheable URL once this primitive is in play — escalate the severity rating accordingly.

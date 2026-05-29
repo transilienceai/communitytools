@@ -12,6 +12,8 @@ experiments = Read(f"{output_dir}/experiments.md")
 
 ## Coordinator (orchestrator → coordinator)
 
+The orchestrator creates the engagement dir tree (no bookkeeping files), then spawns one coordinator subagent per target. The `FIRST_ACTION` block makes the bookkeeping bootstrap a precondition for any other tool call inside the subagent — the gate is in the prompt itself, not in a doc the agent might skim.
+
 ```python
 coordinator_role = Read("skills/coordination/SKILL.md")
 Agent(
@@ -23,10 +25,19 @@ OUTPUT_DIR: {output_dir}
 TARGET: {target}
 SCOPE: {scope}
 SKILLS_HINT: {skills_hint or '<none>'}
+
+FIRST_ACTION (before any other tool call):
+  1. Write({output_dir}/attack-chain.md, "<skeleton per bookkeeping.md §attack-chain.md>")
+  2. Write({output_dir}/experiments.md, "<header row per bookkeeping.md §experiments.md>")
+  3. Then run preflight-checklist Phase 1 gate (see reference/preflight-checklist.md).
+Bookkeeping files MUST exist before spawning any executor. The coordinator-flow-gate hook
+will block downstream Bash/Edit/Write on the engagement dir until attack-chain.md exists.
 """,
     run_in_background=True,
 )
 ```
+
+**Anti-pattern: running the coordinator workflow inline in the orchestrator session.** The bookkeeping discipline (goal_attempts counting, mandatory skeptic checkpoints, blind validators) requires the subagent boundary. If the parent session starts doing P1-P5 itself, the `coordinator-flow-gate` PreToolUse hook will block on the first Bash/Edit/Write targeting the engagement dir.
 
 ## Executor — explore (recon, no findings)
 

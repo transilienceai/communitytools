@@ -183,17 +183,13 @@ for sep in [';','&&','|','`','$()','%0A']:
         print(f'[+] Working: {sep}')
 ```
 
-## RPC parser → `sh -c` injection (Thrift / gRPC / RabbitMQ-RPC)
+## Language-specific code-exec sinks
 
-Recurring shape on internal RPC services that read an attacker-writable file, regex-extract a field per line, then plug the field into `os.system(f"echo '... {field} ...' >> log")`. Inject shell metachars (`'; <CMD>; #`, with `\047` = `'` in echo-friendly form) into the regex-captured field. Write the malicious log line, trigger the RPC method (e.g., Thrift `ReadLogFile(path)`), shell runs as the RPC's UID. Use `;` not `&&` — the leading echo often fails. Common in Java/Python RPC services that shell out for log rotation/formatting. Detection heuristic: any RPC method taking a "file path" argument AND running commands derived from file content.
-
-## Python `eval()` via format-string interpolation
-
-When server-side Python does `eval('%s > 1' % user_input)` (or similar f-string / `.format()` patterns), the user data flows in as Python source. `__import__("os").system(...)` is a single expression and runs unconditionally — no AST sandbox to escape. Full pattern + blind exfil channels: [scenarios/code-injection/python-eval-format-string.md](scenarios/code-injection/python-eval-format-string.md).
+- **RPC parser → `sh -c`** (Thrift/gRPC/RabbitMQ-RPC): service reads an attacker-writable file, regex-extracts a field, plugs it into `os.system(f"echo '... {field} ...' >> log")`. Inject `'; <CMD>; #` (`\047`=`'`) into the field, trigger the RPC method, shell runs as the RPC UID. Use `;` not `&&`. Heuristic: RPC method taking a "file path" arg AND running commands from file content.
+- **Python `eval()` format-string**: `eval('%s > 1' % user_input)` / f-string / `.format()` — user data is Python source; `__import__("os").system(...)` runs unconditionally. [scenarios/code-injection/python-eval-format-string.md](scenarios/code-injection/python-eval-format-string.md).
+- **Bash symbolic-only sandbox** (allow-list `^[${}![:space:]:_=()]+$`): `$((!$$))=0`, `$((!!$$))=1`, octal `"010"`=8, **`${!__}` on `__=0` returns `$0`**, `${var:1}` indexing, `__=$(ls)` to bootstrap letters. [scenarios/code-injection/bash-symbolic-only-bypass.md](scenarios/code-injection/bash-symbolic-only-bypass.md).
+- **PHP `preg_replace` `/e`** (PHP < 7): attacker-controlled pattern→replacement pairs (tell: hidden inputs whose *names are regexes*, e.g. `filters[/word/i]=clean`) — add `filters[/findme/e]=system(base64_decode('...'))` + matching subject. [scenarios/code-injection/php-preg-replace-e-modifier.md](scenarios/code-injection/php-preg-replace-e-modifier.md).
 
 ## References
 
-- `os-command-injection-quickstart.md` — fast detection workflow.
-- OWASP Command Injection: https://owasp.org/www-community/attacks/Command_Injection
-- CWE-78 (OS Command Injection).
-- PayloadsAllTheThings/Command Injection.
+- `os-command-injection-quickstart.md` — fast detection workflow. OWASP Command Injection / CWE-78 / PayloadsAllTheThings.

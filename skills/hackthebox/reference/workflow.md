@@ -56,9 +56,11 @@ curl -s -X POST -H "Authorization: Bearer $HTB_TOKEN" -H "Content-Type: applicat
   -d '{"id": MACHINE_ID, "flag": "FLAG_VALUE", "difficulty": 10}' \
   "https://labs.hackthebox.com/api/v4/machine/own"
 
-# Submit challenge flag
+# Submit challenge flag — JSON key MUST be `challenge_id`, NOT `id`.
+# Submitting `{"id":579,...}` returns 302 redirect → labs.hackthebox.com (silent fail).
+# Submitting `{"challenge_id":579,...}` returns `{"message":"Congratulations!"}`.
 curl -s -X POST -H "Authorization: Bearer $HTB_TOKEN" -H "Content-Type: application/json" \
-  -d '{"id": CHALLENGE_ID, "flag": "FLAG_VALUE", "difficulty": 10}' \
+  -d '{"challenge_id": CHALLENGE_ID, "flag": "FLAG_VALUE", "difficulty": 10}' \
   "https://labs.hackthebox.com/api/v4/challenge/own"
 
 # Active machine info

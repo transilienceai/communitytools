@@ -54,5 +54,5 @@ Fetches payloads from PayloadsAllTheThings on demand. Use `model="haiku"` when s
 ## Error Handling
 
 - **404**: PATT may have restructured — check https://github.com/swisskyrepo/PayloadsAllTheThings
-- **Rate limit**: Use offline files in `payloads/` instead
+- **Rate limit**: Back off and retry; if persistent, note the category as unavailable and proceed with built-in payloads
 - **Unknown category**: Ask caller for direct raw URL

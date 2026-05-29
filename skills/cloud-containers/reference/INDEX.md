@@ -9,6 +9,7 @@ Read `cloud-containers-principles.md` first for the decision tree.
 | AWS credentials / AWS-hosted target | `scenarios/aws/recon-and-iam-privesc.md` | aws-cli enum + Pacu privesc + LocalStack |
 | MinIO / self-hosted S3 (port 9000/8333) | `scenarios/aws/minio-self-hosted-s3.md` | mc admin info + hidden buckets |
 | Lambda / SaaS / OAuth | `scenarios/aws/serverless-and-saas.md` | Function injection + subdomain takeover + Electron |
+| Mock AWS endpoint (moto / motoserver) + need to verify guessed AKIAs | `scenarios/aws/moto-mock-aws-quirks.md` | `/moto-api/data.json` selective dump + `InvalidClientTokenId` vs `SignatureDoesNotMatch` oracle |
 
 ## Azure
 

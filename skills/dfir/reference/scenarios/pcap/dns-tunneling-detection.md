@@ -47,6 +47,28 @@ DNS tunneling abuses the recursive resolver chain by encoding data in subdomain 
    names = [...]  # collected query names in order
    payload = b"".join(base64.b32decode(n.split(".")[0].upper() + "="*((-len(n.split(".")[0]))%8)) for n in names)
    ```
+7. Decode hostnames captured from a log corpus (no PCAP). DNS-tunneled exfil often lands in DNS query logs, web access logs, or aggregator dumps as hostnames matching `<long-label>.<short-label>.<TLD>`. Decode the long label of **every** record — flags, credentials, and `/etc/passwd` fragments are routinely hidden in 100+ entry haystacks among legitimate-looking entries:
+   ```python
+   # log_exfil_decode.py
+   import base64, json, re, sys
+   recs = json.load(open(sys.argv[1]))                 # log dump as JSON list
+   pat = re.compile(r"([A-Za-z0-9+/=_-]{16,})\.[A-Za-z0-9-]{1,8}\.[A-Za-z]{2,8}$")
+   for r in recs:
+       host = r.get("hostname") or r.get("query") or r.get("url", "")
+       m = pat.search(host)
+       if not m: continue
+       lbl = m.group(1)
+       for fn in (base64.b64decode, base64.b32decode,
+                  lambda b: base64.urlsafe_b64decode(b + b"=" * ((-len(b)) % 4))):
+           try:
+               out = fn(lbl.encode() + b"=" * ((-len(lbl)) % 4))
+               if 0x20 <= out[0] <= 0x7e:              # printable first byte
+                   print(host, "→", out[:120])
+                   break
+           except Exception:
+               pass
+   ```
+   Decode the **entire** set, not a sample — operators sometimes interleave decoy entries with the real payload to defeat spot-checks. Common encoding: base64 standard, base64 URL-safe, base32 (iodine), hex.
 
 ## Verifying success
 

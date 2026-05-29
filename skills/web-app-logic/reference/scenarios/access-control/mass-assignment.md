@@ -82,6 +82,34 @@ JSON parameter injection:
 - Some apps validate the assigned value; `role: "admin"` may be rejected but `role: 1` (numeric) accepted.
 - The privileged field may not appear in API responses — check by attempting an admin action after the update.
 
+## Encoded body variants
+
+Apps that wrap the request body in base64 (or URL-encoded JSON) for "obfuscation" still feed the decoded blob into a mass-assigning binder. Decode, mutate, re-encode:
+
+```bash
+# Original encoded body (base64'd JSON)
+echo 'eyJ1c2VybmFtZSI6InRhcmdldCIsImVtYWlsIjoieEB4In0=' | base64 -d
+# {"username":"target","email":"x@x"}
+
+# Add privileged field, re-encode
+echo -n '{"username":"target","email":"x@x","role":"Administrators"}' | base64
+# eyJ1c2VybmFtZSI6InRhcmdldCIsImVtYWlsIjoieEB4Iiwicm9sZSI6IkFkbWluaXN0cmF0b3JzIn0=
+
+curl -X POST /api/v4/users/edit -d 'data=eyJ1c2VybmFtZSI6InRhcmdldCIsImVtYWlsIjoieEB4Iiwicm9sZSI6IkFkbWluaXN0cmF0b3JzIn0='
+```
+
+## Intermediate-role → admin promotion of OTHER users
+
+Some apps gate `/users/edit` behind a Manager / Editor / Moderator role with the implicit assumption that "Manager can only edit non-Admins". The role check tests *the caller's* tier but the mass-assign accepts `role` on the *target user*. Net effect: a Manager can upgrade any non-Admin user (or themselves) to Administrator.
+
+Workflow:
+1. Enumerate the role hierarchy from source / API docs (find the highest role name — `Administrator`, `SuperAdmin`, `root`).
+2. Authenticate as the lowest role that can call `/users/edit` or `/users/<id>` (often Manager or Editor).
+3. POST against another user's record with `role` set to the highest tier.
+4. Log in as that user — full admin.
+
+This is the multi-tenant variant of classic self-promotion mass-assign and is especially common in collaboration platforms (forums, chat apps, ticket systems) where the Manager role exists for user lifecycle but the privilege-field whitelist was never tightened.
+
 ## Tools
 
 - Burp Suite Repeater

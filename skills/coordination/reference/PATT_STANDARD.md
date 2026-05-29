@@ -57,7 +57,7 @@ priority: high|medium|low
 
 ## Adding a New Category (Future Sessions)
 
-1. Find the PATT category in the URL Reference table in `docs/superpowers/plans/2026-03-13-patt-integration.md`
+1. Find the PATT category in the URL map in `skills/patt-fetcher/SKILL.md`
 2. Create `attacks/<group>/<category>/payloads/<variant>.md` following the format above
 3. Run `patt-fetcher` agent → curate top 10 quick hits + bypass variants
 4. Validate: `wc -l <file>.md` must show < 200

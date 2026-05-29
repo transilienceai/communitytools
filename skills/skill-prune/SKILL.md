@@ -9,7 +9,7 @@ Inverse of `/skill-update`. Removes content rather than adding it. Run during qu
 
 ## When to invoke
 
-- Quarterly cadence (`scripts/quarterly_refactor.md`).
+- Quarterly cadence.
 - After `scripts/skill_linter.py --check-orphans` reports orphan reference files.
 - After a SKILL.md or reference file grows past its cap and needs trimming.
 - After a de-specialization sweep, to drop content tied to retired challenges.

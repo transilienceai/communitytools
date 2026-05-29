@@ -51,6 +51,12 @@ Read `cryptography-principles.md` first for the decision tree. This index maps f
 |---|---|---|
 | Shamir SSS over `2^k` modulus | `scenarios/secret-sharing/shamir-non-prime-modulus.md` | 2-adic Lagrange interpolation |
 
+## Classical
+
+| Trigger / fingerprint | Scenario file | One-line job |
+|---|---|---|
+| Short key XOR'd cyclically over plaintext; no key | `scenarios/classical/repeating-key-xor.md` | IC key-length, per-column frequency analysis |
+
 ## Reference Sheets (legacy, full attack catalogs)
 
 | File | Coverage |

@@ -45,8 +45,8 @@ Use `/skill-update` or direct edits. Target files based on technique type:
 |---------------|-------------|-------------|
 | Injection bypass | injection | `reference/*-quickstart.md` or `*-cheat-sheet.md` |
 | Auth technique | authentication | `reference/*-quickstart.md` |
-| Traversal method | server-side | `reference/path-traversal-*.md` |
-| Attack chain | agents | `pentester-spear.md` (escalation ladders) |
+| Traversal method | server-side | `reference/scenarios/path-traversal/` |
+| Attack chain | coordination | `reference/spawning-recipes.md` |
 | Recon pattern | reconnaissance | Relevant reference file |
 
 ### Step 5: Validate Updates

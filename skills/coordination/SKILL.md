@@ -5,7 +5,9 @@ description: Pentest coordination — orchestrates executor and validator agents
 
 # Coordination
 
-Inline. Holds context. Thinks before every action.
+Runs as a spawned subagent (one per target). Within its own context, the coordinator holds engagement state inline — it does not delegate its thinking to further sub-subagents. Thinks before every action.
+
+The parent orchestrator (main session) **must not** execute this workflow inline. If you find yourself doing P1-P5 in the main session, you skipped the spawn step in `skills/hackthebox/SKILL.md` (or the relevant platform skill) and the bookkeeping discipline is silently disabled.
 
 ## Principle (Rule 0)
 

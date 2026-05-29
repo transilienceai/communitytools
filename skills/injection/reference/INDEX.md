@@ -38,3 +38,11 @@ Read `injection-principles.md` first for the decision tree and sequencing princi
 | URL-encoded `[bracket]` form parser | `scenarios/nosql/mongo-type-confusion.md` | `password[$ne]=` → `{$ne:""}` |
 | SSRF + gopher to Redis | `scenarios/nosql/redis-ssrf-gopher.md` | Gopherus → webshell / SSH key / cron |
 | Cassandra on 9042 | `scenarios/nosql/cassandra-cql.md` | Default creds + Java UDF RCE |
+
+## Server-Side Template Injection (SSTI)
+
+| Trigger / fingerprint | Scenario file | One-line job |
+|---|---|---|
+| `render_template_string(stored_value)` (input rendered twice) + substring blocklist for `__`/`file`/`write` + autoescape entitizes quotes | `scenarios/ssti/double-render-quote-free-bypass.md` | Build `__` from `(config\|list)[5][6]` + identifier strings from `dict(name=1)\|first`, command via hex in `?c=` query |
+
+See also: `ssti-quickstart.md`, `ssti-cheat-sheet.md`, `ssti-advanced.md` for engine-fingerprint and per-engine sandbox-escape primitives.

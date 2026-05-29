@@ -11,6 +11,17 @@ Single navigation surface. Coordinator reads this once at engagement start to pi
 | [`patt-fetcher`](patt-fetcher/SKILL.md) | Fetch PayloadAllTheThings payloads on demand | Executor needs a comprehensive payload list |
 | [`script-generator`](script-generator/SKILL.md) | Generate validated, syntax-checked scripts | Need a tool but no PoC exists yet |
 
+## Cloud-Agent Pipeline (RFP §3.2 / §3.3)
+
+Skills consumed by the cloud-agent task specifications under [`projects/rfp-3.2/`](../projects/rfp-3.2/CLAUDE.md) and [`projects/rfp-3.3/`](../projects/rfp-3.3/CLAUDE.md). They run on schedules or webhook events, not interactively.
+
+| Skill | Purpose | Trigger |
+|-------|---------|---------|
+| [`ti-ingest`](ti-ingest/SKILL.md) | Convert TI webhook payloads (CVE + asset + claim) to engagement-scope rows | TI platform webhook (task-01) |
+| [`regression-sweep`](regression-sweep/SKILL.md) | Weekly re-validation of every confirmed finding; flags drift | Cron Mondays (task-04) |
+| [`attack-path-stitcher`](attack-path-stitcher/SKILL.md) | Stitch confirmed single-asset findings into multi-hop attack paths across the org | Cron daily after validation (task-06) |
+| [`risk-prioritiser`](risk-prioritiser/SKILL.md) | Rank attack paths by `feasibility × CVSS × business_impact` | Cron daily after stitcher (task-07) |
+
 ## Recon & Surface Mapping
 
 | Skill | Purpose | Trigger | Use with |
@@ -82,6 +93,8 @@ Coordinator reads `INDEX.md` at engagement start. Picks 1-2 skills matching the 
 For executor spawns: pass the specific reference file path (e.g., `skills/injection/reference/sql-injection-quickstart.md`), not the SKILL.md. The reference file has the actionable content; SKILL.md is navigation.
 
 For validators: do NOT mount the attack skill — biases verdict. Mount only `skills/coordination/reference/VALIDATION.md`.
+
+For cloud-agent tasks: each task in `projects/rfp-3.2/task-NN-*.md` / `projects/rfp-3.3/task-NN-*.md` declares its skill mounts; the runtime loads only those. No coordinator is involved unless the task explicitly invokes `coordination` (only task-03 does).
 
 ## Cross-cutting references (always available)
 

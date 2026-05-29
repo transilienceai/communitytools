@@ -13,7 +13,13 @@ Exploiting DNS infrastructure for information gathering and manipulation.
 
 ## Quick Commands
 ```bash
-# Zone transfer
+# When the target itself runs DNS (port 53) but you don't know the zone:
+dig @<TARGET_IP> -x <TARGET_IP> +short    # PTR often leaks the internal FQDN/TLD
+dig @<TARGET_IP> hostname.bind CHAOS TXT +short   # server hostname
+# Then AXFR the discovered zone against the target's own resolver:
+dig @<TARGET_IP> <discovered.zone> AXFR
+
+# Standard zone transfer
 dig axfr @ns.target.com target.com
 
 # DNS enumeration
@@ -23,6 +29,11 @@ dnsenum target.com
 # Subdomain brute force
 fierce --domain target.com --wordlist subdomains.txt
 ```
+
+The PTR-then-AXFR chain is the fast path when a box exposes a recursive/auth
+resolver: the reverse record reveals a non-public TLD (e.g. `*.internal.jet`),
+which you then zone-transfer to discover the vhost to add to `/etc/hosts` (or
+`curl --resolve`).
 
 ## Methodology
 1. Enumerate DNS records (A, AAAA, MX, NS, TXT, CNAME)

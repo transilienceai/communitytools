@@ -5,7 +5,7 @@
 - Service issues and validates JWTs (JSON Web Tokens), and you can submit a JWT in `Authorization: Bearer …`, cookie, or query parameter.
 - The verification routine reads `alg` from the JWT header and dispatches to a per-algorithm verifier — without enforcing which algorithm is allowed.
 - Trigger keywords: "JWT", "JSON Web Token", "alg=none", "RS256/HS256 confusion", `jsonwebtoken` Node, `pyjwt`, `jjwt`.
-- Cross-link: [skills/authentication/reference/jwt-cheat-sheet.md](../../../authentication/reference/jwt-cheat-sheet.md) covers the same family from the auth-bypass angle.
+- Cross-link: [skills/authentication/reference/jwt-quickstart.md](../../../../authentication/reference/jwt-quickstart.md) covers the same family from the auth-bypass angle.
 
 ## Technique
 

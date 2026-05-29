@@ -23,6 +23,10 @@ Top-level docs:
 - [memory-credential-extraction.md](scenarios/memory/memory-credential-extraction.md) — pypykatz / mimikatz / Volatility hashdump
 - [injected-code-detection.md](scenarios/memory/injected-code-detection.md) — malfind, hollowing, reflective DLLs
 - [network-artifacts-from-mem.md](scenarios/memory/network-artifacts-from-mem.md) — netscan, sockets, DNS cache
+- [nimplant-minidump-task-recovery.md](scenarios/memory/nimplant-minidump-task-recovery.md) — Recover unseen NimPlant task results from Mini DuMP; figlet visual flag-reading guard against decoy flags
+
+### Malware — `scenarios/malware/`
+- [cobalt-strike-beacon-config-extraction.md](scenarios/malware/cobalt-strike-beacon-config-extraction.md) — Cobalt Strike stager vs beacon distinction, RC4 wrapper unwrap, `dissect.cobaltstrike beacon-dump`, CS BOF API fingerprinting in dumps
 
 ### Filesystem — `scenarios/filesystem/`
 - [timeline-creation.md](scenarios/filesystem/timeline-creation.md) — plaso/log2timeline super-timeline

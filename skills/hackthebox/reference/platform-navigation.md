@@ -3,7 +3,7 @@
 ## CRITICAL: Headed Browser Required
 
 The platform uses Cloudflare Turnstile. **Headless browsers are blocked.** ALWAYS use headed mode.
-See `cloudflare-bypass.md` for setup (Xvfb for Docker, anti-detection flags).
+See `skills/reconnaissance/reference/anti-bot-bypass.md` for setup (Xvfb for Docker, anti-detection flags).
 
 ## Login Flow
 

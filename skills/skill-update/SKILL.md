@@ -16,7 +16,7 @@ Generate or refine Claude Code skills following Anthropic best practices.
 - Every `SKILL.md` has YAML frontmatter with `name` + `description`
 - No `DO NOT` / `MUST NOT` / `NEVER` outside an `## Anti-Patterns` section
 - No challenge-specific identifiers (machine names, lab IDs, lab IPs, preserved flags)
-- Every `[link](path)` resolves
+- Every Markdown link resolves to an existing file
 - Every reference file is linked from at least one other file (no orphans)
 
 ## Principles

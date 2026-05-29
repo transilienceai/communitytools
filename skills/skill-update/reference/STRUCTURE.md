@@ -65,7 +65,7 @@ Python utilities. Required `__init__.py` (even if minimal):
 __version__ = "0.1.0"
 ```
 
-Use when deterministic operations or strict validation matters. See [SCRIPTS.md](SCRIPTS.md).
+Use when deterministic operations or strict validation matters.
 
 ### templates/
 

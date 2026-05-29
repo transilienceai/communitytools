@@ -15,6 +15,7 @@ Read `authentication-principles.md` first for the decision tree and sequencing p
 | `x5u` / `x5c` headers trusted | `scenarios/jwt/x5u-x5c-injection.md` | Self-signed cert via `x5c` (embed) or `x5u` (host) |
 | Signature not verified | `scenarios/jwt/signature-stripping.md` | Modify payload, keep/strip signature |
 | Java ECDSA (specific JVMs) | `scenarios/jwt/psychic-signatures-cve-2022-21449.md` | r=0, s=0 ECDSA signature |
+| ECDSA `k` reused across signatures (same `r`) | `scenarios/jwt/ecdsa-nonce-reuse.md` | Recover private key from two JWTs via `k=(z1-z2)/(s1-s2)` |
 | Have a forgery primitive | `scenarios/jwt/claim-tampering.md` | Modify sub / role / exp / tenant claims |
 | 5-part JWE token | `scenarios/jwt/jwe-nested-token.md` | Wrap unsigned PlainJWT in JWE |
 

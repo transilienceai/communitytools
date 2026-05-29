@@ -14,10 +14,7 @@ Reference material for `skills/reconnaissance/`. Start with `reconnaissance-prin
 | [scenarios/port-scanning.md](scenarios/port-scanning.md) | Given an IP or host, need open-port and service inventory. |
 | [scenarios/vhost-enumeration.md](scenarios/vhost-enumeration.md) | Suspected name-based virtual hosts behind a single IP. |
 | [scenarios/api-endpoint-discovery.md](scenarios/api-endpoint-discovery.md) | Web app exposes a backend API; need to map routes, parameters, swagger. |
-| [scenarios/wordlist-strategy.md](scenarios/wordlist-strategy.md) | Choosing the right wordlist for the discovered tech stack. |
-| [scenarios/http-header-recon.md](scenarios/http-header-recon.md) | Inspect headers for backend hostname/version leaks. |
-| [scenarios/ssl-cert-recon.md](scenarios/ssl-cert-recon.md) | Extract subdomains and wildcard indicators from certificates. |
-| [scenarios/git-leak-discovery.md](scenarios/git-leak-discovery.md) | Hunt for exposed VCS metadata, backup files, and developer leftovers. |
+| [scenarios/obfuscated-js-deobfuscation.md](scenarios/obfuscated-js-deobfuscation.md) | Client-side bundle is JSFuck/packer/Function-wrapper obfuscated; need to recover hidden routes by intercepting the executor. |
 
 ## Focused Technique Files
 
@@ -26,5 +23,5 @@ Reference material for `skills/reconnaissance/`. Start with `reconnaissance-prin
 ## Related Skills
 
 - `skills/osint/` - run alongside subdomain enumeration for repository and employee footprinting.
-- `skills/techstack-identification/` - feeds wordlist-strategy with stack fingerprints.
+- `skills/techstack-identification/` - stack fingerprints to guide wordlist and endpoint selection.
 - `skills/infrastructure/` - port scanning escalation into protocol-level testing.

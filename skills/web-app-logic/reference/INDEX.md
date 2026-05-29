@@ -44,6 +44,7 @@ Read `web-app-logic-principles.md` first for the decision tree and sequencing pr
 | Upload + AV scan + delete | `scenarios/race-conditions/file-upload-race.md` | Save-vs-delete window |
 | Login attempt counter post-verify | `scenarios/race-conditions/rate-limit-bypass.md` | Parallel password volley |
 | Server-side session, verify→re-read split | `scenarios/race-conditions/toctou-session.md` | flip_admin / flip_valid / check threads |
+| `app.listen()` opens port before seed `INSERT admin` | `scenarios/race-conditions/container-startup-admin-registration.md` | Spam `POST /register username=admin` during boot |
 | Need higher precision than Burp tab groups | `scenarios/race-conditions/advanced-techniques.md` | Single-packet + last-byte sync + warming |
 | Triage / detection workflow | `scenarios/race-conditions/detection-and-baseline.md` | PREDICT / PROBE / PROVE methodology |
 
@@ -71,3 +72,4 @@ Read `web-app-logic-principles.md` first for the decision tree and sequencing pr
 | Header reflected, not in cache key | `scenarios/cache/poisoning-unkeyed-headers.md` | X-Forwarded-Host, X-Original-URL |
 | Param/cookie reflected, not in cache key | `scenarios/cache/poisoning-unkeyed-params.md` | UTM, callback, fehost cookie |
 | Tornado-style backend merges body into get_argument; cache key is URL-only | `scenarios/cache/poisoning-body-args.md` | GET-with-body XSS poisoning of cacheable URLs |
+| Proxy/CDN fills cache via SetNX/Add/proxy_cache_lock; first writer wins | `scenarios/cache/poisoning-setnx-race.md` | Inflate origin response time + raw-socket burst to beat the legitimate filler |

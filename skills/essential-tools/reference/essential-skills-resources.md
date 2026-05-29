@@ -27,10 +27,10 @@ External links and reading list for web application security testing.
 - XXE: [xxe-quickstart](../../injection/reference/xxe-quickstart.md), [xxe-cheat-sheet](../../injection/reference/xxe-cheat-sheet.md)
 - XSS: [client-side scenarios/xss/](../../client-side/reference/scenarios/xss/), [xss-bypass-techniques](../../client-side/reference/xss-bypass-techniques.md)
 - SQLi: [sql-injection-quickstart](../../injection/reference/sql-injection-quickstart.md), [sql-injection-advanced](../../injection/reference/sql-injection-advanced.md)
-- Path traversal: [path-traversal-cheat-sheet](../../server-side/reference/path-traversal-cheat-sheet.md), [path-traversal-quickstart](../../server-side/reference/path-traversal-quickstart.md)
+- Path traversal: [server-side INDEX](../../server-side/reference/INDEX.md) → `scenarios/path-traversal/`
 - OS command injection: [os-command-injection-cheat-sheet](../../injection/reference/os-command-injection-cheat-sheet.md)
 - Authentication: [authentication-quickstart](../../authentication/reference/authentication-quickstart.md)
-- Access control / IDOR: [access-control-cheat-sheet](../../web-app-logic/reference/access-control-cheat-sheet.md)
+- Access control / IDOR: [web-app-logic INDEX](../../web-app-logic/reference/INDEX.md) → `scenarios/access-control/`
 
 ---
 

@@ -24,7 +24,7 @@ Expected columns:
 - `max_severity` — critical / high / medium / low.
 - `instruction` — asset-specific notes.
 
-Parse with `tools/csv_parser.py`. Filter for `eligible_for_submission=true`.
+Parse with `skills/hackerone/tools/csv_parser.py`. Filter for `eligible_for_submission=true`.
 
 ## Agent deployment
 
@@ -58,7 +58,7 @@ Required sections per HackerOne standard:
 5. Impact (realistic attack scenario).
 6. Remediation (actionable fixes).
 
-Validate with `tools/report_validator.py`.
+Validate with `skills/hackerone/tools/report_validator.py`.
 
 ## Output structure
 
@@ -103,8 +103,8 @@ Standard `OUTPUT_DIR` (`skills/coordination/reference/output-discipline.md`) plu
 
 ## Tools
 
-- `tools/csv_parser.py` — parse HackerOne scope CSVs.
-- `tools/report_validator.py` — validate report completeness.
+- `skills/hackerone/tools/csv_parser.py` — parse HackerOne scope CSVs.
+- `skills/hackerone/tools/report_validator.py` — validate report completeness.
 - `skills/coordination/SKILL.md` — coordinator scaffold.
 
 ## Usage

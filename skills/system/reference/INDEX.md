@@ -74,6 +74,7 @@ Read `system-exploitation-principles.md` first for the decision tree and sequenc
 | Stuck in rbash | `scenarios/linux-privesc/rbash-escape.md` | SSH `-L`/`-D`/`-t`/SCP pre-shell |
 | Localhost WCF/SOAP service | `scenarios/linux-privesc/wcf-soap-localhost.md` | WSDL recon + SOAP command injection |
 | Vulnerable network/SUID binary memory bug | `scenarios/linux-privesc/buffer-overflow.md` | Stack/heap overflow exploit dev |
+| Root-owned `node --inspect=127.0.0.1:9229` process | `scenarios/linux-privesc/nodejs-inspector-abuse.md` | CDP `Runtime.evaluate` over WebSocket → JS RCE in the privileged Node runtime |
 
 ## Windows Privilege Escalation
 
@@ -115,6 +116,17 @@ Read `system-exploitation-principles.md` first for the decision tree and sequenc
 | Masked-bullet password in vendor GUI app | `scenarios/windows-privesc/kiosk-and-applocker-escape.md` | WM_GETTEXT P/Invoke (BulletsPassView equivalent) |
 | AppLocker enabled, name-based allowlist | `scenarios/windows-privesc/kiosk-and-applocker-escape.md` | Rename payload to msedge.exe / explorer.exe / notepad.exe |
 | Medium-integrity admin via runas | `scenarios/windows-privesc/kiosk-and-applocker-escape.md` | Start-Process -Verb RunAs (UAC consent) or fodhelper bypass |
+
+## Pwn / Userland Heap
+
+| Trigger / fingerprint | Scenario file | One-line job |
+|---|---|---|
+| Multi-threaded binary, dlopen'd plugin uses `__tls_get_addr`, UAF on main heap | `scenarios/dtv-poisoning-via-worker-uaf.md` | Corrupt worker's DTV[N].pointer.val on main heap → plugin_process/read = arbitrary R/W |
+| House of Apple 2 trigger; command lives in stdout._flags read by `system(fp)` | `scenarios/fsop-house-of-apple-2-vfprintf-flag-mods.md` | Pre-image `" :;sh\0"` survives vfprintf's `CURRENTLY_PUTTING` set + `USER_BUF`/`IN_BACKUP` clears |
+| Global state var (e.g., `power`) controls array-write index, set via auth-fail; favorite-pattern has FIRST/ELSE branches | `scenarios/oob-write-via-state-power-index.md` | OOB-write spells[0]/[1] + length-confusion arbitrary read (up to 0x100 bytes at chosen address). Heap-base leak via memset 1-byte LSB shift to tcache entries (caveats: needs populatable bin). |
+| glibc 2.32+ tcache info leak when read window lands inside `tcache_perthread_struct` but populatable bins unreachable | `scenarios/glibc-tcache-info-leak-via-small-chunk-overlap.md` | Place a SMALL freed chunk (size 0x20) at heap_base+0x290+ so its user data (= safe-linked fd = heap_base>>12) falls inside the read window. Chain to libc leak via unsorted-bin overflow (8 frees same size > fastbin max). Chain to stack leak via libc.environ. |
+| glibc 2.32+ safe-linking bypass: have heap+libc+stack leaks, classic tcache poison fails because `tcache_put` overwrites fd; need arbitrary write to saved RIP/hook | `scenarios/house-of-botcake-glibc-237-safe-linking-bypass.md` | House of Botcake: backward-consolidate target chunk into unsorted, re-free via OOB-aliased pointer (e->key != tcache_key bypasses double-free check), unsorted alloc memcpy overwrites tcache_put's fd clobber with crafted PROTECT_PTR, two more tcache pops redirect to TARGET. |
+| Binary calls `qsort`+nontransitive comparator, has setrlimit RLIMIT_AS, and resort loop preserving table | `scenarios/qsort-r-multi-resort-table-shift.md` | OOB-walks via glibc 2.35 `_quicksort` insertion sort. 2-zero outliers → PIE leak. Multi-resort accumulates table shifts. |
 
 ## MSSQL
 
