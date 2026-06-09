@@ -13,6 +13,28 @@ Run before spawning any executor batch. Write the checklist to `attack-chain.md`
 - [ ] DNS / vhost enumeration done if HTTP services present.
 - [ ] All discovered hostnames added to `/etc/hosts`.
 
+## Surface-expansion gate (mandatory when an apex domain is in scope)
+
+- [ ] CT-log / passive-DNS sweep of EVERY in-scope apex (`crt.sh`, `certspotter`, `subfinder`) → `recon/inventory/subdomains.json`.
+- [ ] CDN/WAF-fronted hosts get an explicit origin-discovery pass (direct cloud endpoints, archive.org CDX, historical A records).
+- [ ] All discovered hosts added to the inventory AND to `/etc/hosts`.
+- [ ] Run even in grey-box where hostnames were provided: provided != complete; scope = discovered surface.
+
+## Web/API attack-class surface gate (mandatory for any HTTP/API target)
+
+These classes emit NO fingerprint until actively probed — they will never appear as a symptom-driven hypothesis. Probe each explicitly, on the API AND each discovered web origin:
+
+- [ ] CORS (reflected origin / `null` origin / credentialed).
+- [ ] Security headers (HSTS / CSP / X-Frame-Options / X-Content-Type-Options) on the API AND every origin.
+- [ ] Redirect scheme-downgrade (https → http `Location`).
+- [ ] Unauth webhook / ingress probe.
+- [ ] Unauth existence oracles.
+- [ ] Verbose-error probe.
+- [ ] Public docs / `swagger` / `openapi.json` / `redoc`.
+- [ ] TLS posture via `sslscan`.
+
+Reference `skills/coordination/reference/coverage-matrix.md` as the authoritative class list.
+
 ## Phase 2 (think) gate
 
 - [ ] Three hypotheses written to `attack-chain.md` for the next batch.

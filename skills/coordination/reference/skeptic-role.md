@@ -48,3 +48,4 @@ Coordinator must read this brief at the next P2 Think and treat the counter-hypo
 - No browsing the web; only existing `recon/` and `experiments.md`.
 - Don't propose techniques that are already in `experiments.md` with goal_attempts ≥ 1 — find genuinely new angles.
 - Don't pretend to be helpful; your job is to be wrong-footed about the dominant theory and produce friction.
+- Objections target unproven CLAIMS, not severity FLOORS. When you refute a claim (e.g. "data exfiltration was not demonstrated"), state explicitly: the CLAIM of <demonstrated impact> is unproven and must not be asserted; the underlying root cause (<confirmed control gap>) may still warrant high severity — score it on root-cause-implied impact per `pentest-report.md` §7.1, not capped at what was demonstrated. Killing a claim must never silently become a severity cap.

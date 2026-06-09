@@ -194,6 +194,25 @@ for i in range(1, 100):
 
 CTF files: `/flag`, `/flag.txt`, `/app/flag*`, `/home/*/flag.txt`, `/tmp/flag`. Tables: `flags`, `secret`, `flag`, `ctf`.
 
+## MSSQL linked servers — lateral movement
+
+`SELECT name,is_linked,is_data_access_enabled,is_rpc_out_enabled FROM sys.servers` reveals linked servers (often a second instance on the same host, e.g. `WEB\CLIENTS`). The failure mode is the key signal:
+
+- **`uses_self_credential` / empty `sys.linked_logins`** → the link forwards *your current login*. A SQL-only login (`webappusr`) with no matching login on the remote gets `OPENQUERY` → **"Login failed for user 'X'"**. Self-cred is NOT dead — it needs a credential the remote accepts.
+- **The unlock is an explicit credential found elsewhere.** Self-cred `OPENQUERY` via blind injection can never *supply* a password. Once you recover a real DB cred (trace logs `C:\Logs\...\*.trc`, a compiled DLL/config, app source), connect with a client that maps to a trusted login — then it works:
+  ```sql
+  SELECT * FROM openquery([HOST\INST],'SELECT name FROM clients..sysobjects WHERE xtype=''U''');
+  SELECT * FROM openquery([HOST\INST],'SELECT * FROM clients..card_details');
+  ```
+- **Ad-hoc explicit cred** (needs sysadmin to enable; usually off for low-priv): `OPENROWSET('SQLNCLI','Server=HOST\INST;Uid=..;Pwd=..','SELECT ...')`. Returns "Ad Hoc Distributed Queries ... turned off" if disabled — don't chase without sysadmin.
+
+### Blind SQLi → real interactive connection
+A recovered DB password upgrades blind web-layer injection to a **direct 1433 connection** (`mssqlclient.py`; `nxc mssql --local-auth` for SQL logins). Same privileges, but full multi-statement batches, real error messages (informative linked-server/permission failures instead of silent), and you can pass explicit credentials. Always pursue it once you have creds. Gotchas:
+- `mssqlclient.py -file` runs **each line as a separate batch** — `DECLARE @x` won't survive to the next line. Put `DECLARE ...; EXEC ...; SELECT @x` on **one line**.
+- Commonly **denied/neutered** for low-priv (don't over-invest): `xp_regread`/`xp_instance_regenumvalues` (Access denied), `xp_dirtree`/`xp_fileexist` (empty for non-sysadmin), `xp_cmdshell`/OLE Automation/Ad Hoc Distributed Queries (off, can't enable). `sys.sql_logins` usually shows only `sa` + the app user — no Windows logins means a self-cred link has nothing to map, confirming the cred must come from outside SQL.
+
+(Real case: HTB Context — `webappusr` self-cred `OPENQUERY([WEB\CLIENTS])` failed for 5 sessions; the unlock was `karl.memaybe`'s password from `C:\Logs\WEBDB\*.trc`, whose domain login the linked server accepted → `card_details` flag.)
+
 ## References
 
-`scenarios/sql/`, `sql-injection-quickstart.md`, `injection-principles.md`.
+`scenarios/sql/`, `sql-injection-quickstart.md`, `injection-principles.md`, `skills/coordination/reference/principles.md` (Re-verify the primitive), `skills/source-code-scanning/reference/secrets-detection.md` (compiled-artifact secrets).

@@ -2,6 +2,8 @@
 
 Read `api-security-principles.md` first for the decision tree and sequencing principles. This index maps environment fingerprints to scenario files.
 
+Proactive class coverage → `owasp-api-top10-coverage.md` (the no-fingerprint classes below WILL be missed by symptom routing).
+
 ## GraphQL
 
 | Trigger / fingerprint | Scenario file | One-line job |
@@ -28,6 +30,12 @@ Read `api-security-principles.md` first for the decision tree and sequencing pri
 | BOLA / BOPLA / function-level authz | `scenarios/rest/owasp-bola-bopla.md` | Cross-user IDs, privilege fields |
 | WAF blocks JSON | `scenarios/rest/content-type-confusion-xxe.md` | Switch to XML, try XXE |
 | WAF blocks payloads (general) | `scenarios/rest/waf-bypass-techniques.md` | Encoding, HPP, headers |
+| CORS reflected/null/creds on API origin | `scenarios/rest/cors-misconfiguration.md` | Probe ACAO reflection + ACAC:true |
+| Unauth webhook/ingress endpoint | `scenarios/rest/unauthenticated-webhook-oracle.md` | No-auth POST state oracle |
+| https→http redirect / missing HSTS | `scenarios/rest/https-downgrade-redirect-hsts.md` | curl -I transport-security probe |
+| Org/object existence side channel | `scenarios/rest/unauth-existence-oracle.md` | Bad-key error-ordering discriminates existence |
+| Malformed body leaks schema/stack | `scenarios/rest/verbose-error-schema-disclosure.md` | Framework validation/error disclosure |
+| Proactive class coverage | `owasp-api-top10-coverage.md` | OWASP API Top-10 matrix → coverage.json |
 
 ## WebSocket
 
@@ -37,6 +45,12 @@ Read `api-security-principles.md` first for the decision tree and sequencing pri
 | Cookie-only handshake auth | `scenarios/websocket/cswsh.md` | Cross-site WebSocket hijacking |
 | Messages reach DB/shell/DOM | `scenarios/websocket/message-injection.md` | XSS/SQLi/Cmd/XXE/wildcard |
 | Spoofable handshake headers | `scenarios/websocket/auth-bypass-and-handshake-tricks.md` | Forge Origin/X-FF/Cookie |
+
+## MCP / Dev tooling
+
+| Trigger / fingerprint | Scenario file | One-line job |
+|---|---|---|
+| MCP Inspector / MCPJam / `/api/mcp/*` UI, or `/tools/list`+`/tools/call` API | `scenarios/mcp/inspector-stdio-rce.md` | Unauth stdio `connect` → RCE; call hidden tools past the allowlist |
 
 ## Web LLM
 

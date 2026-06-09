@@ -152,6 +152,27 @@ Loop the alphabet over each position (same charset / end-of-string sentinel as t
 - Rate-limit + jitter: blind LDAP is chatty (~100 requests per character). Parallelise across positions only if the filter exposes one user record per match.
 - Server-side filter normalization sometimes lowercases input — if all-letters extraction succeeds but mixed-case fails, the server is lower-casing.
 
+## Blind LDAP injection against Active Directory (login-form SSO)
+
+When the injectable endpoint is an AD-backed login (`(&(sAMAccountName={input}))` then a separate `bind`), several traps waste hours if not handled up front:
+
+**1. Nail the oracle's THREE states before extracting — not two.** A login form typically has:
+- *match* (filter returned ≥1 entry; the app then attempts a bind that fails) — e.g. body "Login attempt failed"
+- *no-match* (filter returned 0; no bind attempted) — e.g. "Invalid login attempt"
+- *error/expired-token* (HTTP 500 / short page / anti-forgery reject)
+
+The match/no-match messages are counter-intuitive: "**login attempt failed**" usually means *the username is VALID and a bind was tried* (i.e. filter MATCHED), while "**invalid login attempt**" means *user not found* (no match). Verify with a known-real vs known-fake username first. Treat the error state as "re-warm token and retry," never as a boolean value — conflating it with `false` produces silent wrong results.
+
+**2. Leave the FINAL injected clause's paren OPEN.** The app's original filter supplies the trailing `)`(s). Inject `*)(attr=val` (open), not `*)(attr=val)` (closed). Closing it yourself unbalances the real filter → parse error → looks like no-match. Confirm an entry exact-matches by pairing with an open sentinel clause: `*)(sAMAccountName=user)(objectClass=user` (open), not a lone `*)(sAMAccountName=user)`.
+
+**3. AD string attributes are `caseIgnoreMatch` — you CANNOT recover a password's case from them.** `description`, `info`, `userPrincipalName`, `displayName` etc. all match case-insensitively. If a leaked `description` looks like a password, the case is unrecoverable via LDAP: `caseExactMatch` (OID `2.5.13.5`) extensible filters (`(description:2.5.13.5:=Value)`) are NOT supported on these AD attributes. Do not burn the account's `badPwdCount` brute-forcing the case-space — that locks the account and is brute force. A "change this password" / leetspeak `change*th1s_p@ssw()rd!!`-style value in `description` is almost always a **decoy note**, not the live credential — verify once with `getTGT.py` (exact bytes, no shell mangling of `!! () @`) and move on.
+
+**4. Read numeric attributes with `>=` / `<=`.** `(logonCount=0` finds never-logged-in accounts (still on their initial/default password); a single account with `logonCount>=1` is the live/service account worth focusing on. Same for `badPwdCount`, `pwdLastSet`. These are case-immune.
+
+**5. The injection scope = the bind account's read rights, usually ONE OU.** Probe `objectClass=computer/group/contact`, `sAMAccountName=Administrator/krbtgt` to map the ceiling. Absent SPN/`msDS-KeyCredentialLink`/LAPS/gMSA/delegation = no in-band privesc pivot from reads alone.
+
+**6. Enumerate accounts OUTSIDE the OU via Kerberos pre-auth** (`GetNPUsers.py <dom>/ -usersfile list -no-pass`, "doesn't have UF_DONT_REQUIRE_PREAUTH" = exists, "PRINCIPAL_UNKNOWN" = not). On a kerberos-only / NTLM-disabled DC this is the only way to confirm service accounts like `iis_webserver`, `Administrator`, app-pool identities the web filter's bind account can't see. Watch for fake "machine" users: a `name$` account with `sAMAccountType=805306368` (user) and `objectClass=computer`=false is a regular user, not a computer — no SPN/RBCD value.
+
 ## Filter Operators Quick Reference
 
 | Operator | Syntax | Use |

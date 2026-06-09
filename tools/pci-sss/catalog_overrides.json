@@ -1,0 +1,26 @@
+{
+  "_comment": "Deterministic, auditable corrections applied by build_catalog.py after merging parts. Each entry corrects a CatalogTestRequirement field where the transcribed verbatim text does not begin with the assessment verb (so the naive first-word test_method was wrong). The test_requirement_text itself is verbatim and unchanged; only test_method is corrected to the actual assessment verb in the sentence.",
+  "test_method": {
+    "2-1.3.1.a": "Examine",
+    "2-1.3.2.a": "Examine",
+    "2-1.5.b": "Verify",
+    "2-2.4.1.a": "Examine",
+    "2-2.4.2.a": "Examine",
+    "2-2.6.b": "Verify",
+    "5-2.3.c": "Perform",
+    "6-1.a": "Perform",
+    "6-2.b": "Verify",
+    "6-2.2.b": "Verify",
+    "8-5.a": "Perform",
+    "8-6.a": "Examine",
+    "10-1.1.a": "Examine",
+    "11-3.b": "Perform",
+    "11-5.a": "Verify",
+    "11-6.a": "Perform",
+    "A1-1.b": "Examine",
+    "A1-1.c": "Perform",
+    "A1-2.b": "Examine",
+    "A1-2.c": "Perform",
+    "C1-2.1.a": "Verify"
+  }
+}

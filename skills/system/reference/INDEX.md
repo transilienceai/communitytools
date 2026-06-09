@@ -12,6 +12,7 @@ Read `system-exploitation-principles.md` first for the decision tree and sequenc
 | `.pfx` cert but `certipy auth` fails | `scenarios/ad/certipy-ldap-shell-fallback.md` | Schannel LDAP shell — universal PKINIT-failure fallback |
 | GenericWrite on user + ADCS deployed | `scenarios/ad/shadow-credentials.md` | `msDS-KeyCredentialLink` → PKINIT → NT hash |
 | Vulnerable template with ENROLLEE_SUPPLIES_SUBJECT | `scenarios/ad/adcs-esc1.md` | Enrol with arbitrary UPN |
+| Enroll on a Cert-Request-Agent template (ESC3) | `scenarios/ad/adcs-esc3.md` | Agent cert → enrol client-auth template on-behalf-of a privileged user (certipy `-dcom`) |
 | WriteProperty on template DACL | `scenarios/ad/adcs-esc4.md` | Flip template to ESC1, enrol, restore |
 | ManageCa on Enterprise CA | `scenarios/ad/adcs-esc6.md` | Enable EDITF_ATTRIBUTESUBJECTALTNAME2 |
 | ManageCa, want full DA | `scenarios/ad/adcs-esc7.md` | Officer + SubCA chain → cert as any UPN |
@@ -67,6 +68,7 @@ Read `system-exploitation-principles.md` first for the decision tree and sequenc
 | udisks2 + polkit allow_active | `scenarios/linux-privesc/udisks2-polkit.md` | XFS SUID mount via loop-setup |
 | SSH cert auth, no AuthorizedPrincipalsFile | `scenarios/linux-privesc/ssh-ca-forgery.md` | Forge cert with principal=root |
 | sudo Python script `tarfile.extractall(filter="data")` | `scenarios/linux-privesc/pycache-poisoning.md` | CVE-2025-4517 PATH_MAX bypass |
+| sudo NOPASSWD python script + writable dir on sys.path (`site.addsitedir`/plugins) | `scenarios/linux-privesc/sudo-python-sitedir-pth.md` | `.pth` import-line exec / module shadowing → root |
 | `sudo … git ^apply -v <pattern>$`, git ≤ 2.39.1 | `scenarios/linux-privesc/sudo-git-apply-symlink.md` | CVE-2023-23946 symlink-rename → write authorized_keys |
 | `sudo … clamscan ^--debug <path>$`, ClamAV ≤ 1.0.1 | `scenarios/linux-privesc/clamav-debug-xxe.md` | CVE-2023-20052 DMG XXE → read /root/.ssh/id_rsa |
 | Container/host with multiplex SSH sockets | `scenarios/linux-privesc/ssh-controlmaster-hijack.md` | Ride open session without creds |
@@ -75,6 +77,7 @@ Read `system-exploitation-principles.md` first for the decision tree and sequenc
 | Localhost WCF/SOAP service | `scenarios/linux-privesc/wcf-soap-localhost.md` | WSDL recon + SOAP command injection |
 | Vulnerable network/SUID binary memory bug | `scenarios/linux-privesc/buffer-overflow.md` | Stack/heap overflow exploit dev |
 | Root-owned `node --inspect=127.0.0.1:9229` process | `scenarios/linux-privesc/nodejs-inspector-abuse.md` | CDP `Runtime.evaluate` over WebSocket → JS RCE in the privileged Node runtime |
+| Apache NiFi API, anonymous `execute-code` (`supportsLogin:false`) | `scenarios/linux-privesc/nifi-anon-rest-rce.md` | `ExecuteProcess` processor via REST → RCE; read stdout via FlowFile-queue API when no egress |
 
 ## Windows Privilege Escalation
 

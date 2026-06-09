@@ -31,7 +31,7 @@ raw/        - Tool outputs (nmap, ffuf, ZAP, subfinder)
 
 ## Tools
 
-subfinder, amass, nmap, masscan, ffuf, gobuster, nikto, ZAP, Playwright MCP
+subfinder, amass, certspotter, crt.sh, nmap, masscan, nuclei, sslscan, ffuf, gobuster, nikto, ZAP, Playwright MCP
 
 ## Related Skills
 
@@ -54,3 +54,4 @@ subfinder, amass, nmap, masscan, ffuf, gobuster, nikto, ZAP, Playwright MCP
     nmap -Pn -sC -sV -p 53,88,135,139,389,445,464,593,636,3268,3269,5985,5986,9389 -oA recon/ad-focused TARGET
     ```
     Ports rationale: 53 DNS, 88 Kerberos, 135 RPC, 139/445 SMB, 389/636 LDAP/LDAPS, 464 kpasswd, 593 RPC-over-HTTPS, 3268/3269 GC/GC-LDAPS, 5985 WinRM (HTTP), 5986 WinRM (HTTPS — cert auth), 9389 AD Web Services. Always probe BOTH 5985 and 5986 — when 5985 is filtered, 5986 with client-cert auth is a common foothold path (see `skills/system/reference/foothold-patterns.md` WinRM cert-auth foothold). Only fall back to `-p-` if (a) no flag-yielding service surfaces in the focused scan, or (b) you suspect a non-standard app on a high port (custom web service, RDP-on-non-3389, etc.). Don't burn 30 minutes on full TCP sweeps when the AD archetype is obvious.
+12. **CT-log enumeration is MANDATORY**: CT-log enumeration (crt.sh / certspotter / subfinder) is MANDATORY on every engagement that names an apex domain, INCLUDING grey-box engagements where hostnames were provided — provided hostnames are a seed, not the surface. CDN/WAF-fronted targets additionally get an origin-discovery pass (direct cloud endpoints, archive.org CDX, historical DNS). The crt.sh/subfinder commands already ship in `reference/scenarios/subdomain-enumeration.md` — use them.

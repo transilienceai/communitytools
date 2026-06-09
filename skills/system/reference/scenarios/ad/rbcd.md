@@ -10,6 +10,15 @@
 
 Set `msDS-AllowedToActOnBehalfOfOtherIdentity` on the target machine to allow your controlled machine account. Use S4U2self (request a TGS for yourself impersonating any user) + S4U2proxy (use that TGS to obtain a service ticket against the target). The result is a service ticket for the target as Administrator.
 
+### Abusing a PRE-EXISTING RBCD (read the allowed SID's objectClass first)
+
+When the target (often the DC) ALREADY has an `msDS-AllowedToActOnBehalfOfOtherIdentity` set, the win is to control whatever principal it points to — but first resolve that SID and check its `objectClass`, it decides how you get its key:
+
+- **gMSA** (`msDS-GroupManagedServiceAccount`) → read the managed password if you're in its `msDS-GroupMSAMembership` ([gmsa.md](gmsa.md)).
+- **Plain user** or **computer** → there is NO managed password to read; you need its NT hash via a password reset (ForceChangePassword/GenericAll) or Shadow Credentials ([shadow-credentials.md](shadow-credentials.md)).
+
+Don't assume an "service-looking" account is a gMSA — a plain user with a static password is common, and the read-the-managed-password path simply does not exist for it.
+
 ## Steps
 
 ```bash

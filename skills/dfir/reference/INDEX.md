@@ -27,6 +27,7 @@ Top-level docs:
 
 ### Malware — `scenarios/malware/`
 - [cobalt-strike-beacon-config-extraction.md](scenarios/malware/cobalt-strike-beacon-config-extraction.md) — Cobalt Strike stager vs beacon distinction, RC4 wrapper unwrap, `dissect.cobaltstrike beacon-dump`, CS BOF API fingerprinting in dumps
+- [malicious-browser-extension-exfil.md](scenarios/malware/malicious-browser-extension-exfil.md) — force-installed MV3 extension cookie theft: recover SW source from `Service Worker/ScriptCache/*_0`, read `Local Extension Settings` leveldb SSTables read-only (snappy), deobfuscate, decrypt the WASM/GUID-keyed stream cipher, replay the session cookie. Incl. AD1 parsing + leveldb evidence-safety
 
 ### Filesystem — `scenarios/filesystem/`
 - [timeline-creation.md](scenarios/filesystem/timeline-creation.md) — plaso/log2timeline super-timeline

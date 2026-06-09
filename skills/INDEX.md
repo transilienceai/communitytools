@@ -7,6 +7,8 @@ Single navigation surface. Coordinator reads this once at engagement start to pi
 | Skill | Purpose | Trigger |
 |-------|---------|---------|
 | [`coordination`](coordination/SKILL.md) | Orchestrate executor / validator / skeptic agents | Every engagement — entry point |
+| [`pentest-engagement`](pentest-engagement/SKILL.md) | Scoped web/API/cloud pentest from a scope file — surface expansion → OWASP attack-class coverage → validate → Transilience PDF | A real (non-CTF) pentest defined by a scope file |
+| [`hackthebox`](hackthebox/SKILL.md) | Solve HackTheBox challenges/machines/fortresses (flag-shaped) | CTF / HTB target |
 | [`skill-update`](skill-update/SKILL.md) | Add or refine skill content from engagement learnings | Post-engagement (parent orchestrator only) |
 | [`patt-fetcher`](patt-fetcher/SKILL.md) | Fetch PayloadAllTheThings payloads on demand | Executor needs a comprehensive payload list |
 | [`script-generator`](script-generator/SKILL.md) | Generate validated, syntax-checked scripts | Need a tool but no PoC exists yet |
@@ -61,6 +63,7 @@ Skills consumed by the cloud-agent task specifications under [`projects/rfp-3.2/
 | [`social-engineering`](social-engineering/SKILL.md) | Phishing, pretexting, vishing, physical sec | People-in-scope authorized engagements |
 | [`dfir`](dfir/SKILL.md) | Forensic Sherlocks, network/memory/log analysis, AD attack detection | Defensive / IR / Sherlock challenge |
 | [`firewall-review`](firewall-review/SKILL.md) | Static firewall ruleset audit (FortiGate, PAN, ASA, NSG, SG, iptables) | Firewall config provided |
+| [`pci-secure-software`](pci-secure-software/SKILL.md) | Automated PCI Secure Software Standard (SSS) v2.0 readiness gap-assessment from source + docs — deterministic Test-Requirement catalog, evidence-bound per-requirement verdicts with blind refutation + citation verification, Transilience gap report | A PCI SSS v2.0 / Secure Software Standard readiness or gap assessment of an application |
 
 ## Tooling & Methodology
 

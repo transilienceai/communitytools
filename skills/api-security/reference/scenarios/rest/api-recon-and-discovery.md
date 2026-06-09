@@ -178,6 +178,7 @@ jq -r '.[] | .request.url' burp-history.json | grep -oP '\?[^&]+' > params.txt
 - Some endpoints respond identically for valid/invalid paths — use response timing or size differential.
 - Mobile apps often expose richer APIs than web — hook the app traffic via Frida/proxy.
 - API versions may live on different subdomains/ports — full recon includes DNS + port scanning.
+- A discovery/allowlist endpoint (`/tools/list`, `/_catalog`, swagger) is **not** the full surface — servers often dispatch undocumented operations the listing omits. Guess hidden names (`admin_`/`_admin_`/`debug_`/`dump`/`exec` variants) and read source when reachable; see [scenarios/mcp/inspector-stdio-rce.md](../mcp/inspector-stdio-rce.md) Part 2.
 
 ## Tools
 

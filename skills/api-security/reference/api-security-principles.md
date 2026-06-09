@@ -30,6 +30,10 @@ This file is the entry point for API security testing. It contains decision logi
 | WS messages reach DB / shell / DOM | `scenarios/websocket/message-injection.md` | XSS / SQLi / Cmd / XXE / wildcard |
 | Spoofable handshake headers (Origin, X-FF) | `scenarios/websocket/auth-bypass-and-handshake-tricks.md` | Forge headers, test admin actions |
 
+## OWASP coverage obligation
+
+The fingerprint tree above says where to START once a symptom appears; it does NOT define DONE. DONE is defined by `skills/coordination/reference/coverage-matrix.md`: every applicable class in `OUTPUT_DIR/coverage.json` must reach `covered` or justified-`NA`. Classes that emit no fingerprint until actively probed — CORS, unauth webhook oracle, existence oracles, verbose errors, transport downgrade, security headers, TLS posture — WILL be missed by symptom-driven routing; the coverage gate forces them. Use `owasp-api-top10-coverage.md` to map each pending class to its scenario file and exact probe.
+
 ## Sequencing principles
 
 1. **Recon before payloads.** Map endpoints, methods, and authentication before sending injection. Misdirected payloads waste cycles and trip rate limits.

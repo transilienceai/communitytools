@@ -96,6 +96,10 @@ callback, redirect, url, next
 debug, verbose, trace
 ```
 
+### Connector / integration URL fields (SSRF sink)
+
+Create/update bodies for connectors, integrations, and webhooks often carry server-fetched URL fields — `base_url`, `api_url`, `auth_url`, `instance_url`, `endpoint`, `webhook_url`. The server dereferences these on save or on first sync, so a mass-assigned/attacker-controlled value is also an SSRF sink (cloud metadata, internal services). When you spot one of these fields, pivot: `skills/server-side/reference/scenarios/ssrf/stored-connector-url-ssrf.md`.
+
 ### Attack variations
 
 - Negative percentages for credit gains

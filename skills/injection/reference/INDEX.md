@@ -38,6 +38,7 @@ Read `injection-principles.md` first for the decision tree and sequencing princi
 | URL-encoded `[bracket]` form parser | `scenarios/nosql/mongo-type-confusion.md` | `password[$ne]=` → `{$ne:""}` |
 | SSRF + gopher to Redis | `scenarios/nosql/redis-ssrf-gopher.md` | Gopherus → webshell / SSH key / cron |
 | Cassandra on 9042 | `scenarios/nosql/cassandra-cql.md` | Default creds + Java UDF RCE |
+| Elasticsearch inline-script proxy | `scenarios/nosql/elasticsearch-script-injection.md` | Raw `'` survives quote-strip → Rhino breakout (`'x'||true||''`); ES ≤5.x scripting RCE |
 
 ## Server-Side Template Injection (SSTI)
 

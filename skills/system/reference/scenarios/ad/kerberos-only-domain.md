@@ -198,6 +198,12 @@ KERB_SKEW_SECONDS=$(( $(date -ju -f "%Y-%m-%dT%H:%M:%SZ" "<DC_TIME_UTC>" "+%s") 
 # gMSA accounts require Kerberos auth for WinRM — NTLM auth returns Access Denied
 # macOS Heimdal Kerberos lacks gss_wrap_iov support — patch Ruby gssapi gem to use
 #   MIT Kerberos (/opt/homebrew/opt/krb5/lib/libgssapi_krb5.dylib) via GSSAPI_LIB env or direct edit
+# ENDPOINT SDDL: the cmd WinRS shell (Windows/shell/cmd) and the PowerShell runspace
+#   (microsoft.powershell) can carry DIFFERENT SDDLs. If Kerberos AUTH succeeds but the cmd
+#   shell returns WSManFault Code 5 "Access is denied" at shell-CREATE, switch to the
+#   PowerShell endpoint — pypsrp Client.execute_ps() (RunspacePool) — which is often allowed
+#   for a member where WinRS cmd is denied. (A bare 401 instead = auth/logon-right denial, a
+#   different problem: the account lacks Remote Management Users / the WinRM logon right.)
 ```
 
 ## Verifying success

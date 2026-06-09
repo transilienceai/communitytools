@@ -51,6 +51,14 @@ done
 # grep those directly or convert offline: ps2pdf <file> out.pdf
 ```
 
+## Encrypted config + colocated decryption key
+
+Many services store secrets *encrypted* but ship the decryption key on the same host — so footholding as the service user makes recovery trivial, regardless of how slow the KDF is (you decrypt on-box, never crack offline). Hunt for the ciphertext/key pair, then decrypt locally:
+
+- **Apache NiFi** — `conf/flow.json.gz` (encrypted DBCP/parameter secrets) + `conf/nifi.properties` (`nifi.sensitive.props.key`). PBKDF2-HMAC-SHA512 + AES-GCM recipe: [nifi-anon-rest-rce.md](nifi-anon-rest-rce.md).
+- **mRemoteNG** — `confCons.xml` (PBKDF2 + AES-GCM): [../windows-privesc/kiosk-and-applocker-escape.md](../windows-privesc/kiosk-and-applocker-escape.md).
+- Generic tell: a `*.key` / `*.properties` / `master.key` next to an encrypted `*.xml`/`*.json`/`*.gz` config in the same service dir. Spring Cloud Config, Jasypt, and many Java apps follow this shape.
+
 ## General Linux privesc enumeration commands
 
 ```bash

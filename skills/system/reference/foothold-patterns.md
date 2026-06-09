@@ -33,6 +33,8 @@ Hash-cracking against AS-REP / Kerberoast hashes recovered from the wire is **no
 | User foothold has `~/.vault-token` + Vault SSH OTP role on `127.0.0.1` | `vault write -field=key ssh/creds/<role> ip=127.0.0.1` produces a single-use SSH password. SSH from the foothold (not external) with `PreferredAuthentications=keyboard-interactive,password`. If `sshpass`/`expect` are missing, drive the prompt with a stdlib `pty.fork()` helper | [scenarios/linux-privesc/vault-otp-ssh-role.md](scenarios/linux-privesc/vault-otp-ssh-role.md) |
 | Schema-v1 ADCS template (`WebServer`, custom Server-Auth) + `EnrolleeSuppliesSubject` + you control an enroller | ESC15 / CVE-2024-49019 — smuggle `Client Authentication` into the cert via `-application-policies`, PKINIT as anyone. Watch for the certipy 5.0.4 CSR bug (multiple `extensionRequest` attrs → AD CS drops App Policies) and the patched-KDC failure mode (`KDC_ERR_INCONSISTENT_KEY_PURPOSE`) | [scenarios/ad/adcs-esc15.md](scenarios/ad/adcs-esc15.md) |
 | `cap_dac_override` binary that writes to `/proc/sys/fs/binfmt_misc/register` | Register binfmt handler with `C` flag matching unique ELF prefix of `/usr/bin/su` → kernel runs your interpreter (real ELF, not `#!`) with su's credentials → root | — |
+| Low-priv shell on a multi-user / multi-service host (dev-tooling box) | Lateral move via **secrets in process argv**: `ps auxww` + `cat /proc/*/cmdline \| tr '\0' ' '` for `--token=` / `--password=` / API-key flags. Dev daemons leak creds here (Jupyter `--ServerApp.token=`, DB CLIs, app servers) → authenticate to that service as the user running it | — |
+| Apache NiFi UI/API on a vhost; `/nifi-api/access/config` → `supportsLogin:false` | Anonymous `execute-code` → create an `ExecuteProcess` processor via REST → RCE as `nifi`. On egress-filtered hosts read stdout back through the FlowFile-queue listing/content API (no callback needed) | [scenarios/linux-privesc/nifi-anon-rest-rce.md](scenarios/linux-privesc/nifi-anon-rest-rce.md) |
 
 ## Windows non-AD (or post-foothold) targets
 
@@ -52,7 +54,7 @@ Hash-cracking against AS-REP / Kerberoast hashes recovered from the wire is **no
 ## Operator gotchas
 
 - **Clock skew breaks Kerberos.** Any Kerberos tool failure → check skew → prefix with `faketime`.
-- **Internal subnets need tunneling.** Hyper-V (port 2179), dual NICs, internal IPs → Ligolo-ng or chisel.
+- **Internal subnets need tunneling.** Hyper-V (port 2179), dual NICs, internal IPs → Ligolo-ng or chisel. No chisel/socat/SSH on the box but you do have command exec? Stand up a detached stdlib TCP relay to reach an internal-only service (OPC-UA, an HMI on 127.0.0.1, a DB) from your host: bind `0.0.0.0:<LOCAL>`, connect `127.0.0.1:<INTERNAL>`, thread per connection with a bidirectional copy, launched via `setsid … &` / `nohup` so it survives the RCE channel — `python3 -c 'import socket,threading … '`.
 - **Multi-flag chains.** User flag first, always. From user shell, enumerate for root (sudo -l, groups, SeBackupPrivilege, RODC access).
 - **gpg-agent `General error` on macOS attacker host** with long `GNUPGHOME` paths — use `GNUPGHOME=/tmp/<short>` for one-off keystore decryption.
 

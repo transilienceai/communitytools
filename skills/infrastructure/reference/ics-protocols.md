@@ -27,6 +27,20 @@ ICS challenges run small simulated plants (reactors, water treatment, factories)
 - Servers often advertise `Basic256Sha256` + `SignAndEncrypt` security policies (looks secure) but accept *any self-signed client cert* (no trust list). Generate a fresh cert with `openssl` or `opcua.crypto.uacrypto.generate_self_signed_cert()` and connect.
 - Anonymous identity is frequently allowed *and* given UAL=3 (write) on namespaces it shouldn't have. Browse `Objects` and `WriteValue` on each variable; permission errors come back synchronously.
 - `asyncua` and `opcua` both work; `asyncua` is more responsive for the sustained-write loop pattern.
+- Enumerate the address space by recursively walking `Objects`, reading each variable's value + node class. Writable nodes are the targets:
+
+  ```python
+  from asyncua import Client          # URL e.g. opc.tcp://<TARGET>:4840/<path>/
+  async with Client(url=URL) as c:
+      async def walk(n, d=0, seen=set()):
+          if n.nodeid.to_string() in seen or d > 6: return
+          seen.add(n.nodeid.to_string())
+          if str(await n.read_node_class()) == "NodeClass.Variable":
+              print("  "*d, (await n.read_browse_name()).Name, "=", await n.read_value())
+          for ch in await n.get_children(): await walk(ch, d+1, seen)
+      await walk(c.nodes.objects)
+  ```
+- Impact isn't only a physical broadcast/meltdown. Writable OT nodes can drive a **host-side privileged controller** (often root) into a maintenance/override/test state that grants **OS-level** access — a window-gated `/etc/sudoers.d` rule, a privileged service restart, a script run as root. After flipping the relevant nodes (e.g. a mode/override flag + a value past a safety threshold via a calibration-offset node), check the host for newly granted sudo rights or triggered root actions, not just a flag in a broadcast.
 
 ## Modbus specific gotchas
 

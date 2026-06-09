@@ -10,6 +10,7 @@ Strong indicators that vhost enumeration is worthwhile:
 - Response headers leak a hostname (`X-Backend-Server`, `X-Forwarded-Host`, `X-Served-By`).
 - Hosts file or DNS history references names that don't resolve publicly.
 - Different content appears when the same IP is reached with different `Host` headers.
+- The app integrates a backend platform (ML registry, CI, monitoring) whose admin/API service is often split onto its own vhost (`models.`, `mlflow.`, `ci.`, `grafana.`). A `Host` value returning **401 with `WWW-Authenticate: Basic realm="..."`** (vs the default 301/200) exposes such a backend — then try that product's default creds (e.g. MLflow `admin:password`, see [MLflow registry RCE](../../../ai-threat-testing/reference/scenarios/llm/llm05-supply-chain-vulnerabilities.md)).
 
 ## Technique
 

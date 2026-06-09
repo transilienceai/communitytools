@@ -67,6 +67,7 @@ NEGATIVE_RULE_ALLOWLIST = {
     SKILLS / "skill-update" / "SKILL.md",  # rules describe themselves
     SKILLS / "skill-prune" / "SKILL.md",
     SKILLS / "firewall-review",  # whole subtree — agent contracts are hard-contract by design
+    SKILLS / "pci-secure-software",  # whole subtree — compliance agent/anti-hallucination contracts are hard-contract by design
     SKILLS / "github-workflow" / "SKILL.md",  # git-policy hard rules
 }
 

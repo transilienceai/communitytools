@@ -14,6 +14,7 @@ Read `server-side-principles.md` first for the decision tree and sequencing prin
 | App proxies path to internal storage | `scenarios/ssrf/proxy-path-traversal.md` | `..%2F<bucket>` to S3 / MinIO |
 | SSRF sink forwards user header names; internal Redis reachable | `scenarios/ssrf/redis-inline-via-header-name.md` | Header NAME = `eval <lua> 0 dummy` → Redis runs Lua before `Host:` filter closes connection |
 | SSRF response bytes 0x80-0xFF replaced by U+FFFD; binary exfil broken | `scenarios/ssrf/utf8-binary-loss-limit.md` | Pivot to text-only refs/logs, try gopher/dict/ftp schemes, or fetch public mirror |
+| Created resource stores a URL the server later fetches (base_url/webhook_url) | `scenarios/ssrf/stored-connector-url-ssrf.md` | CREATE pointing at 169.254.170.2/metadata/collaborator → trigger sync; validator-fails-open at use |
 
 ## HTTP Smuggling
 

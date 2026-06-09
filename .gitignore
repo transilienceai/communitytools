@@ -76,6 +76,10 @@ benchmarks/bountybench/results/
 !.claude-plugin/marketplace.json
 !plugins/**/.claude-plugin/plugin.json
 !mcp/**/*.json
+# Skill compliance catalogs are source-of-truth data, not engagement output — keep them tracked
+!skills/**/reference/catalog/*.json
+# PCI SSS catalog build config (deterministic, auditable) — keep tracked
+!tools/pci-sss/*.json
 
 # Credentials and secrets
 credentials.json

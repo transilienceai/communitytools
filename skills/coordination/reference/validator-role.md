@@ -64,6 +64,7 @@ Spawned once per engagement at P5, after every finding-validator completes. Catc
 5. **Mandatory skeptic spawns** — `skeptic-brief-5.md`, `skeptic-brief-15.md`, `skeptic-brief-25.md` exist for the experiment counts the engagement reached.
 6. **Time-to-first-finding** — `<= 0.3 * duration_seconds`. Late TTFF is a heuristic for skipped recon.
 7. **No `AskUserQuestion` calls** — search any saved transcript / log for the call. Coordinator must have zero.
+8. **Attack-class coverage (web/API/transport engagements)** — read `OUTPUT_DIR/coverage.json`. Compute `coverage_ratio = covered / applicable` where `applicable = total − not_applicable`. Every `covered` row must cite ≥1 real `evidence_ref` (a present E-NNN row in `experiments.md` or an existing `finding-NNN/` dir) else it is treated as pending. Every `not_applicable` row must carry a justification. FAIL (`engagement_status:GAPS_FOUND`) if `coverage_ratio < 0.80`. Skip as PASS-NA only for pure host/AD/binary targets with no HTTP/API/TLS surface.
 
 ### Output
 
@@ -79,8 +80,10 @@ Spawned once per engagement at P5, after every finding-validator completes. Catc
     "wildcard_hypothesis": "PASS" | "FAIL",
     "skeptic_spawns": "PASS" | "FAIL — <missing>",
     "ttff_ratio": 0.27,
-    "ask_user_count": 0
+    "ask_user_count": 0,
+    "attack_class_coverage": "PASS — 17/20 (0.85)" | "FAIL — 7/20 (0.35); pending: XC-CORS, ..."
   },
+  "coverage_ratio": 0.85,
   "remediation": ["concrete next experiments to fill the gaps"]
 }
 ```
@@ -91,4 +94,5 @@ Plus `{OUTPUT_DIR}/artifacts/engagement-validation-summary.md` (human-readable).
 
 - Blind to attack-chain reasoning and finding internals — judge from the directory state alone.
 - A `GAPS_FOUND` verdict on an Easy-rated target blocks report generation; the coordinator must address the gaps and re-run validation.
+- `attack_class_coverage:FAIL` forces `GAPS_FOUND` regardless of checks 1-7; the coordinator must cover-or-NA the named pending classes and re-validate before COMPLETE.
 - Never write to `findings/` or `validated/` — engagement validator only writes to `artifacts/`.

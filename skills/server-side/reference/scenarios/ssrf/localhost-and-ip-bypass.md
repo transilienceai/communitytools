@@ -2,6 +2,8 @@
 
 ## When this applies
 
+> Stored / second-order variant — URL written to a created resource and fetched later on "test connection"/sync: see `scenarios/ssrf/stored-connector-url-ssrf.md`.
+
 - Application fetches a URL from user input (image, webhook, RSS, profile picture).
 - Server has a blocklist for `127.0.0.1`, `localhost`, private IP ranges.
 - Goal: reach internal services despite the blocklist.
