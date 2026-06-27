@@ -57,6 +57,7 @@ Skills consumed by the cloud-agent task specifications under [`projects/rfp-3.2/
 |-------|---------|---------|
 | [`blockchain-security`](blockchain-security/SKILL.md) | Solidity, EVM, smart contract exploitation | Smart contract target |
 | [`ai-threat-testing`](ai-threat-testing/SKILL.md) | Prompt injection, model extraction, RAG poisoning, OWASP LLM Top 10 | LLM-backed application |
+| [`pyrit-red-teaming`](pyrit-red-teaming/SKILL.md) | Automated LLM red teaming with Microsoft PyRIT — scored prompt-injection/jailbreak/disclosure runs, OWASP-LLM-mapped findings | Authorized LLM target, automated first pass (use with ai-threat-testing) |
 | [`cryptography`](cryptography/SKILL.md) | Lattice / AGCD / linear-collapse cryptanalysis, padding oracles, secret-sharing recovery | Custom crypto, structured RSA, oracle exposure |
 | [`reverse-engineering`](reverse-engineering/SKILL.md) | Static analysis of ELF/PE, custom-VM bytecode, callfuscation, MBA deobfuscation | Compiled binary / custom-ISA program-data file |
 | [`mobile-security`](mobile-security/SKILL.md) | Android / iOS app testing — Flutter AOT, IL2CPP, smali, Frida, root-detection bypass | Mobile APK / IPA target |

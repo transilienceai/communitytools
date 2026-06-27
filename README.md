@@ -27,7 +27,7 @@ We built an autonomous pentesting agent that scores **100% (104/104)** on a publ
 
 ## Overview
 
-**Transilience AI Community Tools** is a consolidated Claude Code security testing suite — **26 skills** and **3 tool integrations** that cover the full penetration testing lifecycle from reconnaissance to reporting. Agent roles (coordinator, executor, validator) are defined in `skills/coordination/` with reference material in `skills/coordination/reference/`, and spawned dynamically via `Agent(prompt=...)`.
+**Transilience AI Community Tools** is a consolidated Claude Code security testing suite — **27 skills** and **3 tool integrations** that cover the full penetration testing lifecycle from reconnaissance to reporting. Agent roles (coordinator, executor, validator) are defined in `skills/coordination/` with reference material in `skills/coordination/reference/`, and spawned dynamically via `Agent(prompt=...)`.
 
 ### Why Choose Transilience Community Tools?
 
@@ -95,7 +95,7 @@ All canonical skill and tool definitions live at the **repo root** (`skills/`, `
 
 Agent roles (coordinator, executor, validator) are defined in `skills/coordination/` with reference material in `skills/coordination/reference/`, spawned dynamically via `Agent(prompt=...)`.
 
-### Skills by Category (26)
+### Skills by Category (27)
 
 #### Vulnerability Testing (10)
 
@@ -120,11 +120,12 @@ Agent roles (coordinator, executor, validator) are defined in `skills/coordinati
 | `/osint` | Repository enumeration, secret scanning, git history analysis, employee footprint |
 | `/techstack-identification` | Passive tech stack inference across 17 intelligence domains |
 
-#### Specialized (5)
+#### Specialized (6)
 
 | Skill | Purpose |
 |-------|---------|
 | `/ai-threat-testing` | OWASP LLM Top 10 — prompt injection, model extraction, data poisoning, supply chain |
+| `/pyrit-red-teaming` | Automated LLM red teaming with Microsoft PyRIT — scored prompt-injection/jailbreak/disclosure runs, OWASP-LLM-mapped findings |
 | `/blockchain-security` | Smart contract security, EVM storage, delegatecall, CREATE/CREATE2, DeFi exploits |
 | `/cve-poc-generator` | CVE research, NVD lookup, safe Python PoC generation, vulnerability reports |
 | `/dfir` | Digital forensics, incident response, Windows event logs, PCAP analysis, AD attack detection |
