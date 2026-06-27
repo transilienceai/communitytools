@@ -28,11 +28,11 @@ Issues = "https://github.com/transilienceai/communitytools/issues"
 API = "https://transilienceapi.com"
 
 [project.scripts]
-transilience-vuln-mcp = "server:cli"
+transilience-vuln-mcp = "transilience_vuln_mcp:cli"
 
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-py-modules = ["server"]
+packages = ["transilience_vuln_mcp"]

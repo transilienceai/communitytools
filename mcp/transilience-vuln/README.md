@@ -60,7 +60,7 @@ two `/ABSOLUTE/PATH/TO/...` placeholders and your API key:
   "mcpServers": {
     "transilience-vuln": {
       "command": "/ABSOLUTE/PATH/TO/communitytools/mcp/transilience-vuln/.venv/bin/python",
-      "args": ["/ABSOLUTE/PATH/TO/communitytools/mcp/transilience-vuln/server.py"],
+      "args": ["/ABSOLUTE/PATH/TO/communitytools/mcp/transilience-vuln/transilience_vuln_mcp/server.py"],
       "env": {
         "TRANSILIENCE_API_KEY": "your-actual-key-here",
         "TRANSILIENCE_RATE_LIMIT": "18"
@@ -72,7 +72,8 @@ two `/ABSOLUTE/PATH/TO/...` placeholders and your API key:
 
 Use absolute paths for both `command` and `args` — Claude Desktop does not
 honor your shell's `PATH`. On Windows the Python binary is
-`...\.venv\Scripts\python.exe`.
+`...\.venv\Scripts\python.exe` and the server module is
+`...\transilience_vuln_mcp\server.py`.
 
 Quit Claude Desktop completely (not just close the window) and relaunch.
 
@@ -92,7 +93,7 @@ The most common failure is a wrong path to Python or to `server.py`.
 ## Smoke test from the command line
 
 ```bash
-TRANSILIENCE_API_KEY=your-key python server.py
+TRANSILIENCE_API_KEY=your-key python -m transilience_vuln_mcp.server
 ```
 
 The server will sit on stdio waiting for JSON-RPC. You should see

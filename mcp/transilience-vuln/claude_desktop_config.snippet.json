@@ -2,7 +2,7 @@
   "mcpServers": {
     "transilience-vuln": {
       "command": "/ABSOLUTE/PATH/TO/communitytools/mcp/transilience-vuln/.venv/bin/python",
-      "args": ["/ABSOLUTE/PATH/TO/communitytools/mcp/transilience-vuln/server.py"],
+      "args": ["/ABSOLUTE/PATH/TO/communitytools/mcp/transilience-vuln/transilience_vuln_mcp/server.py"],
       "env": {
         "TRANSILIENCE_API_KEY": "PUT-YOUR-KEY-HERE",
         "TRANSILIENCE_RATE_LIMIT": "18"
