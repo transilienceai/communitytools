@@ -1,30 +1,36 @@
 {
-  "name": "Transilience Community Security Tools",
-  "description": "Claude Code plugins for authorized security testing, bug bounty hunting, AI threat testing, and recon",
+  "name": "communitytools",
+  "owner": {
+    "name": "Transilience AI",
+    "email": "contact@transilience.ai"
+  },
+  "metadata": {
+    "description": "Claude Code plugins for authorized security testing, bug bounty hunting, AI threat testing, and recon"
+  },
   "plugins": [
     {
       "name": "pentest",
-      "path": "plugins/pentest",
+      "source": "./",
       "description": "Full penetration testing framework — 100+ attack categories covering OWASP, injection, authentication, cloud, and more"
     },
     {
       "name": "hackerone",
-      "path": "plugins/hackerone",
+      "source": "./skills/hackerone",
       "description": "HackerOne bug bounty integration — report generation, CSV parsing, and platform-ready submissions"
     },
     {
       "name": "ai-threat-testing",
-      "path": "plugins/ai-threat-testing",
+      "source": "./skills/ai-threat-testing",
       "description": "AI security testing — OWASP LLM Top 10 with dedicated agents for prompt injection, model extraction, and more"
     },
     {
       "name": "techstack-identification",
-      "path": "plugins/techstack-identification",
-      "description": "Tech stack reconnaissance — 26 skills and 5 agents for DNS, cloud detection, subdomain enumeration, and more"
+      "source": "./skills/techstack-identification",
+      "description": "Tech stack reconnaissance — DNS, cloud detection, subdomain enumeration, and more"
     },
     {
       "name": "skill-update",
-      "path": "plugins/skill-update",
+      "source": "./skills/skill-update",
       "description": "Skill creation meta-tool — automates skill generation, validation, and PR submission for Claude Code plugins"
     }
   ]
