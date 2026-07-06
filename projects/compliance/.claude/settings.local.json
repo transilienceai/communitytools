@@ -1,0 +1,50 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(tree:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(xargs:*)",
+      "Bash(wc:*)",
+      "Bash(cat:*)",
+      "Bash(jq:*)",
+      "Bash(shasum:*)",
+      "Bash(date:*)",
+      "Bash(python3:*)",
+      "Bash(pip3 install:*)",
+      "Bash(git:*)",
+      "Bash(curl:*)",
+      "WebFetch(domain:www.anthropic.com)",
+      "WebFetch(domain:www.pcisecuritystandards.org)",
+      "WebFetch(domain:nvd.nist.gov)",
+      "Edit(/Users/alexander/dev/transilience-ai/communitytools/projects/compliance/outputs/**)",
+      "Write(/Users/alexander/dev/transilience-ai/communitytools/projects/compliance/outputs/**)"
+    ]
+  },
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "afplay \"/Users/alexander/dev/transilience-ai/communitytools/.claude/sounds/notify.mp3\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "afplay \"/Users/alexander/dev/transilience-ai/communitytools/.claude/sounds/notify.mp3\""
+          }
+        ]
+      }
+    ]
+  }
+}

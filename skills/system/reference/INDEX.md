@@ -19,6 +19,7 @@ Read `system-exploitation-principles.md` first for the decision tree and sequenc
 | Template has CT_FLAG_NO_SECURITY_EXTENSION + GenericWrite on enroller | `scenarios/ad/adcs-esc16.md` | UPN-only auth via no-SID cert |
 | ADCS Web Enrollment + NTLM disabled (ESC8 NTLM-relay blocked) | `scenarios/ad/adcs-esc8-kerb-relay.md` | CTI DNS spoof + coerce_plus → DC cert via Kerberos relay |
 | gMSA account (member of msDS-GroupMSAMembership) | `scenarios/ad/gmsa.md` | Read managed password → NT hash |
+| Server 2025 DC + CreateChild on any OU (`nxc -M badsuccessor`) | `scenarios/ad/badsuccessor-dmsa.md` | dMSA supersede a target → its NT hash (pair w/ GenericWrite-on-target if DC patched) |
 | WriteProperty on `msDS-AllowedToActOnBehalfOfOtherIdentity` | `scenarios/ad/rbcd.md` | RBCD chain to SYSTEM on target |
 | Unconstrained delegation host (DC, etc.) + SYSTEM there | `scenarios/ad/unconstrained-delegation.md` | Coerce + capture forwarded TGT |
 | `msDS-AllowedToDelegateTo` + service hash | `scenarios/ad/constrained-delegation.md` | S4U2Self/S4U2Proxy abuse + SPN jacking |

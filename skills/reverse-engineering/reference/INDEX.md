@@ -12,6 +12,12 @@ Read `reverse-engineering-principles.md` first for the decision tree. This index
 | `strings` mostly empty | `scenarios/static-analysis/string-extraction.md` | FLOSS for stack / decoded strings |
 | Unity IL2CPP game (`GameAssembly.dll` + `global-metadata.dat`) | `scenarios/static-analysis/unity-il2cpp-recipe.md` | Il2CppDumper + dnSpy on DummyDll; resolve metadata tokens via script.json |
 
+## Hardware / Firmware
+
+| Trigger / fingerprint | Scenario file | One-line job |
+|---|---|---|
+| Multi-MB ESP-IDF flash dump (`0xE9` @0x1000, `0xAA50` @0x8000, Xtensa LX6); runtime-generated flag gated by an anti-clone / "try to emulate it" check | `scenarios/firmware/esp32-xtensa-flash-dump.md` | Emulate under Espressif QEMU fork (device prints flag) or static-decode the embedded XOR ciphertext via espressif xtensa-esp32-elf-objdump |
+
 ## Custom VM
 
 | Trigger / fingerprint | Scenario file | One-line job |

@@ -1,6 +1,6 @@
 ---
 name: mobile-security
-description: Mobile application security testing — Android (smali, Frida, IL2CPP, Flutter AOT, root detection), iOS (jailbreak, Objection).
+description: Mobile application security testing — Android (smali, Frida, IL2CPP, Flutter AOT, React Native/Hermes, root detection), iOS (jailbreak, Objection).
 ---
 
 # Mobile Security
@@ -14,6 +14,7 @@ Security testing of mobile applications, with emphasis on static analysis of com
 - Mobile target ships an Android APK (or iOS IPA) — extract and inspect before any runtime testing.
 - App is built with **Flutter** (`lib/arm64-v8a/libapp.so` present) — needs Dart-aware decompiler.
 - App is built with **Unity** (`libil2cpp.so` + `global-metadata.dat`) — needs Il2CppDumper.
+- App is built with **React Native + Hermes** (`libhermes.so` + `libreact_*.so` + `assets/index.android.bundle`) — the logic is Hermes bytecode in the bundle, not the dex; decompile the bundle with hermes-dec.
 - App uses encrypted API envelopes (KEY/IV/SALT/SIGNATURE headers, base64 body) and you need to reverse the crypto contract.
 - You suspect IDOR, mass assignment, or business-logic flaws that are easier to find in the dumped client code than via black-box API testing.
 - TLS pinning or root detection blocks dynamic testing — static analysis is the path forward.
@@ -21,5 +22,6 @@ Security testing of mobile applications, with emphasis on static analysis of com
 ## References
 
 - [reference/flutter-aot-reversing.md](reference/flutter-aot-reversing.md) — Flutter AOT (Dart) static analysis with blutter; common HTTP envelope patterns (fast_rsa OAEP-SHA256 + AES-256-CBC); banking-app exploitation patterns.
+- [reference/scenarios/android/react-native-hermes.md](reference/scenarios/android/react-native-hermes.md) — React Native + Hermes APK static analysis: fingerprint + HBC-version check, decompile `index.android.bundle` with hermes-dec (works on HBC v96), the BuildConfig/strings.xml secret fast-path, and the RN-specific MASVS surface (plaintext AsyncStorage, JS-layer TLS pinning, WebView config, unsigned CodePush OTA, bundled-SDK CVEs).
 - [reference/scenarios/android/native-lib-host-extraction.md](reference/scenarios/android/native-lib-host-extraction.md) — host-side `dlopen` of an Android `.so` with a Bionic→glibc forwarder + `strcmp`/`memcmp` interceptor to dump expected values without Frida or an emulator.
-- [../reverse-engineering/reference/scenarios/obfuscation/hash-dispatcher-chain.md](../reverse-engineering/reference/scenarios/obfuscation/hash-dispatcher-chain.md) — when an Android `.so` validates input via hundreds of polynomial-hash dispatcher functions and constructs the secret deterministically from input bytes (HTB WonderSMS pattern); use Z3 over the chain rather than emulating.
+- [../reverse-engineering/reference/scenarios/obfuscation/hash-dispatcher-chain.md](../reverse-engineering/reference/scenarios/obfuscation/hash-dispatcher-chain.md) — when an Android `.so` validates input via hundreds of polynomial-hash dispatcher functions and constructs the secret deterministically from input bytes; use Z3 over the chain rather than emulating.

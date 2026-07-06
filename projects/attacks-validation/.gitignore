@@ -1,2 +1,9 @@
-# Generated outputs - never commit
-outputs/
+# Ignore everything in this directory
+*
+
+# ...except these
+!.gitignore
+!.claude/
+!.claude/**
+!CLAUDE.md
+!projects.json

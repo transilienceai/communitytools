@@ -67,11 +67,16 @@ curl -s -X POST -H "Authorization: Bearer $HTB_TOKEN" -H "Content-Type: applicat
 # Challenge CONTAINER lifecycle (crypto/web/pwn challenges that expose a TCP service).
 # info: read docker_ip + docker_ports + docker_status("ready") + play_info.expires_at + file_name(download).
 curl -s -H "Authorization: Bearer $HTB_TOKEN" "https://labs.hackthebox.com/api/v4/challenge/info/CHALLENGE_ID"
-# start (returns {"message":"Instance Created!","id":...}; then poll info for docker_ip/ports) / stop:
-curl -s -X POST -H "Authorization: Bearer $HTB_TOKEN" -H "Content-Type: application/json" \
-  -d '{"challenge_id": CHALLENGE_ID}' "https://labs.hackthebox.com/api/v4/challenge/start"
-curl -s -X POST -H "Authorization: Bearer $HTB_TOKEN" -H "Content-Type: application/json" \
-  -d '{"challenge_id": CHALLENGE_ID}' "https://labs.hackthebox.com/api/v4/challenge/stop"
+# start/stop: as of 2026-06 the OLD route `POST /api/v4/challenge/start` is DEAD — it now 404s
+# (returns the "Are you lost?" HTML page) for every transport/host/param. The SPA migrated to a
+# UNIFIED container endpoint: POST /api/v4/container/{start,stop} with body {"containerable_id": <id>}
+# (the id is the CHALLENGE id for challenges). Discoverable in app.hackthebox.com's main JS bundle
+# (grep the `/assets/index-*.js` chunk for `/container/start`). start returns
+# {"message":"Instance Created!","id":...}; then poll challenge/info for docker_ip/ports/status("ready").
+curl -s --http1.1 -X POST -H "Authorization: Bearer $HTB_TOKEN" -H "Content-Type: application/json" \
+  -d '{"containerable_id": CHALLENGE_ID}' "https://labs.hackthebox.com/api/v4/container/start"
+curl -s --http1.1 -X POST -H "Authorization: Bearer $HTB_TOKEN" -H "Content-Type: application/json" \
+  -d '{"containerable_id": CHALLENGE_ID}' "https://labs.hackthebox.com/api/v4/container/stop"
 # download the challenge tarball (follow the S3 presigned redirect): the 302 is legitimate, not a block.
 curl -sL -H "Authorization: Bearer $HTB_TOKEN" "https://labs.hackthebox.com/api/v4/challenge/download/CHALLENGE_ID" -o chal.zip
 

