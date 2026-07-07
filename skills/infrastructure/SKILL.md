@@ -22,6 +22,7 @@ Test network infrastructure for vulnerabilities including network services, prot
 | **ICS/SCADA** | Modbus TCP, PLC exploitation, coil/register manipulation, session hijacking |
 | **UPnP / IoT / CPE** | rootDesc/SCPD enumeration, vendor SOAP info disclosure (`GetPassword`), command injection via vendor actions, cross-action auth-key reuse |
 | **Hardware / Embedded** | Logic captures (Saleae `.sal`), CAN/UART decoding, side-channel password recovery, legacy CPU errata, i386 tools via docker |
+| **Firewall / VPN Gateways** | Live posture validation, management-plane exposure, DNS resolver posture, IKE/IPsec checks, safe CVE correlation |
 
 ## Workflow
 
@@ -45,6 +46,13 @@ Test network infrastructure for vulnerabilities including network services, prot
 - `reference/ics-modbus-quickstart.md` - ICS/SCADA Modbus PLC exploitation
 - `reference/upnp-iot-quickstart.md` - UPnP / IoT / CPE firmware web UI enumeration and exploitation
 - `reference/hardware-embedded-quickstart.md` - Logic captures, CAN/UART decoding, side-channel char-by-char recovery, legacy CPU bugs (6502), i386 tooling on ARM macOS
+- `reference/scenarios/firewall/external-firewall-posture.md` - Firewall/VPN gateway live posture checks when only IPs/CIDRs are provided
+- `reference/scenarios/firewall/management-plane-exposure.md` - Admin UI/SSH/SNMP/API exposure checks
+- `reference/scenarios/firewall/dns-resolver-posture.md` - Open recursion, AXFR, CHAOS, DNSSEC response-size, and ANY behavior checks
+- `reference/scenarios/firewall/vpn-gateway-posture.md` - IKE/IKEv2/NAT-T, Aggressive Mode, and weak transform posture checks
+- `reference/scenarios/firewall/safe-cve-correlation.md` - CVE classification without exploit payloads
+- `reference/scenarios/firewall/control-evidence-matrix.md` - Which firewall controls require remote versus admin/internal evidence
+- `reference/vendors/check-point-gateway.md` - Check Point Security Gateway ports, SVN foundation, VPN, and safe CVE handling
 
 **Scan techniques**: `reference/syn-scan.md`, `reference/udp-scan.md`, `reference/icmp-scan.md`, `reference/os-fingerprint.md`
 **Other**: `reference/firewall-detection.md`, `reference/service-enum.md`, `reference/ip-reputation.md`, `reference/overview.md`

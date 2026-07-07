@@ -35,6 +35,8 @@ Forks may rename the persona via `brand.yaml` (`persona_name` key). Default ship
 
 Skills are reference material for transferable knowledge — read them when you need context the code doesn't carry:
 
+If the operator provides live firewall/VPN gateway IPs but no ruleset or config export, use `../infrastructure/reference/scenarios/firewall/external-firewall-posture.md` instead of this static ruleset audit workflow. This skill remains config-first.
+
 | Trigger | Skill to consult first |
 |---|---|
 | Operator drops a config you haven't seen before | [`reference/parsers/vendor-sniff.md`](reference/parsers/vendor-sniff.md) (sniff signatures) → relevant `reference/parsers/<vendor>-parser.md` |

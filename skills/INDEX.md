@@ -48,7 +48,7 @@ Skills consumed by the cloud-agent task specifications under [`projects/rfp-3.2/
 
 | Skill | Purpose | Trigger |
 |-------|---------|---------|
-| [`infrastructure`](infrastructure/SKILL.md) | Port scanning, DNS, SMB/NetBIOS, MITM, IPv6, ICS, hardware/embedded, UPnP/IoT | Non-HTTP services in scope |
+| [`infrastructure`](infrastructure/SKILL.md) | Port scanning, DNS, SMB/NetBIOS, MITM, IPv6, ICS, hardware/embedded, UPnP/IoT, firewall/VPN live posture | Non-HTTP services, firewall IPs, VPN gateways, or perimeter DNS in scope |
 | [`system`](system/SKILL.md) | Active Directory, privilege escalation (Linux + Windows), exploit dev | Foothold + need privesc, or AD environment |
 | [`cloud-containers`](cloud-containers/SKILL.md) | AWS, Azure, GCP, Docker, Kubernetes | Cloud or container target |
 
@@ -63,7 +63,7 @@ Skills consumed by the cloud-agent task specifications under [`projects/rfp-3.2/
 | [`mobile-security`](mobile-security/SKILL.md) | Android / iOS app testing — Flutter AOT, IL2CPP, React Native/Hermes, smali, Frida, root-detection bypass | Mobile APK / IPA target |
 | [`social-engineering`](social-engineering/SKILL.md) | Phishing, pretexting, vishing, physical sec | People-in-scope authorized engagements |
 | [`dfir`](dfir/SKILL.md) | Forensic Sherlocks, network/memory/log analysis, AD attack detection | Defensive / IR / Sherlock challenge |
-| [`firewall-review`](firewall-review/SKILL.md) | Static firewall ruleset audit (FortiGate, PAN, ASA, NSG, SG, iptables) | Firewall config provided |
+| [`firewall-review`](firewall-review/SKILL.md) | Static firewall ruleset audit (FortiGate, PAN, ASA, NSG, SG, iptables) | Firewall config provided; for live firewall IP posture without config, use infrastructure firewall references |
 | [`cloud-defense`](cloud-defense/SKILL.md) | Detect & break the cloud post-compromise chain (AWS/Azure/GCP): per-stage log signals + hardening controls | Cloud remediation, detection engineering, or blue-team posture review (pairs with cloud-containers) |
 | [`pci-secure-software`](pci-secure-software/SKILL.md) | Automated PCI Secure Software Standard (SSS) v2.0 readiness gap-assessment from source + docs — deterministic Test-Requirement catalog, evidence-bound per-requirement verdicts with blind refutation + citation verification, Transilience gap report | A PCI SSS v2.0 / Secure Software Standard readiness or gap assessment of an application |
 
