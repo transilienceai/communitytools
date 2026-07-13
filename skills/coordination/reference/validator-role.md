@@ -4,10 +4,10 @@ Two validator classes. Both are blind reviews — independent of the coordinator
 
 | Class | Spawned | Receives | Job |
 |-------|---------|----------|-----|
-| **Finding validator** | One per finding at P5 | `finding_id`, `FINDING_DIR`, `TARGET_URL`, `OUTPUT_DIR` | All-or-nothing 5-check on one finding |
-| **Engagement validator** | Once at P5 after finding-validators | `OUTPUT_DIR` only | Thoroughness check on the whole engagement |
+| **Finding validator** | **Interleaved — the instant INTEGRATE materializes each candidate, before the next batch; re-spawned FRESH each cure round** | `finding_id`, `FINDING_DIR`, `TARGET_URL`, `OUTPUT_DIR`, frozen NVD/KEV snapshot | Drive one candidate to a terminal verdict (all-or-nothing checks) |
+| **Engagement validator** | Once at loop end, over the interleaved `validated/` writes | `OUTPUT_DIR` only | Thoroughness check on the whole engagement |
 
-Mount only `reference/VALIDATION.md`. Do **not** mount the full attack skill — biases judgment.
+Validation is **interleaved, strict per-finding** — a candidate is validated the moment it exists, not in a downstream one-shot pass. Mount only `reference/VALIDATION.md`. Do **not** mount the full attack skill — biases judgment. On every cure round the coordinator re-spawns a **fresh** validator that re-reads disk, so the blind contract holds across the whole convergence loop.
 
 ---
 
@@ -25,10 +25,13 @@ Mount only `reference/VALIDATION.md`. Do **not** mount the full attack skill —
 4. **Claims vs evidence** — every factual claim in description.md corroborated by a raw scan/log file.
 5. **Log phases** — recon / experiment / test / verify present, timestamps ≥ 2 s apart (catches templated bulk-stamp findings).
 
-### Output
+### Output (terminal routing)
 
-- VALID → `{OUTPUT_DIR}/validated/{finding_id}.json`
-- REJECTED → `{OUTPUT_DIR}/false-positives/{finding_id}.json` (include original finding + failure reasons)
+- CONFIRMED (VALID / REPAIRED) → `{OUTPUT_DIR}/validated/{finding_id}.json` — the only findings that reach the report.
+- REJECTED (adversarial majority) → `{OUTPUT_DIR}/false-positives/{finding_id}.json` (include original finding + failure reasons) — audit only.
+- DEMOTED → **cure lane**: the coordinator spawns a scoped cure executor handed ONLY the `failed_checks` + `missing_evidence` (told *do not re-theorize*), then re-validates on a fresh blind agent. Still uncured after `MAX_CURE_ROUNDS` → `{OUTPUT_DIR}/dropped/{finding_id}.json` — audit only, never the report.
+
+Drop-entirely: there is no gaps/assurance section — `validated/` is VALID/REPAIRED by construction.
 
 ### Proof artifacts in `{FINDING_DIR}/evidence/validation/`
 
@@ -49,7 +52,7 @@ Mount only `reference/VALIDATION.md`. Do **not** mount the full attack skill —
 
 ## Engagement Validator
 
-Spawned once per engagement at P5, after every finding-validator completes. Catches engagement-level gaps the per-finding validator can't see.
+Spawned once at loop end, after every candidate has already been validated inline to a terminal verdict. Reads the interleaved `validated/` writes and catches engagement-level gaps the per-finding validator can't see.
 
 ### Input
 
@@ -57,14 +60,14 @@ Spawned once per engagement at P5, after every finding-validator completes. Catc
 
 ### Checks (all must PASS for `engagement_status=THOROUGH`)
 
-1. **Port coverage** — every open port in `recon/` has at least one `experiments.md` row.
+1. **Port coverage** — every open port in `recon/` has at least one `experiments.md` row. Additionally, a "no open ports / no external surface" conclusion FAILs (`port_coverage:FAIL` → `engagement_status:GAPS_FOUND`) unless (a) a full-range (all-65535) scan ran on the reachable hosts, AND (b) the conclusion names the ≥1 `logs/activity/source-ips.jsonl` vantage geographies it was derived from — a single-vantage "no surface" is never covered (an allowlisted host may be live from another geography).
 2. **Share enumeration** — for AD/Windows targets: every share listed in `recon/smb_shares.txt` (or equivalent) has a corresponding spider/probe row in `tools/`. Both anonymous and guest probes attempted where applicable.
 3. **Source-code coverage** — every file in `recon/source/` (or equivalent application source dump) referenced by at least one experiments row OR linked from attack-chain.md tested entries.
 4. **Wildcard hypothesis** — at least 1 `[wildcard]`-tagged hypothesis appears in attack-chain.md and was tested (has an experiments row).
 5. **Mandatory skeptic spawns** — `skeptic-brief-5.md`, `skeptic-brief-15.md`, `skeptic-brief-25.md` exist for the experiment counts the engagement reached.
 6. **Time-to-first-finding** — `<= 0.3 * duration_seconds`. Late TTFF is a heuristic for skipped recon.
 7. **No `AskUserQuestion` calls** — search any saved transcript / log for the call. Coordinator must have zero.
-8. **Attack-class coverage (web/API/transport engagements)** — read `OUTPUT_DIR/coverage.json`. Compute `coverage_ratio = covered / applicable` where `applicable = total − not_applicable`. Every `covered` row must cite ≥1 real `evidence_ref` (a present E-NNN row in `experiments.md` or an existing `finding-NNN/` dir) else it is treated as pending. Every `not_applicable` row must carry a justification. FAIL (`engagement_status:GAPS_FOUND`) if `coverage_ratio < 0.80`. Skip as PASS-NA only for pure host/AD/binary targets with no HTTP/API/TLS surface.
+8. **Attack-class coverage (web/API/transport/network engagements) — DETERMINISTIC hard 100% gate** — run `python3 tools/coverage_gate.py --asset-dir OUTPUT_DIR` and read `OUTPUT_DIR/reports/coverage-matrix.json`. It code-enumerates the applicable `(surface-unit × attack-class)` cells from `recon/inventory/surface.json` / `host.json` and joins each to real on-disk evidence (a `covered` cell needs a `VALID`/`REPAIRED` finding whose `class_id` + `unit_refs` + `asset_tag` match; a `covered_negative` needs a corroborated probe / verified vantages). Set `coverage_ratio` from its output and FAIL (`engagement_status:GAPS_FOUND`) unless its `complete` is true (`coverage_ratio == 1.0`, no missing/extra/dangling/false-NA/surface-undercount), listing the `missing_cells` (`class_id @ scope_key`) in remediation. This replaces the old 0.80 soft bar. Skip as PASS-NA only for pure host/AD/binary targets with no HTTP/API/TLS surface (zero applicable cells → the gate returns `complete:true` gracefully).
 
 ### Output
 
@@ -74,7 +77,7 @@ Spawned once per engagement at P5, after every finding-validator completes. Catc
 {
   "engagement_status": "THOROUGH" | "GAPS_FOUND",
   "checks": {
-    "port_coverage": "PASS" | "FAIL — <ports skipped>",
+    "port_coverage": "PASS" | "FAIL — <ports skipped | single-vantage no-surface | full-range missing>",
     "share_enumeration": "PASS" | "FAIL — <shares skipped>",
     "source_coverage": "PASS" | "FAIL — <files skipped>",
     "wildcard_hypothesis": "PASS" | "FAIL",

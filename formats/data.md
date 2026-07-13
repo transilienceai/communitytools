@@ -70,6 +70,18 @@ All JSON data files — machine-readable exports, reconnaissance inventories, an
 }
 ```
 
+## Validated finding — attack-class coverage-join fields
+
+The interim validated finding JSON (`{OUTPUT_DIR}/artifacts/validated/<id>.json`, the `verdict`-based shape `report_data_build.py` reads) additionally carries three fields that let `tools/coverage_gate.py` join a `covered` cell to its evidence. They are stamped by the coordinator loop **after** `buildInterim` (never inside it):
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `class_id` | string \| null | the attack-class this finding covers (from the mission's `covers_cells`/`covers_class`); `null` for a pure wildcard/goal finding (covers no cell) |
+| `unit_refs` | string[] | the `scope_key`s (unit_id / listener / asset_tag) this finding proves the class on |
+| `asset_tag` | string | the owning asset (the OUTPUT_DIR basename); the gate requires `finding.asset_tag == cell.asset_tag` |
+
+A cell is `covered` only when a `VALID`/`REPAIRED` finding matches on **all three** (`class_id` == cell class, cell `scope_key` ∈ `unit_refs`, `asset_tag` match). See `skills/coordination/reference/coverage-matrix.md`.
+
 ## Rules
 
 - One JSON file per asset type in `{OUTPUT_DIR}/recon/`

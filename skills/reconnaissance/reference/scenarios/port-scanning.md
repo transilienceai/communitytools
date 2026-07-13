@@ -10,7 +10,7 @@ Three scan profiles cover most situations:
 
 1. **Focused scan** - a curated port list based on the host's archetype. Fastest; preferred opening move.
 2. **Top-1000 / Top-10000 TCP** - default `nmap` profiles; reasonable coverage for unknown hosts.
-3. **Full TCP (`-p-`)** and **UDP (`-sU`)** - exhaustive; only when the lighter profiles missed everything actionable.
+3. **Full TCP (`-p-`)** and **UDP (`-sU`)** - exhaustive. For a low-host-count external/perimeter VA this is the **default** (services hide on high ports — message buses, non-443 TLS); for a CTF/AD host with an obvious archetype, run it only when the lighter profiles missed everything actionable.
 
 Service version detection (`-sV`) and default scripts (`-sC`) should run after the port list is known so the heavy probes only hit confirmed-open ports.
 
@@ -54,9 +54,9 @@ Service version detection (`-sV`) and default scripts (`-sC`) should run after t
    nmap -Pn --top-ports 1000 -sV -sC -oA recon/raw/top1k-${TARGET} ${TARGET}
    ```
 
-6. **Full TCP fallback**
+6. **Full TCP (default for perimeter VAs; fallback for archetyped hosts)**
 
-   Only run when the focused or top-1000 scan returned no exploitable surface, or when a non-standard application is suspected.
+   For a small set of reachable internet-exposed hosts, run this **by default**. For an archetyped CTF/AD host, run it when the focused or top-1000 scan returned no exploitable surface, or when a non-standard application is suspected.
 
    ```bash
    # Two-stage: fast SYN sweep, then service detection on hits

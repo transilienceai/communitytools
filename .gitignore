@@ -115,6 +115,15 @@ Desktop.ini
 
 **/.playwright-mcp
 
+# Local engagement state (active-engagement pointer + orphan activity log) — never commit
+.claude/state/
+
+# The broad Python `lib/` ignore (above) also catches the workflow helper
+# source-of-truth + its parity/wiring/unit tests. Track them so CI can run them
+# (pentest-engagement.js etc. embed inline copies guarded by parity.test.mjs).
+!.claude/workflows/lib/
+!.claude/workflows/lib/**
+
 **/projects/ctf/
 !**/projects/ctf/CLAUDE.md
 !**/projects/ctf/.claude

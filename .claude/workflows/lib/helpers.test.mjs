@@ -1,0 +1,320 @@
+// helpers.test.mjs — offline, deterministic unit suite for wf-helpers.mjs.
+// Run: node .claude/workflows/lib/helpers.test.mjs
+// No test framework (none exists in this repo); a tiny assert harness + process exit code.
+
+import { createHash } from 'node:crypto';
+import {
+  SEVERITY, severityBand, TIER_WEIGHTS, RISK_THRESHOLDS, riskScore, exposureFor,
+  cveReconcile, normVector, EVIDENCE_MANIFEST, evidenceComplete, computeVerdict, finalPoc,
+  normalizeAssess, reconcileAssessed, finalizeGate, bumpVersion, scopeDiff, resolveEngagementMeta,
+  redactSecrets, assertReportData,
+  DEFAULT_VOTES, AGENT_CAP, GLOBAL_RESERVE, buildInterim, cacheKey,
+  cureLoopDecision, terminalSubdir, coverageDecision, shouldInlineValidate,
+  backstopDecision, assessBudget, reduceCandidateVerdicts, summarizeLoopCounts,
+  detectAllowlist, resolveGeoZones,
+} from './wf-helpers.mjs';
+
+let pass = 0, fail = 0;
+const fails = [];
+function eq(actual, expected, msg) {
+  const a = JSON.stringify(actual), e = JSON.stringify(expected);
+  if (a === e) { pass++; } else { fail++; fails.push(`✗ ${msg}\n    expected ${e}\n    got      ${a}`); }
+}
+function ok(cond, msg) { if (cond) pass++; else { fail++; fails.push(`✗ ${msg}`); } }
+
+// --- severityBand ---------------------------------------------------------
+eq(severityBand(9.8), 'Critical', 'severityBand 9.8');
+eq(severityBand(9.0), 'Critical', 'severityBand boundary 9.0');
+eq(severityBand(7.0), 'High', 'severityBand boundary 7.0');
+eq(severityBand(6.9), 'Medium', 'severityBand 6.9');
+eq(severityBand(4.0), 'Medium', 'severityBand boundary 4.0');
+eq(severityBand(0.1), 'Low', 'severityBand 0.1');
+eq(severityBand(0), 'Info', 'severityBand 0 -> Info (never None)');
+eq(severityBand(null), 'Info', 'severityBand null -> Info');
+ok(!SEVERITY.includes('None'), 'SEVERITY has no None');
+
+// --- riskScore (parity with scoring-formula.md worked examples) -----------
+eq(TIER_WEIGHTS, { crown_jewel: 1.0, revenue: 0.7, support: 0.4, dev: 0.2, unknown: 0.3 }, 'tier weights == risk-prioritise.py defaults');
+eq(RISK_THRESHOLDS, { immediate: 0.6, short_term: 0.3, medium_term: 0.1 }, 'thresholds == risk-prioritise.py defaults');
+{ // Example A: crown-jewel, cvss 9.8, external, confirmed
+  const r = riskScore({ cvss: 9.8, tier: 'crown_jewel', exposure: 1.0, feasibility: 1.0 });
+  eq(r.risk_score, 0.98, 'riskScore A score 0.98'); eq(r.risk_bucket, 'immediate', 'riskScore A bucket');
+}
+{ // Example C: support tier RCE, cvss 9.0
+  const r = riskScore({ cvss: 9.0, tier: 'support', exposure: 1.0, feasibility: 1.0 });
+  eq(r.risk_score, 0.36, 'riskScore C score 0.36'); eq(r.risk_bucket, 'short_term', 'riskScore C bucket');
+}
+{ // Example B numbers as a standalone finding: cvss 7.5, revenue, feas 0.5
+  const r = riskScore({ cvss: 7.5, tier: 'revenue', exposure: 1.0, feasibility: 0.5 });
+  eq(r.risk_score, 0.2625, 'riskScore B score 0.2625'); eq(r.risk_bucket, 'medium_term', 'riskScore B bucket');
+}
+{ // No CVSS -> technical 0.5; unknown tier -> 0.3
+  const r = riskScore({ cvss: 0, tier: 'nope', exposure: 0.5, feasibility: 1.0 });
+  eq(r.cvss_missing, true, 'riskScore cvss_missing'); eq(r.business_impact, 0.3, 'unknown tier weight 0.3');
+  eq(r.risk_score, 0.075, 'riskScore no-cvss internal -> 0.075 monitor'); eq(r.risk_bucket, 'monitor', 'monitor bucket');
+}
+eq(exposureFor({ platform: 'web' }), 1.0, 'web asset exposure 1.0');
+eq(exposureFor({ platform: 'network' }), 0.5, 'network host exposure 0.5');
+eq(exposureFor({ external: false }), 0.5, 'explicit external:false -> 0.5');
+
+// --- cveReconcile ---------------------------------------------------------
+eq(normVector('CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H'), normVector('AV:N/AC:L/UI:N/PR:N/S:U/A:H/C:H/I:H'), 'normVector order-insensitive');
+ok(cveReconcile({ claimed_score: 9.8, computed_score: 9.8, nvd_score: 9.8, claimed_vector: 'AV:N', computed_vector: 'AV:N' }).reconciled, 'reconcile all-agree');
+ok(cveReconcile({ computed_score: 9.8, nvd_score: 9.9 }).reconciled, 'reconcile boundary |Δ|=0.1 (0.9 vs 9.8... )'); // 9.9-9.8=0.1
+ok(!cveReconcile({ computed_score: 9.8, nvd_score: 9.95 }).reconciled, 'reconcile |Δ|=0.15 fails');
+ok(!cveReconcile({ computed_score: 7.0, claimed_vector: 'AV:N/AC:L', computed_vector: 'AV:L/AC:H' }).reconciled, 'reconcile vector mismatch fails');
+ok(!cveReconcile({ claimed_score: 7.0, nvd_score: 7.0 }).reconciled, 'reconcile with no computed score fails');
+
+// --- evidence manifest + probe -------------------------------------------
+{
+  const web = { id: 'F1', dir: 'd/finding-F1', is_web: true, cve_ids: [], cites_code: false };
+  const man = EVIDENCE_MANIFEST(web).map((m) => m.path);
+  ok(man.some((p) => p.endsWith('screenshots/*.png')), 'web finding requires screenshots');
+  const raw = { id: 'F2', dir: 'd/finding-F2', is_web: false, cve_ids: [], cites_code: false };
+  ok(!EVIDENCE_MANIFEST(raw).some((m) => m.path.includes('screenshots')), 'raw-banner finding does NOT require screenshots');
+  // probe present for all mandatory of the raw finding
+  const probe = { files: [
+    { path: 'd/finding-F2/evidence/validation/validation-summary.md', exists: true, bytes: 20 },
+    { path: 'd/finding-F2/evidence/validation/poc-rerun-output.txt', exists: true, bytes: 20 },
+    { path: 'd/finding-F2/evidence/validation/verification-script.py', exists: true, bytes: 20 },
+  ] };
+  eq(evidenceComplete(raw, probe).all_present, true, 'raw finding evidence complete');
+  eq(evidenceComplete(web, probe).all_present, false, 'web finding missing screenshots -> incomplete');
+}
+
+// --- computeVerdict truth table ------------------------------------------
+const goodChecks = {
+  canonical: { cvss_consistency: true, evidence_exists: true, poc_validation: true, claims_vs_raw: true, log_corroboration: true },
+  cve: { applicable: false }, exploit: { ran: true, proven: true, deterministic: true, signal_token: 'uid=0', repaired: false },
+};
+const fullProbe = (f) => ({ files: EVIDENCE_MANIFEST(f).map((m) => ({ path: m.path.replace('/*.png', '/shot.png'), exists: true, bytes: 10 })) });
+const REPRO = { reproduced: true };  // the blind reproduction agent confirmed the step-by-step
+const F = { id: 'F1', dir: 'd/finding-F1', type: 'exploit', is_web: false, cve_ids: [] };
+eq(computeVerdict(F, goodChecks, [{ refuted: false }, { refuted: false }], fullProbe(F), REPRO, { votesTotal: 2 }).verdict, 'VALID', 'verdict all-pass + reproduced -> VALID');
+eq(computeVerdict(F, { ...goodChecks, exploit: { ...goodChecks.exploit, repaired: true } }, [], fullProbe(F), REPRO, { votesTotal: 0 }).verdict, 'REPAIRED', 'verdict repaired -> REPAIRED');
+eq(computeVerdict(F, goodChecks, [{ refuted: true }, { refuted: true }], fullProbe(F), REPRO, { votesTotal: 2 }).verdict, 'REJECTED', 'verdict majority-refuted -> REJECTED');
+eq(computeVerdict(F, goodChecks, [{ refuted: true }, { refuted: false }], fullProbe(F), REPRO, { votesTotal: 2 }).verdict, 'VALID', 'verdict 1-of-2 refuted (no majority) -> VALID');
+{
+  const bad = { ...goodChecks, canonical: { ...goodChecks.canonical, claims_vs_raw: false } };
+  const v = computeVerdict(F, bad, [{ refuted: false }], fullProbe(F), REPRO, { votesTotal: 1 });
+  eq(v.verdict, 'DEMOTED', 'verdict one canonical false (not refuted) -> DEMOTED');
+  ok(v.failed_checks.includes('canonical:claims_vs_raw'), 'DEMOTED lists the failed check');
+}
+eq(computeVerdict(F, null, [], fullProbe(F), REPRO, { votesTotal: 0 }).verdict, 'DEMOTED', 'verdict checks===null -> DEMOTED (infra error, never REJECTED)');
+eq(computeVerdict(F, goodChecks, [], { files: [] }, REPRO, { votesTotal: 0 }).verdict, 'DEMOTED', 'verdict missing evidence -> DEMOTED');
+// PoC reproduction gate (new)
+eq(computeVerdict(F, goodChecks, [], fullProbe(F), null, { votesTotal: 0 }).verdict, 'DEMOTED', 'verdict no reproduction agent -> DEMOTED');
+{
+  const v = computeVerdict(F, goodChecks, [], fullProbe(F), { reproduced: false }, { votesTotal: 0 });
+  eq(v.verdict, 'DEMOTED', 'verdict PoC not reproduced -> DEMOTED');
+  ok(v.failed_checks.includes('poc:not_reproduced'), 'DEMOTED lists poc:not_reproduced');
+}
+{ // CVE-applicable but unreconciled, not refuted -> DEMOTED
+  const cveBad = { ...goodChecks, cve: { applicable: true, reconciled: false } };
+  eq(computeVerdict(F, cveBad, [], fullProbe(F), REPRO, { votesTotal: 0 }).verdict, 'DEMOTED', 'verdict CVE-divergence -> DEMOTED');
+}
+{ // info-type finding needs no exploit proof but still needs a reproduced PoC
+  const info = { id: 'I1', dir: 'd/finding-I1', type: 'info', is_web: false, cve_ids: [] };
+  const noExploit = { canonical: goodChecks.canonical, cve: { applicable: false }, exploit: {} };
+  eq(computeVerdict(info, noExploit, [], fullProbe(info), REPRO, { votesTotal: 0 }).verdict, 'VALID', 'info finding valid without exploit proof (PoC reproduced)');
+}
+// finalPoc: reproduction agent's corrected recipe wins when it adjusted steps
+{
+  const authored = { poc: { prerequisites: [{ item: 'curl' }], steps: [{ n: 1, action: 'open terminal' }, { n: 2, action: 'result' }] } };
+  eq(finalPoc(authored, { reproduced: true }).steps.length, 2, 'finalPoc keeps authored steps when repro did not adjust');
+  const adj = finalPoc(authored, { reproduced: true, corrected_steps: [{ n: 1, action: 'open browser' }, { n: 2, action: 'x' }, { n: 3, action: 'result' }] });
+  eq(adj.steps.length, 3, 'finalPoc uses reproduction agent corrected_steps when present');
+  eq(adj.prerequisites, [{ item: 'curl' }], 'finalPoc falls back to authored prerequisites when repro did not correct them');
+}
+
+// --- reconcileAssessed / normalizeAssess ---------------------------------
+{
+  const expected = [{ tag: 'a', key: 'a', output_dir: 'o/a' }, { tag: 'b', key: 'b', output_dir: 'o/b' }];
+  const assessed = [normalizeAssess({ coverage_status: 'COVERAGE_COMPLETE' }, { tag: 'a', key: 'a', output_dir: 'o/a' })];
+  const r = reconcileAssessed(expected, assessed, (e) => e.key);
+  eq(r.backfilled.length, 1, 'reconcileAssessed backfills the missing asset');
+  eq(r.backfilled[0].coverage_status, 'MISSING', 'backfilled placeholder is MISSING');
+  eq(r.complete, false, 'reconcileAssessed not complete when a gap exists');
+  ok(r.all.length === 2, 'reconcileAssessed keeps every expected asset');
+}
+eq(normalizeAssess({ status: 'FAILED' }, { tag: 'x', key: 'x' }).degraded, true, 'normalizeAssess flags FAILED as degraded');
+
+// --- engagement meta / version -------------------------------------------
+eq(bumpVersion('v1.3'), 'v2.0', 'bumpVersion v1.3 -> v2.0');
+eq(bumpVersion(undefined), 'v1.0', 'bumpVersion none -> v1.0');
+eq(scopeDiff(['a.com', 'b.com'], ['b.com', 'c.com']), { added: ['c.com'], removed: ['a.com'], unchanged: ['b.com'], changed: true }, 'scopeDiff');
+{
+  const meta = resolveEngagementMeta({
+    prior: { title: 'Old T', sector: 'Bank', report_id: 'ACME-000000-v1.0', version: 'v1.0', scope: ['a.com'] },
+    prompt: { title: 'New T' },
+    currentScope: ['a.com', 'b.com'], dateTag: '260707',
+  });
+  eq(meta.title, 'New T', 'meta prompt overrides prior title');
+  eq(meta.sector, 'Bank', 'meta prior fills sector gap');
+  eq(meta.version, 'v2.0', 'meta version auto-increments');
+  eq(meta.supersedes, 'ACME-000000-v1.0', 'meta records supersedes');
+  ok(meta.report_id !== 'ACME-000000-v1.0', 'meta mints a FRESH report_id (not the prior)');
+  eq(meta.scope_changes.added, ['b.com'], 'meta scope_changes.added (display-only, never a work list)');
+}
+
+// --- secret scan / assertReportData --------------------------------------
+{
+  const r = redactSecrets('key AKIAIOSFODNN7EXAMPLE and header Bearer abcdef0123456789abcdef');
+  ok(r.hits.includes('aws_akia'), 'redact AWS AKIA'); ok(r.hits.includes('bearer'), 'redact bearer');
+  ok(!r.text.includes('AKIAIOSFODNN7EXAMPLE'), 'AKIA removed from text');
+  ok(redactSecrets('PAN ABCDE1234F').hits.includes('pan_india'), 'redact Indian PAN');
+  ok(redactSecrets('card 4111111111111111').hits.includes('card_pan'), 'redact Luhn-valid card');
+  ok(!redactSecrets('id 1234567890123456').hits.includes('card_pan'), 'non-Luhn 16-digit not flagged as card');
+}
+{
+  const good = { engagement: { title: 'T' }, findings: [{ id: 'F1', title: 'X', severity: 'High' }] };
+  eq(assertReportData(good).ok, true, 'assertReportData accepts a valid object');
+  eq(assertReportData({ engagement: {}, findings: [{ id: 'F1', title: 'X', severity: 'Sev5' }] }).ok, false, 'assertReportData rejects bad severity enum');
+  eq(assertReportData({ engagement: {}, findings: [{ id: 'F1', title: 'X' }] }).ok, false, 'assertReportData rejects missing severity');
+  const withSecret = assertReportData({ engagement: {}, findings: [{ id: 'F1', title: 'X', severity: 'Low', evidence: 'token Bearer abcdef0123456789abcd' }] });
+  ok(withSecret.secretHits.length > 0, 'assertReportData surfaces secret hits in rendered fields');
+}
+
+// --- strict per-finding interleave: decision helpers ---------------------
+eq(DEFAULT_VOTES, 3, 'DEFAULT_VOTES is 3 (raised quorum)');
+// cureLoopDecision: verdict -> outcome; DEMOTED cures up to cap then drops
+eq(cureLoopDecision(0, 'VALID', 1), 'CONFIRMED', 'cure VALID -> CONFIRMED');
+eq(cureLoopDecision(0, 'REPAIRED', 1), 'CONFIRMED', 'cure REPAIRED -> CONFIRMED');
+eq(cureLoopDecision(0, 'REJECTED', 1), 'REJECTED', 'cure REJECTED -> REJECTED');
+eq(cureLoopDecision(0, 'DEMOTED', 1), 'CURE', 'cure DEMOTED round0/cap1 -> CURE');
+eq(cureLoopDecision(1, 'DEMOTED', 1), 'DROPPED', 'cure DEMOTED round1/cap1 -> DROPPED (out of rounds)');
+eq(cureLoopDecision(0, 'DEMOTED', 0), 'DROPPED', 'cure DEMOTED cap0 -> DROPPED immediately (strict no-cure)');
+eq(cureLoopDecision(0, 'DEMOTED', 2), 'CURE', 'cure DEMOTED round0/cap2 -> CURE');
+{ // driver: always-DEMOTED terminates in exactly maxCureRounds cures then DROPPED
+  for (const cap of [0, 1, 2, 3]) {
+    let round = 0, cures = 0, outcome = null;
+    while (true) {
+      const d = cureLoopDecision(round, 'DEMOTED', cap);
+      if (d === 'CURE') { cures++; round++; continue; }
+      outcome = d; break;
+    }
+    eq(cures, cap, `always-DEMOTED does exactly ${cap} cure(s)`);
+    eq(outcome, 'DROPPED', `always-DEMOTED terminates DROPPED (cap ${cap})`);
+  }
+}
+// terminalSubdir
+eq(terminalSubdir('VALID'), 'validated', 'terminalSubdir VALID');
+eq(terminalSubdir('REPAIRED'), 'validated', 'terminalSubdir REPAIRED');
+eq(terminalSubdir('REJECTED'), 'false-positives', 'terminalSubdir REJECTED');
+eq(terminalSubdir('DEMOTED'), 'dropped', 'terminalSubdir DEMOTED -> dropped (drop-entirely)');
+eq(terminalSubdir('WAT'), 'dropped', 'terminalSubdir unknown -> dropped');
+// coverageDecision
+eq(coverageDecision(['REJECTED', 'DROPPED'], null), 'pending', 'coverage rejected/dropped-only -> pending');
+eq(coverageDecision(['VALID'], null), 'covered', 'coverage with VALID -> covered');
+eq(coverageDecision(['REPAIRED'], null), 'covered', 'coverage with REPAIRED -> covered');
+eq(coverageDecision([], 'genuine_negative'), 'covered', 'coverage genuine negative -> covered');
+eq(coverageDecision([], null), 'pending', 'coverage empty -> pending');
+// shouldInlineValidate: explicit wins, else default ON for coverage / OFF for flag
+eq(shouldInlineValidate('coverage', undefined), true, 'inline default ON for coverage (standalone)');
+eq(shouldInlineValidate('flag', undefined), false, 'inline default OFF for flag (htb-solve untouched)');
+eq(shouldInlineValidate('coverage', false), false, 'inline explicit false overrides coverage');
+eq(shouldInlineValidate('flag', true), true, 'inline explicit true overrides flag (network deep-dive)');
+// backstopDecision: fixed-quorum + deferral governor (never shrink quorum)
+eq(backstopDecision(0, 100), 'run_now', 'backstop below reserve -> run_now');
+eq(backstopDecision(99, 100), 'run_now', 'backstop just below reserve -> run_now');
+eq(backstopDecision(100, 100), 'defer', 'backstop at reserve -> defer');
+eq(backstopDecision(150, 100), 'defer', 'backstop above reserve -> defer');
+// assessBudget: worst-case agent total stays under the 1000-cap (invariant)
+for (const A of [1, 2, 5, 10, 20, 50]) {
+  const b = assessBudget({ assets: A });
+  ok(b.perAsset * A + GLOBAL_RESERVE <= AGENT_CAP, `assessBudget invariant holds for ${A} asset(s) (perAsset*A+reserve<=cap)`);
+  ok(b.hardReserve <= b.perAsset, `assessBudget hardReserve <= perAsset for ${A}`);
+}
+eq(AGENT_CAP, 1000, 'AGENT_CAP is the runtime 1000-agent lifetime cap');
+// reduceCandidateVerdicts: fold terminal verdicts; only VALID/REPAIRED confirmed
+{
+  const red = reduceCandidateVerdicts([
+    { verdict: 'VALID', class_id: 'A01' }, { verdict: 'REPAIRED', class_id: 'A02' },
+    { verdict: 'REJECTED', class_id: 'A01' }, { verdict: 'DEMOTED', class_id: 'A03' },
+    { verdict: 'WAT' }, null,
+  ]);
+  eq(red.confirmed.length, 2, 'reduce: only VALID+REPAIRED in confirmed');
+  eq(red.rejected.length, 1, 'reduce: REJECTED bucket');
+  eq(red.dropped.length, 2, 'reduce: DEMOTED + unknown dropped');
+  eq(coverageDecision(red.byClass['A01'], null), 'covered', 'reduce: class A01 covered (has VALID despite a REJECTED)');
+  eq(coverageDecision(red.byClass['A03'], null), 'pending', 'reduce: class A03 pending (dropped only)');
+}
+// summarizeLoopCounts
+eq(summarizeLoopCounts([1, 2], [3], []), { confirmed: 2, rejected: 1, dropped: 0, total: 3 }, 'summarizeLoopCounts from arrays');
+eq(summarizeLoopCounts(2, 1, 4), { confirmed: 2, rejected: 1, dropped: 4, total: 7 }, 'summarizeLoopCounts from numbers');
+// cacheKey (C3 replay-cache): pure, stable, filename-safe, deterministic
+eq(cacheKey('interim', 'abc123'), 'interim-abc123', 'cacheKey composes promptId-hash');
+eq(cacheKey('interim', 'abc123'), cacheKey('interim', 'abc123'), 'cacheKey deterministic (same inputs -> same key)');
+ok(cacheKey('interim', 'a/b c:d') !== cacheKey('interim', 'abcd'), 'cacheKey changes when the hash changes');
+ok(/^[A-Za-z0-9_.-]+$/.test(cacheKey('int/erim', 'a b:c/d')), 'cacheKey is filename-safe (sanitizes unsafe chars)');
+eq(cacheKey('interim', 'a b/c'), 'interim-a_b_c', 'cacheKey golden: unsafe chars -> underscore');
+
+// --- C4 determinism harness: computeVerdict is N×-stable AND == a golden sha256
+// (the golden guards against silent drift; N×-stability proves purity). ---------
+{
+  const F = { id: 'F1', dir: 'd/finding-F1', type: 'exploit', is_web: false, cve_ids: [] };
+  const checks = { canonical: { cvss_consistency: true, evidence_exists: true, poc_validation: true, claims_vs_raw: true, log_corroboration: true }, cve: { applicable: false }, exploit: { ran: true, proven: true, deterministic: true, signal_token: 'uid=0', repaired: false } };
+  const probe = { files: EVIDENCE_MANIFEST(F).map((m) => ({ path: m.path.replace('/*.png', '/shot.png'), exists: true, bytes: 10 })) };
+  const repro = { reproduced: true };
+  const votes3 = [{ refuted: false }, { refuted: false }, { refuted: false }];
+  const shas = new Set();
+  for (let i = 0; i < 5; i++) shas.add(createHash('sha256').update(JSON.stringify(computeVerdict(F, checks, votes3, probe, repro, { votesTotal: 3 }))).digest('hex'));
+  eq([...shas], ['a8d837f7ea176c182e0da26d3e5ed2bb267a6170487c72756497baefa7d4c8fc'], 'computeVerdict: 5 runs identical AND == golden sha256 (deterministic)');
+}
+// buildInterim behavioral golden — tier/platform/votes actually drive risk + exposure + adversarial.
+{
+  const F = { id: 'F1', dir: 'd/finding-F1', type: 'exploit', is_web: false, cve_ids: [] };
+  const vVALID = { verdict: 'VALID', failed_checks: [], refuteCount: 0 };
+  const crown = buildInterim(F, { cve: { computed_score: 9.8, vector: 'AV:N', primary_cve: 'CVE-2024-1', cwes: ['CWE-79'] }, report_fields: { title: 'X' } }, vVALID, { reproduced: true }, { tier: 'crown_jewel', platform: 'web', votes: 3 });
+  const dev = buildInterim(F, { cve: { computed_score: 9.8 }, report_fields: {} }, { verdict: 'DEMOTED', failed_checks: [], refuteCount: 0 }, { reproduced: true }, { tier: 'dev', platform: 'network', votes: 1 });
+  eq({ sev: crown.severity, risk: crown.risk.risk_score, exp: crown.risk.entry_exposure, biz: crown.risk.business_impact, votes: crown.adversarial.votes }, { sev: 'Critical', risk: 0.98, exp: 1, biz: 1, votes: 3 }, 'buildInterim crown_jewel/web/VALID golden');
+  eq({ sev: dev.severity, risk: dev.risk.risk_score, exp: dev.risk.entry_exposure, biz: dev.risk.business_impact, votes: dev.adversarial.votes }, { sev: 'Critical', risk: 0.049, exp: 0.5, biz: 0.2, votes: 1 }, 'buildInterim dev/network/DEMOTED golden (tier+exposure+feasibility+votes all differ)');
+}
+
+// --- detectAllowlist (source-IP/geo-allowlist signature) ------------------
+{ // POSITIVE: a live host + a sibling that is existence-confirmed-but-dark -> signature
+  const r = detectAllowlist([
+    { live: [{ ip: '192.0.2.10', open_ports: [443] }], dead_count: 3, filtered: [{ ip: '192.0.2.20', signal: 'host-up-but-all-filtered' }] },
+  ]);
+  eq(r.signature, true, 'detectAllowlist POSITIVE (live + filtered sibling) -> signature true');
+  eq(r.filteredHosts, [{ ip: '192.0.2.20', signal: 'host-up-but-all-filtered' }], 'detectAllowlist POSITIVE surfaces the filtered host');
+}
+{ // NEGATIVE (the clean-run control): live + genuinely-down (no filtered[]) -> no signature, no spend
+  const r = detectAllowlist([{ live: [{ ip: '192.0.2.10' }], dead_count: 253, filtered: [] }]);
+  eq(r.signature, false, 'detectAllowlist NEGATIVE (live + down, no filtered) -> signature false');
+  eq(r.filteredHosts, [], 'detectAllowlist NEGATIVE -> no filtered hosts (no cloud spend)');
+}
+{ // filtered-but-no-live and empty/garbage inputs never fire
+  eq(detectAllowlist([{ live: [], filtered: [{ ip: '192.0.2.20' }] }]).signature, false, 'detectAllowlist filtered-but-no-live -> false');
+  eq(detectAllowlist([]).signature, false, 'detectAllowlist empty -> false');
+  eq(detectAllowlist(null).signature, false, 'detectAllowlist null-safe -> false');
+  // dedup across slices + default signal fill
+  const r = detectAllowlist([{ live: [{ ip: 'a' }], filtered: [{ ip: '192.0.2.20' }] }, { live: [], filtered: [{ ip: '192.0.2.20', signal: 'tcp-rst' }] }]);
+  eq(r.filteredHosts.length, 1, 'detectAllowlist dedups the same filtered ip across slices');
+  eq(r.filteredHosts[0].signal, 'host-up-but-all-filtered', 'detectAllowlist fills a default signal when missing (first-seen wins)');
+}
+
+// --- resolveGeoZones (<=2 second-vantage gcp zones) -----------------------
+eq(resolveGeoZones({ primaryGeo: 'IT' }), ['us-central1-a'], 'resolveGeoZones EU primary -> drop europe default, keep US');
+eq(resolveGeoZones({ primaryGeo: 'US' }), ['europe-west1-b'], 'resolveGeoZones US primary -> drop US default, keep EU');
+eq(resolveGeoZones({ primaryGeo: 'unknown' }), ['us-central1-a', 'europe-west1-b'], 'resolveGeoZones unknown primary -> both defaults');
+eq(resolveGeoZones({}), ['us-central1-a', 'europe-west1-b'], 'resolveGeoZones no primary -> both defaults');
+eq(resolveGeoZones({ geoVantages: ['asia-east1-a', 'us-west1-b'] }), ['asia-east1-a', 'us-west1-b'], 'resolveGeoZones honors explicit override verbatim');
+eq(resolveGeoZones({ geoVantages: ['a', 'b', 'c', 'd'] }), ['a', 'b'], 'resolveGeoZones caps override at 2');
+eq(resolveGeoZones({ geoVantages: ['a', 'a', 'b'] }), ['a', 'b'], 'resolveGeoZones dedups the override');
+eq(resolveGeoZones({ geoVantages: [' z1 ', '', null] }), ['z1'], 'resolveGeoZones trims + drops empty override entries');
+
+// --- finalizeGate (COMPLETE/BLOCKED incl. the deterministic coverage gate) -----
+{
+  const allGood = finalizeGate({ report_data_ok: true, renderGateOk: true, coverage_complete: true, coverage_untested: 0 });
+  eq(allGood, { ok: true, status: 'COMPLETE', blocked_reason: null }, 'finalizeGate all-true -> COMPLETE');
+  const cov = finalizeGate({ report_data_ok: true, renderGateOk: true, coverage_complete: false, coverage_untested: 4 });
+  eq(cov, { ok: false, status: 'BLOCKED', blocked_reason: 'attack-class coverage < 100% (4 cell(s) untested)' }, 'finalizeGate incomplete coverage -> BLOCKED with count');
+  eq(finalizeGate({ report_data_ok: false, renderGateOk: true, coverage_complete: true }).blocked_reason, 'report_data_build failed', 'finalizeGate report_data failure wins');
+  eq(finalizeGate({ report_data_ok: true, renderGateOk: false, coverage_complete: true, renderBlockedReason: 'PDF is empty' }).blocked_reason, 'PDF is empty', 'finalizeGate render reason preserved');
+  eq(finalizeGate({ report_data_ok: true, renderGateOk: true, coverage_complete: undefined, coverage_untested: 2 }).ok, false, 'finalizeGate fails closed on missing coverage_complete');
+}
+
+// --- report ---------------------------------------------------------------
+console.log(`\n${pass} passed, ${fail} failed`);
+if (fail) { console.log('\n' + fails.join('\n')); process.exit(1); }

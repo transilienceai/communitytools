@@ -23,14 +23,14 @@ P1: Recon + read source code → write attack-chain.md → run preflight-checkli
 ┌→ P2: Think — read chain + experiments.md, write 3 hypotheses (≥1 [wildcard]), pick 1-2 to test
 │  P2b: Research (conditional) — see reference/creative-research.md
 │  P3: Execute — spawn 1-2 executors with CHAIN_CONTEXT [+ RESEARCH_BRIEF]
-│  P4: Integrate — read results, update chain, revise theory
-│      No progress 1 batch → consider P2b
-│      goal_attempts ≥ 3 on any conceptual goal → P4b
-│      Goal → P5
+│  P4: Integrate — materialize each candidate; **validate it now** (interleaved, strict per-finding,
+│      fresh blind agents) → CONFIRMED | REJECTED | CURE→re-validate | DROPPED; update chain, revise theory
+│      Coverage flips only on VALID (coverage-by-VALID); REJECTED/DROPPED classes stay pending → keep searching
+│      No progress 1 batch → consider P2b · goal_attempts ≥ 3 on any conceptual goal → P4b
 └─ loop (max 30 experiments; mandatory skeptic at experiments 5, 15, 25)
 
 P4b: Reset — re-read all recon + source + chain. Creative Research (mandatory). Fresh theory.
-P5: Validate + Report
+P5: Engagement-thoroughness validation + Report (validated/ = VALID/REPAIRED only; drop-entirely, no gaps section)
 ```
 
 ### Steps
@@ -38,8 +38,8 @@ P5: Validate + Report
 1. **Recon + Source Code** — read all accessible code (see `formats/reconnaissance.md`). Run pre-flight checklist (`reference/preflight-checklist.md`).
 2. **Think** — write 3 hypotheses to `attack-chain.md`, ≥1 tagged `[wildcard]`. Pick 1-2 to spawn.
 3. **Test** — 1-2 executors per batch, integrate before next.
-4. **Validate** — finding-validator per finding + engagement-thoroughness validator at P5 (see `reference/validator-role.md`).
-5. **Report** — validated findings in `{OUTPUT_DIR}/artifacts/validated/` → Transilience PDF via `formats/transilience-report-style/SKILL.md`.
+4. **Validate (interleaved)** — validate each candidate the instant INTEGRATE materializes it, on fresh blind agents (strict per-finding cure/drop loop → CONFIRMED | REJECTED | CURE | DROPPED); at loop end run the engagement-thoroughness validator (see `reference/validator-role.md`).
+5. **Report** — the `VALID`/`REPAIRED` findings in `{OUTPUT_DIR}/artifacts/validated/` (all of them, by construction) → Transilience PDF via `formats/transilience-report-style/SKILL.md`.
 
 ## attack-chain.md
 
@@ -64,8 +64,9 @@ See `reference/spawning-recipes.md` for copy-paste-ready spawn patterns per role
 | Executor (explore) | `reference/executor-role.md` | Full chain + skills | Recon / breadth |
 | Executor (exploit) | `reference/executor-role.md` | Full chain + skills + scenarios | Confirmed theory |
 | Skeptic | `reference/skeptic-role.md` | experiments.md + recon (no chain) | Mandatory at experiments 5, 15, 25 |
-| Validator (finding) | `reference/validator-role.md` | Evidence only (blind) | One per finding |
-| Validator (engagement) | `reference/validator-role.md` | OUTPUT_DIR only (blind) | At P5 |
+| Validator (finding) | `reference/validator-role.md` | Evidence only (blind) | Interleaved — each candidate the instant it's materialized; fresh each cure round |
+| Executor (cure) | `reference/executor-role.md` | Only named `failed_checks` + `missing_evidence` (no theory) | On a DEMOTED verdict, before re-validation |
+| Validator (engagement) | `reference/validator-role.md` | OUTPUT_DIR only (blind) | Once at loop end |
 
 ## Rules
 

@@ -151,3 +151,28 @@ Summary report structure:
 - Generate one JSON file per discovered asset type
 - Save raw tool outputs in `processed/reconnaissance/raw/` (named: `{asset}_{tool}.txt`)
 - All JSON must be valid and include a `stats` summary object
+
+## surface/v2 — the structured surface inventory (attack-class coverage input)
+
+`{OUTPUT_DIR}/recon/inventory/surface.json` — the **facts** that `tools/enumerate_cells.py` turns into the applicable `(surface-unit × attack-class)` cell work-list. The recon agent lists units + sets only the **agent-set** flags each observation warrants; code derives the rest (`http_listener`, `tls_listener`, `version_fingerprinted`, `has_api`, `is_apex`, `serves_js`) — an agent MUST NOT set those.
+
+```json
+{
+  "schema": "surface/v2",
+  "asset_tag": "api-example-com",       // MUST equal the OUTPUT_DIR basename
+  "apex": "example.com",
+  "units": [
+    {
+      "unit_id": "u-0007",
+      "type": "endpoint",               // page|endpoint|param|form|origin|host|port|service
+      "address": "https://api.example.com/v1/connections/{id}",
+      "methods": ["GET", "DELETE"],
+      "flags": ["object_by_id", "id_keyed_unauth"],   // ONLY the 14 agent-set flags
+      "equiv_group": "connections-crud",              // optional; near-identical handlers share one
+      "evidence_ref": ["E-004"]
+    }
+  ]
+}
+```
+
+**Agent-set flags (14):** `object_by_id, json_body, role_verb_gated, sensitive_flow, server_fetched_url, input_sink, workflow, deser_or_ci, inbound_webhook, id_keyed_unauth, stored_field, auth_surface, consumes_upstream, static_js_or_repo`. Setting a flag only ADDS coverage work; the gate lints for *under*-reporting (missing units cross-checked against `subdomains.json` → `surface_undercount`). NETWORK mode needs no `surface.json` — `host.json`'s structured `ports[]` is normalized to units by code. Catalog + predicates: `skills/coordination/reference/coverage-matrix.json`.

@@ -4,7 +4,7 @@ Run before spawning any executor batch. Write the checklist to `attack-chain.md`
 
 ## Phase 1 (recon) gate
 
-- [ ] Full TCP port scan complete (not just top-1k). UDP top-100 if relevant.
+- [ ] Full-range TCP scan (all 65535) complete on EVERY reachable host for network/perimeter VAs — a bounded port set is acceptable only when the scope explicitly limits it (message buses and non-443 TLS live on high ports). UDP top-100 where relevant.
 - [ ] Every accessible source code path read (web app source, scripts, configs, share contents).
 - [ ] Every readable share spidered with **both** anonymous (`-u '' -p ''`) and guest (`-u guest -p ''`) where applicable. Different share lists can return.
 - [ ] Every binary downloaded from the target decompiled or strings-dumped.
@@ -12,6 +12,9 @@ Run before spawning any executor batch. Write the checklist to `attack-chain.md`
 - [ ] Platform/lab metadata read (whatever the host platform exposes — starter creds, machine info, tags).
 - [ ] DNS / vhost enumeration done if HTTP services present.
 - [ ] All discovered hostnames added to `/etc/hosts`.
+- [ ] Source vantage recorded
+- [ ] Any extra egress (VM/proxy/VPN) registered via provision_vantage.sh / register_source_ip.py
+- [ ] On a source-IP/geo-allowlist signature (a host is existence-confirmed but dark from the primary vantage), provision a second-geography vantage (provision_vantage.sh) and re-probe the filtered hosts before concluding "no surface." Never assert "no external surface" without naming the vantage geographies tested.
 
 ## Surface-expansion gate (mandatory when an apex domain is in scope)
 

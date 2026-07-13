@@ -19,14 +19,16 @@ P1: Recon + read source code → write attack-chain.md → run preflight-checkli
 ┌→ P2: Think — read chain + experiments.md, write 3 hypotheses (≥1 [wildcard]), pick 1-2
 │  P2b: Research (conditional) — see reference/creative-research.md
 │  P3: Spawn 1-2 executors with CHAIN_CONTEXT [+ RESEARCH_BRIEF]
-│  P4: Integrate — read results, update chain, revise theory
+│  P4: Integrate — read results; **validate each new candidate now** (interleaved, strict per-finding,
+│      fresh blind agents → CONFIRMED | REJECTED | CURE→re-validate | DROPPED); update chain, revise theory
+│      Coverage flips only on VALID (coverage-by-VALID); REJECTED/DROPPED classes stay pending → keep searching
 │      Goal achieved → P5
 │      goal_attempts ≥ 3 on any goal → P4b
 │      Mandatory checkpoint: spawn skeptic at experiments 5, 15, 25
 └─ loop (max 30 experiments)
 
 P4b: Reset — re-read recon + source + chain. Creative Research (mandatory). Fresh theory.
-P5: Validate — finding-validators (one per finding) + engagement-validator (once)
+P5: Engagement-thoroughness validation (once) — findings already validated inline; validated/ = VALID/REPAIRED only
 P6: Emit PHASE3_SUMMARY + exit
 ```
 
@@ -37,8 +39,9 @@ P6: Emit PHASE3_SUMMARY + exit
 | Broad recon needed; no clear theory yet | `executor-explore` | [executor-role.md](executor-role.md) |
 | Confirmed theory; ready for end-to-end exploit | `executor-exploit` | [executor-role.md](executor-role.md) |
 | At experiment count 5, 15, 25 (mandatory) | `skeptic` | [skeptic-role.md](skeptic-role.md) |
-| Each finding written | `validator-finding` | [validator-role.md](validator-role.md) |
-| Once at P5 after all finding validators | `validator-engagement` | [validator-role.md](validator-role.md) |
+| Each candidate materialized (post-INTEGRATE, before next batch); fresh each cure round | `validator-finding` (interleaved) | [validator-role.md](validator-role.md) |
+| DEMOTED verdict → close the named gaps, then re-validate | `executor-cure` | [executor-role.md](executor-role.md) |
+| Once at loop end, over the interleaved `validated/` writes | `validator-engagement` | [validator-role.md](validator-role.md) |
 
 Spawn templates: [spawning-recipes.md](spawning-recipes.md). Boundaries: [role-matrix.md](role-matrix.md).
 

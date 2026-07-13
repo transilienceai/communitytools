@@ -5,9 +5,52 @@ description: Threat Intelligence Report Design System — ReportLab-based PDF ge
 
 # Transilience AI — Threat Intelligence Report Design System
 
-**Version:** 4.0  
+**Version:** 5.0 — **Light theme** (modern, minimal, professional)  
 **Format:** PDF (A4), ReportLab  
-**Last Updated:** February 24, 2026
+**Last Updated:** July 7, 2026
+
+---
+
+## 0. Theme (v5.0)
+
+The report now renders a **light theme by default** (white page, dark ink, brand accents). Both palettes live
+in the `THEME` dict in `generate_report.py`; select with **`--theme light|dark`** (or `engagement.theme`).
+**Precedence:** `--theme` > `engagement.theme` > `light`; an unknown value falls back to `light` (never errors).
+The pentest-engagement finalize gate passes no `--theme`, so all gated PDFs are light. The sections below marked
+"(dark fallback)" describe the retained `--theme dark` palette.
+
+### 0.1 Light palette (brand: purple `#6941C6` → magenta `#C9317C`)
+
+| Token | Hex | Use |
+|---|---|---|
+| `PAGE` / `SURFACE` | `#FFFFFF` | page + card background |
+| `TINT` / `ALT` | `#F6F4FB` / `#FBFAFE` | KPI boxes · table headers/tracks · zebra rows |
+| `INK` | `#1B1725` | headings + body text |
+| `INK_SOFT` | `#5A5568` | secondary text |
+| `LBL` | `#6B7280` | small labels / captions |
+| `BORDER` | `#E7E3F0` | hairlines, card borders, table grid |
+| `BRAND` / `BRAND2` | `#6941C6` / `#C9317C` | section numbers, rules, subheads / gradient end |
+| `CODE_BG` / `CODE_INK` / `CODE_BORDER` | `#F5F4F8` / `#2A2536` / `#E4E0EE` | **boxed code / samples** (`codebox`) |
+| `GREEN` / `BLUE` / `AMBER` | `#15803D` / `#2563EB` / `#B45309` | remediation / refs·CVE / caveat labels |
+| `SEV` | Critical `#DC2626` · High `#EA580C` · Medium `#CA8A04` · Low `#16A34A` · Info `#64748B` | severity |
+
+### 0.2 What v5 adds / changes
+
+- **Light, airy layout** — white surfaces, hairline separators, generous padding/leading; colour used only
+  semantically (severity / score / status).
+- **Colour-coded risk & score** — severity via the finding-card **left stripe** + `[SEV]` tag; and in every
+  risk table (**findings summary, CVE register, per-finding CVE table**) **both the severity label and the
+  CVSS score cell are band-coloured + bold** — the label by its severity, the score by `score_band(score)`.
+  `tbl(..., sevcol=, scorecol=)` selects the columns; the colour is emitted as an inline `<font>` tag inside
+  the cell (a `TableStyle` `TEXTCOLOR` is **ignored** on ReportLab `Paragraph` cells, so it must live in the
+  cell markup). Empty/non-numeric score cells stay uncoloured.
+- **Highlighted code/samples** — `codebox()` renders CVSS vectors, PoC/test requests, affected assets, and
+  endpoints in a bordered light-grey monospace block; **screenshots are framed** with a border + caption.
+- **Finding cards** are a **single-column multi-row `Table`** (severity left-stripe + hairline box + padding)
+  so tall Critical findings **split cleanly across pages** (border redrawn per fragment).
+- **Logo** is drawn at its **true aspect ratio** (1024×468 → 0.457; ~48mm wide) — never squished.
+- Graphical (severity-bar chart) + Tabular (findings index) summaries, DURATION cover row, per-finding Ease of
+  Exploitation + References, and a Conclusion section are all light-themed.
 
 ---
 
@@ -20,7 +63,7 @@ description: Threat Intelligence Report Design System — ReportLab-based PDF ge
 | Content Width (CW) | 555.28 pt (A4 width − 2 × 20mm) |
 | Top Margin Offset | +8 pt (28mm effective top) |
 | Bottom Margin Offset | +10 pt (30mm effective bottom) |
-| Background Color | `#07040B` (BG) — near-black with purple undertone |
+| Background Color | **`#FFFFFF` (light default)** · `#07040B` under `--theme dark` |
 | Output | Embedded fonts, single PDF file |
 
 ---
@@ -85,7 +128,7 @@ description: Threat Intelligence Report Design System — ReportLab-based PDF ge
 
 ## 3. Color Palette
 
-### 3.1 Backgrounds
+### 3.1 Backgrounds — dark fallback (`--theme dark`; light palette in §0.1)
 
 | Token | Hex | RGB | Usage |
 |---|---|---|---|
@@ -275,12 +318,14 @@ A category block displaying technology items as a bulleted list.
 
 ---
 
-## 5. Page Template (dark_bg)
+## 5. Page Template
 
-Applied to every page via `onFirstPage` and `onLaterPages`.
+Applied to every page via the page-template `onPage` hook. **Light default:** white page fill, a 2.5pt brand
+gradient hairline at the very top, and a hairline-ruled footer (muted text + purple page number) — no dark
+footer bar. The dark-fallback specifics below apply under `--theme dark`.
 
 ### 5.1 Background Fill
-- Full page `BG` (`#07040B`) rectangle
+- Full page `PAGE` rectangle — `#FFFFFF` light · `#07040B` under `--theme dark`
 
 ### 5.2 Top Gradient Rule
 - Brand gradient (80 steps, BP → BM), 3.5pt height, full page width, positioned at page top

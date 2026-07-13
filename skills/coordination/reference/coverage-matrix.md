@@ -1,12 +1,14 @@
 # Attack-Class Coverage Matrix
 
-The completion contract for **coverage-style engagements** (web / API / cloud pentests, as opposed to flag/CTF hunts). A flag engagement is done when the flag submits; a coverage engagement is done when **every applicable attack class has been tested or justified N/A**. This file is the canonical class catalog; each engagement instantiates it as `OUTPUT_DIR/coverage.json`.
+The completion contract for **coverage-style engagements** (web / API / cloud / network pentests, as opposed to flag/CTF hunts). A flag engagement is done when the flag submits; a coverage engagement is done when **every applicable (surface-unit × attack-class) cell has been covered or genuinely negated** — enforced deterministically by code, not agent narrative.
+
+The **machine-readable catalog is [`coverage-matrix.json`](coverage-matrix.json)** — 24 classes, each with a `scope` (`unit` | `host` | `asset`), a code-evaluable `applies_when` predicate over surface flags, and a `negative_kind` (`active_probe` | `reachability` | `none`). This markdown is the human companion; `tools/validate_catalog.py` keeps the two in class_id-parity. `tools/enumerate_cells.py` reads the catalog + the discovered surface (`recon/inventory/surface.json` for web, `hosts/<ip>/host.json` for network) to code-produce the applicable-cell work-list `OUTPUT_DIR/applicability/cells.json`; each engagement records coverage as a per-cell `units_tested` ledger in `OUTPUT_DIR/coverage.json`; and `tools/coverage_gate.py` joins the two against real on-disk evidence.
 
 Companion to `ATTACK_INDEX.md` (which inventories *what techniques the library covers*). This file defines *what an engagement must cover before it may be called COMPLETE*. The api-security fingerprint decision tree (`skills/api-security/reference/api-security-principles.md`) tells you where to START once a symptom appears; this matrix defines DONE — including the classes that emit **no fingerprint until actively probed** and are therefore missed by symptom-driven routing.
 
 ## Scoping rule
 
-A class is **applicable** iff its trigger matches the discovered surface; otherwise it is auto-`NA` with the failed trigger as the justification. `coverage_ratio = covered / applicable`, where `applicable = total − not_applicable`. The engagement validator FAILs thoroughness below **0.80** (`validator-role.md` check 8).
+Applicability is decided **by code**, per cell: `tools/enumerate_cells.py` evaluates each class's `applies_when` predicate against the flags of every surface unit / listener / asset (14 agent-set flags the recon agent records, plus 6 code-derived flags — `http_listener`, `tls_listener`, `version_fingerprinted`, `has_api`, `is_apex`, `serves_js` — that the agent cannot fabricate). A `unit`-scope class emits one cell per matching surface unit; `host`-scope one cell per distinct open listener (`host:port`); `asset`-scope one cell per asset. `coverage_ratio = passed_cells / applicable_cells`. **The gate is a hard 100% gate**: `tools/coverage_gate.py` FAILs (exit 1) unless `coverage_ratio == 1.0` with no missing / extra / dangling / false-NA / surface-undercount cells. Marking a code-applicable cell `NA` is a hard fabrication FAIL. (This replaces the old 0.80 soft bar; `validator-role.md` check 8 now runs the gate.)
 
 ## Class catalog
 
@@ -41,7 +43,7 @@ A class is **applicable** iff its trigger matches the discovered surface; otherw
 
 ## Instance-file contract — `OUTPUT_DIR/coverage.json`
 
-Generated at bootstrap from this catalog, owned by the INTEGRATE agent (sole writer, mirroring the `experiments.md` ownership rule). One row per `class_id`:
+Owned by the INTEGRATE agent (sole writer, mirroring the `experiments.md` ownership rule). One row per `class_id`, carrying a per-cell `units_tested` ledger — the code-produced applicable-cell set lives separately in `applicability/cells.json`, so the scoreboard can never fabricate the work-list:
 
 ```json
 {
@@ -49,22 +51,23 @@ Generated at bootstrap from this catalog, owned by the INTEGRATE agent (sole wri
   "taxonomy": "API-2023",
   "title": "Server-Side Request Forgery",
   "applicability": "applicable",        // applicable | not_applicable
-  "status": "covered",                  // covered | pending | NA
-  "evidence_ref": ["E-014", "finding-003"],
-  "justification": "stored connector base_url fetched server-side; own-org POST + collaborator callback",
-  "owner_batch": 4
+  "status": "pending",                  // advisory per-class rollup; the CELLS are authoritative
+  "units_tested": [
+    { "key": "u-0007", "status": "covered", "e_id": "E-014", "finding_id": "F-003" },
+    { "key": "u-0012", "status": "covered_negative", "e_id": "E-018", "negative_kind": "active_probe", "corroborator": "tools/031_ssrf-probe.md" }
+  ]
 }
 ```
 
-Rules enforced by the validator:
-- `status:covered` requires ≥1 `evidence_ref` that resolves to a real `E-NNN` row in `experiments.md` or an existing `finding-NNN/` dir. A `covered` row with no resolvable evidence is treated as `pending`.
-- `status:NA` is legal only when `applicability:not_applicable`, and requires a `justification` quoting the failed applicability trigger.
-- `status:pending` is the bootstrap default for every applicable class.
+Per-cell rules enforced deterministically by `coverage_gate.py` (scoped to the cell's own asset dir — no cross-asset contamination):
+- **covered** requires an `e_id` present in `experiments.md` **and** a `VALID`/`REPAIRED` finding in `artifacts/validated/` whose `class_id` + `unit_refs` + `asset_tag` match the cell. A cell whose only candidates were REJECTED/DROPPED stays uncovered ("reject and keep searching").
+- **covered_negative** is a genuinely-clean probe. `active_probe` negatives need a non-agent corroborator (a `tools/NNN_*.md` whose `Experiment: E-NNN` header cites the raw tool output, or a `corroborator` file that exists). `reachability` negatives (only `XC-SUBDOMAIN-ORIGIN`) need ≥ `min_vantages` distinct **verified** regions from `logs/activity/source-ips.jsonl` (auto-`detected` `verified:false` rows are excluded).
+- **NA** on a code-applicable cell is a hard fabrication FAIL — the code, not the agent, decides applicability.
 
 ## How the loop uses it
 
-1. **Bootstrap** seeds `coverage.json`: every catalog row instantiated; `applicability` set from the trigger vs the discovered surface; applicable rows `pending`, others `NA`+justification.
-2. **THINK** (coverage mode) ranks `pending` applicable classes by value (impact × likelihood-on-surface × low-credential reachability) and spends ≥1 mission/batch on the top-ranked pending class. The wildcard slot is preserved.
-3. **INTEGRATE** flips probed classes to `covered`+`evidence_ref` or justified-`NA` each batch, and reports `applicable_pending`.
-4. The loop is "solved" (coverage-complete) only when `applicable_pending == 0`; it may not terminate early while applicable classes are `pending` ("I ran out of hypotheses" / "I hit a goal" is not done).
-5. **Engagement validator** check 8 recomputes `coverage_ratio` independently and gates COMPLETE at 0.80.
+1. **Bootstrap / recon** emit the structured surface into `recon/inventory/surface.json` (schema `surface/v2`) and seed the `coverage.json` class rows.
+2. **THINK** (coverage mode) runs `enumerate_cells.py` + `coverage_gate.py --emit-open` — the OPEN backlog is the exact code-computed remaining `(class_id @ scope_key)` cells — and spends ≥1 mission/batch on the highest-value open cell(s), setting the mission's `covers_cells`. The wildcard slot is preserved.
+3. **INTEGRATE** validates each candidate inline, writes the matching `units_tested` entries (coverage-by-VALID), runs `coverage_gate.py`, and reports `coverage_ratio` + `applicable_pending` (= the gate's `missing_cells` count) + `coverage_complete`.
+4. The loop is coverage-complete only when the gate's `coverage_complete` is true (`coverage_ratio == 1.0`, no missing/extra/dangling/false-NA cells). "Ran out of hypotheses" is not done.
+5. **Engagement validator** check 8 re-runs the gate (hard 100%); at the engagement level, `finalizeEngagement` runs `network_coverage_map.py` (swept-host tail) + the gate over the whole tree and BLOCKS the deliverable unless every applicable cell is covered.

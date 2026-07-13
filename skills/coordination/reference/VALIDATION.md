@@ -1,15 +1,31 @@
 # Finding Validation Reference
 
-Anti-hallucination validation for pentest findings. Every claim must be backed by raw evidence. **All checks must pass; one failure = finding rejected.**
+Anti-hallucination validation for pentest findings. Every claim must be backed by raw evidence. **All checks must pass; a failure triggers cure-or-drop — an unproven finding never ships.**
 
 ## How Validation Works
 
-A validator agent (spawned from `skills/coordination/reference/validator-role.md`) runs per-finding. It can read evidence, run PoCs, cross-reference claims against raw scan files, and detect fabrication via log timestamps.
+Validation is **interleaved, strict per-finding** — NOT a separate one-shot pass after the search finishes. The coordinator validates each candidate **the instant it is materialized** (right after INTEGRATE writes it to the ledger — the earliest race-free point it has an id + dir — and before the next THINK/batch), driving it to a terminal verdict on **fresh blind agents** before search continues. A validator agent (spawned from `skills/coordination/reference/validator-role.md`) can read evidence, run PoCs, cross-reference claims against raw scan files, and detect fabrication via log timestamps.
 
-| Phase | Who | What |
-|-------|-----|------|
-| 4a | Executor | Prepare evidence (files exist, CVSS consistent) |
-| 4.5 | Coordinator | Deploy one validator per finding (parallel) |
+| Step | Who | What |
+|------|-----|------|
+| Prepare | Executor | Author evidence (files exist, CVSS consistent) |
+| INTEGRATE | Coordinator | Materialize the candidate (id + finding dir) — the sole ledger writer |
+| Validate now | Coordinator | Run the per-finding convergence loop below on fresh blind agents, before the next batch |
+
+### Per-finding convergence loop
+
+For each newly-materialized candidate, before continuing the search:
+
+1. **Checks** — one blind authoritative validator runs the checks below.
+2. **Adversarial + reproduction lane (parallel, all blind to the coordinator's theory):** refuters (×3 — the raised quorum), an evidence-probe (stats the mandatory files on disk), and a separate blind reproducer (follows only the PoC recipe).
+3. **Deterministic `computeVerdict`** (pure JS) folds the results into one verdict.
+4. **Terminal routing:**
+   - **CONFIRMED** (`VALID` / `REPAIRED`) → `artifacts/validated/` → the only findings that reach the report.
+   - **REJECTED** (adversarial majority) → `artifacts/false-positives/` (audit only). "Reject and keep searching for something else."
+   - **CURE** — close the *named* gaps (`failed_checks` / `missing_evidence`) via a scoped cure step, then **re-validate on fresh blind agents** the next round.
+   - **DROPPED** — still uncured after `MAX_CURE_ROUNDS` → `artifacts/dropped/` (audit only).
+
+**Drop-entirely policy:** only `VALID`/`REPAIRED` reach the report. There is **no gaps/assurance section** and no half-confirmed findings in the deliverable — REJECTED lives in `false-positives/` and uncured DROPPED in `dropped/`, both audit trails only.
 
 ## 5 Required Checks
 
@@ -79,7 +95,10 @@ evidence/validation/
 ├── validation-summary.md      (mandatory)
 ├── poc-rerun-output.txt       (mandatory — even when execution skipped, with reason)
 ├── verification-script.py     (mandatory — independent reproduction)
+├── cve-verification.md        (mandatory when the finding cites a CVE)
 ├── code-references.md         (mandatory when finding cites code/config/logic)
+├── network-requests.json      (web: playwright_network_requests, when relevant)
+├── console.json               (web: playwright_console_messages, when relevant)
 └── screenshots/*.png          (mandatory when target has web/browser surface)
 ```
 
@@ -90,7 +109,39 @@ evidence/validation/
 4. `code-references.md` — when claims cite source code/config/app logic. Each claim mapped to `file:line` with quoted snippet.
 5. `screenshots/*.png` — when finding targets HTTP/HTTPS/web/browser surface. Must show exploitation or observable effect. Skip for raw TCP/UDP/DNS/SNMP/SSH banner findings.
 
-Incomplete packages must not be submitted; the coordinator rejects them.
+### `poc` — the reproducible step-by-step, re-run by a separate blind agent
+
+Every finding carries **one canonical reproducible PoC** (there is no parallel `evidence_steps` — that would
+duplicate this). The `checks` stage authors `poc { prerequisites[], steps[] }`:
+
+- **`prerequisites[]`** — the tools/conditions that must be in place first (`{item, reason, check}`), so a
+  tester starting cold knows exactly what to ready (e.g. `curl`, a valid low-priv session, target reachability).
+- **`steps[]`** — ordered `{n, action, expected, artifact}`. **Step 1 MUST be an entry point** (open a terminal
+  / open a browser / establish the initial connection). **The last step MUST be the actual observed result**
+  that proves the finding.
+
+A **separate, context-free reproduction agent** (`repro:*`) is then handed *only* the prerequisites + steps +
+target — it may not read the description, `poc.py`, evidence, chain, or any validator/refuter output. It follows
+the recipe exactly, and **corrects it minimally until it reproduces** (or can't). This is a distinct role from
+the refuters (which try to *doubt* the finding) and the evidence-probe (which stats files) — it *follows the
+recipe*. Its `{reproduced, corrected_steps, observed_result}` is structured; the pure-JS `computeVerdict()`
+gates on `reproduced` (no confirmation ⇒ **DEMOTED**, never a faked VALID), and `finalPoc()` records the
+agent's corrected recipe when it perfected one. The result flows to **both** the interim verdict JSON and the
+final `report_data.json` (`poc` structured + a deterministically-rendered `poc_request`).
+
+### code / screenshot artifacts — the machine-checked file trail
+
+**This contract is machine-checked, not advisory.** A one-job **evidence-probe** (`test -f`/`wc -c`) verifies
+every mandatory file above actually exists and is non-empty on disk — the manifest is **branched** by finding
+type (screenshots only for web-surface findings; `code-references.md` only for code-citing findings; `cve-
+verification.md` only for CVE findings), so a raw TCP/DNS/SSH-banner finding is not penalised for lacking a
+screenshot. The pure-JS `computeVerdict()` then requires all *applicable* mandatory artifacts present:
+
+- present & non-empty + all gates pass → **VALID** (or **REPAIRED** if the PoC was regenerated),
+- adversarially refuted (majority) → **REJECTED** (false-positive → `false-positives/`; never appears in any report),
+- real but under-evidenced / infra error → **DEMOTED** — enter the cure loop; if still uncured after `MAX_CURE_ROUNDS` it is **DROPPED** to `artifacts/dropped/` (audit only), never the report and never a caveat.
+
+Incomplete packages are cured-or-dropped, never silently passed and never surfaced as a gap in the deliverable; the coordinator submits only fully-confirmed findings.
 
 ### validation-summary.md template
 
@@ -127,26 +178,29 @@ Incomplete packages must not be submitted; the coordinator rejects them.
 
 Validators write ONLY to `evidence/validation/`. Never modify executor files. **Exception**: if Check 2 fails (no finding directory), proof goes in the rejection JSON only.
 
-## Coordinator Deployment
+## Coordinator: interleaved per-finding validation
+
+The coordinator does not batch all validators at the end. Immediately after INTEGRATE materializes a candidate — before the next THINK/batch — it runs the convergence loop for that candidate on **fresh** blind agents:
 
 ```python
 validator_role = Read("skills/coordination/reference/validator-role.md")
 
-for finding in all_findings:
-    Agent(prompt=f"{validator_role}\n\n"
-                 f"finding_id: {finding['id']}\n"
-                 f"finding_json_path: {findings_file}\n"
-                 f"raw_dir: {{OUTPUT_DIR}}/recon/\n"
-                 f"executor_log: {{OUTPUT_DIR}}/logs/{executor}.log\n"
-                 f"findings_dir: {{OUTPUT_DIR}}/findings/\n"
-                 f"output_dir: {{OUTPUT_DIR}}/artifacts/",
-          run_in_background=True)
+# Right after INTEGRATE produces THIS candidate — before the next batch:
+Agent(prompt=f"{validator_role}\n\n"
+             f"finding_id: {finding['id']}\n"
+             f"finding_json_path: {findings_file}\n"
+             f"raw_dir: {{OUTPUT_DIR}}/recon/\n"
+             f"executor_log: {{OUTPUT_DIR}}/logs/{executor}.log\n"
+             f"findings_dir: {{OUTPUT_DIR}}/findings/\n"
+             f"output_dir: {{OUTPUT_DIR}}/artifacts/",
+      run_in_background=True)
+# → CONFIRMED | REJECTED | CURE (close named gaps, re-validate on fresh agents) | DROPPED
 ```
 
-After validators complete, the coordinator:
-1. Reads `{OUTPUT_DIR}/artifacts/validated/{id}.json` (passed) and `{OUTPUT_DIR}/artifacts/false-positives/{id}.json` (rejected)
-2. Cross-executor dedupe (same URL + same CWE → drop duplicate)
-3. Aggregates only validated findings
+Per terminal verdict, the coordinator:
+1. Routes CONFIRMED → `{OUTPUT_DIR}/artifacts/validated/{id}.json`, REJECTED → `false-positives/{id}.json`, uncured DROPPED → `dropped/{id}.json`.
+2. Cross-executor dedupe (same URL + same CWE → drop duplicate).
+3. **Coverage-by-VALID:** a class flips to `covered` only on a `VALID`/`REPAIRED` finding, a justified N/A, or a genuine negative. A class whose only candidates were REJECTED/DROPPED stays `pending`, so search continues — this is the verdict→search feedback edge.
 
 ## Output: Validated
 

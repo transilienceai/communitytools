@@ -5,7 +5,7 @@ description: Generate a Transilience-branded PDF report (pentest, vuln assessmen
 
 # Transilience Report Style
 
-Turns a structured findings JSON into a branded A4 PDF (dark theme, gradient rule, advisory cards, severity metrics) — the standard Transilience deliverable. The generator is data-driven: you assemble one JSON, run one command.
+Turns a structured findings JSON into a branded A4 PDF (**light theme** by default — modern/minimal; `--theme dark` fallback; brand gradient rule, boxed code/samples, framed screenshots, colour-coded severity + CVSS-score, findings cards, severity metrics) — the standard Transilience deliverable. The generator is data-driven: you assemble one JSON, run one command. Design system: [`formats/transilience-report-style/SKILL.md`](../../formats/transilience-report-style/SKILL.md) §0 (theme/palette).
 
 ## When to use
 - A pentest / vuln-assessment / network-scan / compliance engagement is finished and validated and needs its PDF deliverable.
@@ -13,7 +13,8 @@ Turns a structured findings JSON into a branded A4 PDF (dark theme, gradient rul
 
 ## How to use (3 steps)
 
-1. **Write `report_data.json`** matching [`reference/report-data-schema.json`](reference/report-data-schema.json). Only `engagement` and `findings` are required; every other key (executive_summary, metrics, sections, cve_register, coverage_table, ruled_out, tools_used, roadmap, disclaimer) is an **optional section that is skipped if absent**. See [`reference/example-report-data.json`](reference/example-report-data.json) for a minimal working file.
+1. **Write `report_data.json`** matching [`reference/report-data-schema.json`](reference/report-data-schema.json). Only `engagement` and `findings` are required; every other key (executive_summary, metrics, sections, cve_register, coverage_table, attack_pattern_coverage, ruled_out, tools_used, roadmap, disclaimer) is an **optional section that is skipped if absent**. See [`reference/example-report-data.json`](reference/example-report-data.json) for a minimal working file.
+   - **Internal-only sections:** a `sections[]` entry with `"internal": true` is retained in `report_data.json` (kept as the internal record) but is **never rendered into the client PDF**. Use it for internal QA logs such as blind-validation / independent-reproduction verdict tables — these must not appear in any client-facing PDF.
 
 2. **Run the generator:**
    ```bash
@@ -24,7 +25,7 @@ Turns a structured findings JSON into a branded A4 PDF (dark theme, gradient rul
 3. **Verify** by rendering a page (`pdftoppm -png -r 100 -f 1 -l 1 out.pdf /tmp/p`) and reading it before delivery.
 
 ## What it renders
-Cover (logo, title lines, subtitle, metadata) → Executive Summary (auto KPI metric boxes from severity counts + narrative + key risks + positives) → free-form `sections` (Scope/Methodology) → **finding cards grouped Critical→Info** (severity bar, CVSS+vector, CWE/OWASP, status, affected, description, evidence, impact, optional severity-calibration, optional **PoC/test block**, optional per-finding CVE table, remediation) → optional CVE register, coverage table, ruled-out appendix, **Tools & Techniques Used**, remediation roadmap, disclaimer. Section numbers are assigned automatically.
+Cover (logo, title lines, subtitle, metadata) → Executive Summary (auto KPI metric boxes from severity counts + narrative + key risks + positives) → free-form `sections` (Scope/Methodology) → **finding cards grouped Critical→Info** (severity bar, CVSS+vector, CWE/OWASP, status, affected, description, evidence, impact, optional severity-calibration, optional **PoC/test block**, optional per-finding CVE table, remediation) → optional CVE register, coverage table, **Attack Pattern Coverage** (deterministic surface-unit × attack-class matrix with colour-coded status), ruled-out appendix, **Tools & Techniques Used**, remediation roadmap, disclaimer. Section numbers are assigned automatically.
 
 ## Finding object (the important fields)
 `id, title, severity (Critical|High|Medium|Low|Info), cvss_score, cvss_vector, cwe, owasp, affected[], description, evidence, impact, recommendation` + optional `poc_request, test_method, calibration, needs_live_confirmation, cves[]`. PAN/Aadhaar/card-like values are defensively masked at render time — but redact real secrets/PII in your source text anyway.

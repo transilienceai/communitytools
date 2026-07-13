@@ -44,7 +44,9 @@ Validators receive evidence only — never the coordinator's reasoning, never th
 
 ## Append-only audit
 
-`experiments.md` and `tools/{NNN}_*.md` are append-only. Never rewrite. Never prune. The trail proves thoroughness and lets the engagement-validator judge.
+`experiments.md`, `tools/{NNN}_*.md`, `logs/activity/tool-invocations.jsonl`, and `logs/activity/source-ips.jsonl` are append-only. Never rewrite. Never prune. The trail proves thoroughness and lets the engagement-validator judge.
+
+**Rule — register every egress vantage.** Every source/egress IP the engagement uses — the local runner, any attack VM, proxy, or VPN — must be registered via `tools/register_source_ip.py` (or `tools/provision_vantage.sh`, which registers automatically), so `source-ips.jsonl` is a complete record of where traffic originated.
 
 ## CLI tools first, library APIs second
 

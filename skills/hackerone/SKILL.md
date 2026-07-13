@@ -60,7 +60,7 @@ v = Workflow(name="validate-findings", args={
 
 `validate-findings` is the authoritative gate because it directly preempts the most common HackerOne rejections: it verifies each CVE against **NVD + a recomputed CVSS base score (from the vector) + CISA KEV + the vendor advisory**, **runs (and repairs) every PoC** until it emits the evidence that proves the issue, **recomputes the risk/severity**, corroborates every claim against raw evidence, and kills false positives via **adversarial refutation**.
 
-The orchestrator is the only layer that runs this workflow (it is top-level; the workflow is one level below — legal nesting). To avoid double work, coordinators may treat their inline P5 finding-validators as a provisional self-check; the `validate-findings` verdict is authoritative for submission. A `REJECTED` finding is a false positive — it never enters a submission, an appendix, or a count; its `artifacts/false-positives/{id}.json` is the sole record.
+The orchestrator is the only layer that runs this workflow (it is top-level; the workflow is one level below — legal nesting). To avoid double work, coordinators may treat their **interleaved per-finding validators** (run the instant each candidate is materialized) as a provisional self-check; the standalone `validate-findings` verdict is authoritative for submission. A `REJECTED` finding is a false positive — it never enters a submission, an appendix, or a count; its `artifacts/false-positives/{id}.json` is the sole record. Likewise a coordinator-dropped candidate (uncured DEMOTED, in `artifacts/dropped/`) is never submitted.
 
 The HackerOne PoC contract is a superset of the standard finding contract (`skills/coordination/reference/validator-role.md`).
 

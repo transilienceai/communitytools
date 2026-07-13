@@ -31,7 +31,7 @@ The coordinator passes `role:` in the spawn prompt. Behavior differs by variant.
    5. PATT (fetch PATT_URL if provided — comprehensive payload library).
 6. **Confirm** — reproduce 3× with the working payload, capture PoC, capture evidence.
 7. Update your `experiments.md` row (the EXPERIMENT_ID passed in your prompt) with result + notes. On `fail`, increment `Goal_attempts` (see `bookkeeping.md`).
-8. Log significant tool invocations to `{OUTPUT_DIR}/tools/{NNN}_{tool}.md`. Skip trivial commands.
+8. Tool-invocation logging is AUTOMATIC — the harness-run PostToolUse hook appends every Bash call to `{OUTPUT_DIR}/logs/activity/tool-invocations.jsonl`, so you need not hand-write `tools/{NNN}_{tool}.md`. Route any attack-VM provisioning through `provision_vantage.sh` so its egress IP is registered.
 
 ## Tools
 
@@ -56,7 +56,7 @@ The coordinator passes `role:` in the spawn prompt. Behavior differs by variant.
 - All output to OUTPUT_DIR.
 - Bullets, not prose, in logs and reports.
 - Always update experiments.md before terminating — even on failure.
-- Log every security-relevant tool invocation to `tools/`.
+- Tool invocations are logged automatically by the PostToolUse hook to `logs/activity/tool-invocations.jsonl` — no manual `tools/` logging required.
 - **CLI tools first, Python second.** Use impacket CLI tools (`secretsdump.py`, `ticketer.py`, `getST.py`, `getTGT.py`, `smbclient.py`) before writing custom Python against library internals. Drop to Python only when CLI can't do what you need — and read the library source first.
 - When a tool/command fails, diagnose the error before retrying. Read error messages, check permissions, verify prerequisites. Don't retry with cosmetic variations.
 - RESEARCH_BRIEF is advisory. If testing shows the hypothesis is wrong, say so — don't force-fit results.

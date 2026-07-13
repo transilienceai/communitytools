@@ -37,11 +37,13 @@ Boundaries and context contracts: [`skills/coordination/reference/role-matrix.md
 | Output discipline (OUTPUT_DIR tree) | [`skills/coordination/reference/output-discipline.md`](skills/coordination/reference/output-discipline.md) |
 | Credential loading (env-reader) | [`skills/coordination/reference/credential-loading.md`](skills/coordination/reference/credential-loading.md) |
 | Pre-flight checklist | [`skills/coordination/reference/preflight-checklist.md`](skills/coordination/reference/preflight-checklist.md) |
+| Scan & vantage coverage (full-range + multi-geo allowlist) | [`skills/coordination/reference/preflight-checklist.md`](skills/coordination/reference/preflight-checklist.md) |
 | Bookkeeping (experiments.md, tools/, goal_attempts) | [`skills/coordination/reference/bookkeeping.md`](skills/coordination/reference/bookkeeping.md) |
 | Brute-force prohibition | `skills/coordination/SKILL.md` Rule 1 (autonomous, no AskUser) and `principles.md` |
 | Validation procedure | [`skills/coordination/reference/VALIDATION.md`](skills/coordination/reference/VALIDATION.md) |
 | Git conventions | [`skills/coordination/reference/GIT_CONVENTIONS.md`](skills/coordination/reference/GIT_CONVENTIONS.md) |
 | Output formats (reports, schemas) | [`formats/INDEX.md`](formats/INDEX.md) |
+| Activity & source-IP logging | [`formats/logs.md`](formats/logs.md) |
 
 ## CVE risk lookup
 

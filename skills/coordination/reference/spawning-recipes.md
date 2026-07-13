@@ -127,7 +127,9 @@ RECON_LISTING:
 
 Forbidden: reading `attack-chain.md`, skill files, RESEARCH_BRIEF.
 
-## Validator — finding (one per finding, blind)
+## Validator — finding (interleaved, blind — the instant INTEGRATE materializes a candidate)
+
+Spawn this **right after INTEGRATE** produces the candidate, before the next batch — not in a downstream one-shot pass. Re-spawn a **fresh** validator each cure round so the blind contract holds across the whole convergence loop.
 
 ```python
 validator_role = Read("skills/coordination/reference/validator-role.md")
@@ -144,11 +146,34 @@ OUTPUT_DIR: {output_dir}/artifacts
 VALIDATION_PROCEDURE:
 {validation_doc}
 """, run_in_background=True)
+# → CONFIRMED (validated/) | REJECTED (false-positives/) | CURE | DROPPED (dropped/)
 ```
 
 Forbidden: attack-chain, other findings, executor logs, skill files (except VALIDATION.md), RESEARCH_BRIEF.
 
-## Validator — engagement (once at P5, blind)
+## Executor — cure (on a DEMOTED verdict, before re-validation)
+
+Handed ONLY the named gaps — must **not** re-theorize. Closes exactly those, then the coordinator re-validates on a fresh blind agent.
+
+```python
+executor_role = Read("skills/coordination/reference/executor-role.md")
+
+Agent(description=f"Cure finding {finding_id}", prompt=f"""{executor_role}
+
+role: cure
+finding_id: {finding_id}
+FINDING_DIR: {output_dir}/findings/finding-{finding_id}/
+FAILED_CHECKS: {failed_checks}
+MISSING_EVIDENCE: {missing_evidence}
+
+Close EXACTLY these gaps (write the named missing-evidence files, repair/re-run poc.py,
+fix the CVSS vector). Do NOT re-theorize, do NOT expand scope.
+""", run_in_background=True)
+```
+
+Forbidden: attack-chain, coordinator theory, other findings, refuter/validator reasoning.
+
+## Validator — engagement (once at loop end, blind)
 
 ```python
 validator_role = Read("skills/coordination/reference/validator-role.md")
@@ -174,19 +199,19 @@ for mission in missions[:2]:
 # Wait for all → integrate → update chain → next batch.
 ```
 
-### Validators in parallel (one per finding)
+### Interleaved per-candidate validation (the instant it's materialized)
 
 ```python
-finding_ids = [f for f in os.listdir(f"{output_dir}/findings/") if f.startswith("finding-")]
-for fid in finding_ids:
-    Agent(prompt=..., run_in_background=True)  # all parallel
-# Wait → read artifacts/validated/ + artifacts/false-positives/.
+# Right after INTEGRATE produces a candidate — before the next THINK/batch:
+Agent(prompt=finding_validator_prompt, run_in_background=True)  # checks + refuters×3 ∥ probe ∥ reproducer
+# computeVerdict → CONFIRMED | REJECTED | CURE (spawn cure executor, re-validate FRESH) | DROPPED.
+# Coverage flips only on VALID (coverage-by-VALID); REJECTED/DROPPED → class stays pending, keep searching.
 ```
 
-### Engagement validator (sequential after finding-validators)
+### Engagement validator (once at loop end)
 
 ```python
-# After all finding-validators returned:
+# After the loop ends — every candidate already validated inline to a terminal verdict:
 Agent(prompt=engagement_validator_prompt, run_in_background=True)
 ```
 

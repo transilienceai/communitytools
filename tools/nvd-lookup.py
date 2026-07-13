@@ -7,13 +7,22 @@ including CVSS scores, severity, CWE, and description.
 
 Usage:
     python3 tools/nvd-lookup.py CVE-2024-12345 [CVE-2023-99999 ...]
+    python3 tools/nvd-lookup.py --cache-dir <dir> CVE-2024-12345
 
 No API key required (rate-limited to ~5 req/30s without key).
 Set NVD_API_KEY env var for higher rate limits.
+
+With --cache-dir, lookups are frozen deterministically: a cache HIT re-renders
+<dir>/<CVE>.json with ZERO network (byte-identical stdout); a MISS fetches live
+and persists the fetched dict only on a successful lookup. CVE ids are validated
+against ^CVE-\\d{4}-\\d{4,}$ and the cache path is basename'd + realpath-contained
+inside <dir> before any filesystem use; on mismatch the id is never cached.
 """
 
+import argparse
 import html as html_module
 import json
+import os
 import re
 import sys
 import time
@@ -23,6 +32,30 @@ import urllib.parse
 
 NVD_API_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 NVD_WEB_URL = "https://nvd.nist.gov/vuln/detail"
+
+# Strict CVE id shape used to gate any filesystem path (F-3, HIGH).
+CVE_ID_RE = re.compile(r"^CVE-\d{4}-\d{4,}$")
+
+
+def cache_path_for(cache_dir, cve_id):
+    """Return the realpath-contained <cache_dir>/<CVE>.json path for a well-formed
+    CVE id, or None if the id fails the strict regex / basename / containment check.
+    None means "skip caching for this id" — never read/write outside cache_dir."""
+    if not CVE_ID_RE.match(cve_id):
+        return None
+    name = os.path.basename(cve_id)
+    if name != cve_id:
+        return None
+    root = os.path.realpath(cache_dir)
+    path = os.path.realpath(os.path.join(root, name + ".json"))
+    if path != root and path.startswith(root + os.sep):
+        return path
+    return None
+
+
+def _is_success(data):
+    """A cacheable NVD lookup: no error and at least one vulnerability record."""
+    return isinstance(data, dict) and "error" not in data and bool(data.get("vulnerabilities"))
 
 
 def fetch_cve_api(cve_id: str, api_key: str | None = None) -> dict:
@@ -351,8 +384,14 @@ def format_cve(data: dict) -> str:
     return "\n".join(lines)
 
 
-def main():
-    if len(sys.argv) < 2:
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, add_help=True)
+    ap.add_argument("cve_ids", nargs="*", metavar="CVE-ID")
+    ap.add_argument("--cache-dir", help="Freeze lookups: read/write <dir>/<CVE>.json (zero network on hit)")
+    args = ap.parse_args(argv)
+
+    if not args.cve_ids:
         print("Usage: python3 tools/nvd-lookup.py CVE-XXXX-XXXXX [...]")
         sys.exit(1)
 
@@ -370,18 +409,43 @@ def main():
     except Exception:
         pass
 
-    cve_ids = sys.argv[1:]
+    if args.cache_dir:
+        os.makedirs(args.cache_dir, exist_ok=True)
+
+    cve_ids = args.cve_ids
     for i, cve_id in enumerate(cve_ids):
         cve_id = cve_id.strip().upper()
         if not cve_id.startswith("CVE-"):
             print(f"WARNING: '{cve_id}' doesn't look like a CVE ID, skipping.")
             continue
 
-        data = fetch_cve(cve_id, api_key)
+        cache_path = cache_path_for(args.cache_dir, cve_id) if args.cache_dir else None
+
+        # Cache HIT: re-render the frozen dict, zero network.
+        hit = False
+        data = None
+        if cache_path and os.path.isfile(cache_path):
+            try:
+                with open(cache_path) as f:
+                    data = json.load(f)
+                hit = True
+            except (OSError, json.JSONDecodeError):
+                hit = False
+
+        if not hit:
+            data = fetch_cve(cve_id, api_key)
+            # Persist only on a successful lookup — never cache errors/empties.
+            if cache_path and _is_success(data):
+                try:
+                    with open(cache_path, "w") as f:
+                        json.dump(data, f)
+                except OSError:
+                    pass
+
         print(format_cve(data))
 
-        # Rate limiting: NVD allows ~5 requests per 30s without API key
-        if i < len(cve_ids) - 1:
+        # Rate limiting only when we actually hit the network (cache hits are free).
+        if not hit and i < len(cve_ids) - 1:
             time.sleep(6 if not api_key else 0.6)
 
 
