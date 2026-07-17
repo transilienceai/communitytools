@@ -78,7 +78,10 @@ export function normVector(v) {
 }
 
 export function cveReconcile({ claimed_score, computed_score, nvd_score, claimed_vector, computed_vector } = {}) {
-  const near = (x, y) => x != null && y != null && Math.abs(Number(x) - Number(y)) <= 0.1;
+  // 1e-9 epsilon: one-decimal scores exactly 0.1 apart (the legit 3.0-vs-3.1
+  // rounding-step gap) can land at 0.10000000000000009 in IEEE-754 and wrongly
+  // fail a bare `<= 0.1`, spuriously demoting a valid CVE finding.
+  const near = (x, y) => x != null && y != null && Math.abs(Number(x) - Number(y)) <= 0.1 + 1e-9;
   const haveComputed = computed_score != null;
   const vectorOk = !claimed_vector || !computed_vector || normVector(claimed_vector) === normVector(computed_vector);
   const nvdOk = nvd_score == null || near(computed_score, nvd_score);
@@ -160,16 +163,14 @@ export function computeVerdict(finding, checks, votes, probe, repro, opts = {}) 
 
 // Deterministically pick the FINAL PoC to record: the reproduction agent's
 // corrected version wins when it adjusted the steps (that's the "perfected"
-// recipe); otherwise the checks agent's authored PoC. Shape: {prerequisites[], steps[]}.
+// recipe); otherwise the checks agent's authored PoC. Shape: an ordered list of
+// {description, command, image_url} steps.
 export function finalPoc(checks, repro) {
-  const authored = (checks && checks.poc) || { prerequisites: [], steps: [] };
+  const authored = Array.isArray(checks && checks.poc) ? checks.poc : [];
   if (repro && repro.reproduced && Array.isArray(repro.corrected_steps) && repro.corrected_steps.length) {
-    return {
-      prerequisites: Array.isArray(repro.corrected_prerequisites) && repro.corrected_prerequisites.length ? repro.corrected_prerequisites : (authored.prerequisites || []),
-      steps: repro.corrected_steps,
-    };
+    return repro.corrected_steps;
   }
-  return { prerequisites: authored.prerequisites || [], steps: authored.steps || [] };
+  return authored;
 }
 
 // ---------------------------------------------------------------------------
@@ -235,11 +236,59 @@ export function backstopDecision(agentsSpawned, hardReserve) {
 
 // Partition the shared 1000-agent lifetime budget across N assets so the worst-
 // case total stays under the runtime cap (invariant: perAsset*A + reserve <= cap).
-export function assessBudget({ assets } = {}) {
+// `reserve` overrides GLOBAL_RESERVE (e.g. the network deep-dive folds in the
+// pre-deep-dive sweep spend); omitted -> GLOBAL_RESERVE.
+export function assessBudget({ assets, reserve } = {}) {
   const A = Math.max(1, Math.floor(Number(assets) || 1));
-  const perAsset = Math.floor((AGENT_CAP - GLOBAL_RESERVE) / A);
+  const R = Number.isFinite(Number(reserve)) ? Math.max(0, Math.floor(Number(reserve))) : GLOBAL_RESERVE;
+  const perAsset = Math.floor((AGENT_CAP - R) / A);
   const hardReserve = Math.max(0, Math.floor(perAsset * 0.85));
-  return { assets: A, perAsset, hardReserve, agentCap: AGENT_CAP, globalReserve: GLOBAL_RESERVE };
+  return { assets: A, perAsset, hardReserve, agentCap: AGENT_CAP, globalReserve: R };
+}
+
+// Convergence-first completion (coverage mode): done only when every applicable
+// (surface-unit x attack-class) cell is covered/negated (coveragePending===0) AND
+// the dry tail has held for `dryTail` consecutive batches. "all techniques + more".
+export function convergenceDone({ coveragePending, coverageDryStreak, dryTail } = {}) {
+  const K = Math.max(1, Math.floor(Number(dryTail) || 2));
+  return Number(coveragePending) === 0 && Math.floor(Number(coverageDryStreak) || 0) >= K;
+}
+
+// The dry-tail streak transition. The tail only accrues once coverage is complete
+// (pending 0); ANY new confirmed finding OR a reopened cell resets it to 0 so the
+// "plus more" tail keeps probing until the surface is genuinely quiet.
+export function nextDryStreak(prevStreak, { coveragePending, newConfirmed, reopened } = {}) {
+  if (Number(coveragePending) !== 0) return 0;
+  if (newConfirmed || reopened) return 0;
+  return Math.max(0, Math.floor(Number(prevStreak) || 0)) + 1;
+}
+
+// How many INCOMPLETE assets to fully converge THIS run so each gets a real agent
+// slice and the worst-case total stays under the runtime cap; the rest defer to a
+// resume run. Always runs >=1 when any work remains (else the engagement stalls).
+export function resumeSchedule({ incompleteCount, agentCap, deepSlice, overhead } = {}) {
+  const cap = Math.max(0, Math.floor(Number(agentCap) || 0) - Math.max(0, Math.floor(Number(overhead) || 0)));
+  const slice = Math.max(1, Math.floor(Number(deepSlice) || 1));
+  const capacity = Math.floor(cap / slice);
+  const inc = Math.max(0, Math.floor(Number(incompleteCount) || 0));
+  const assetsThisRun = inc === 0 ? 0 : Math.max(1, Math.min(inc, capacity));
+  return { assetsThisRun, deferred: inc - assetsThisRun };
+}
+
+// Tri-state engagement status from the per-asset rows + the deferred (not-run-this-
+// run) tags. A genuinely-stuck asset (INCOMPLETE_COVERAGE / degraded) blocks COMPLETE
+// and is surfaced for a human; resumable + deferred assets (and stuck ones, retried
+// each run) populate the resume list that drives the next run.
+export function classifyEngagement(assetRows, deferredTags) {
+  const rows = Array.isArray(assetRows) ? assetRows : [];
+  const stuck = rows.filter((r) => r && (r.coverage_status === 'INCOMPLETE_COVERAGE' || r.degraded)).map((r) => r.tag);
+  const resumable = rows.filter((r) => r && r.coverage_status === 'INCOMPLETE_RESUMABLE').map((r) => r.tag);
+  const remaining = [...new Set([...resumable, ...stuck, ...(Array.isArray(deferredTags) ? deferredTags : [])])];
+  const engagement_status = stuck.length ? 'INCOMPLETE_coverage' : (remaining.length ? 'INCOMPLETE_resumable' : 'COMPLETE');
+  const resume = remaining.length
+    ? { remaining_assets: remaining, deferred_reason: stuck.length ? 'mixed: stuck + deferred' : 'agent-slice / per-run budget', rerun_hint: 'resume_dir=<engagement_dir>' }
+    : { remaining_assets: [], deferred_reason: null, rerun_hint: null };
+  return { engagement_status, resume };
 }
 
 // Fold a batch's terminal candidate results into accumulators + a per-class
@@ -384,26 +433,23 @@ export const CHECKS_SCHEMA = {
     is_web: { type: 'boolean', description: 'true if the target has an HTTP/HTTPS/browser surface (drives the screenshot requirement)' },
     cites_code: { type: 'boolean', description: 'true if the finding references source/config/logic (drives the code-references.md requirement)' },
     poc: {
-      type: 'object', additionalProperties: true,
-      description: 'the reproducible step-by-step PoC (a blind reproduction agent re-runs THIS to the stated result). The single canonical step-by-step — not duplicated elsewhere.',
-      required: ['prerequisites', 'steps'],
-      properties: {
-        prerequisites: {
-          type: 'array', description: 'tools/conditions that MUST be in place before the steps (e.g. curl/browser, a valid low-priv session, network reachability to the target)',
-          items: { type: 'object', additionalProperties: true, required: ['item'], properties: { item: { type: 'string' }, reason: { type: 'string' }, check: { type: 'string', description: 'a command/observation that confirms the prerequisite is met' } } },
-        },
-        steps: {
-          type: 'array', description: 'ordered. Step 1 MUST be an entry point (open a terminal / open a browser / establish the initial connection). The LAST step MUST be the actual observed result that proves the finding.',
-          items: { type: 'object', additionalProperties: true, required: ['n', 'action'], properties: { n: { type: 'number' }, action: { type: 'string', description: 'exactly what to do — command, URL, click' }, expected: { type: 'string', description: 'what you should observe after this step' }, artifact: { type: 'string', description: 'optional path to a captured artifact (screenshot/output) for this step' } } },
+      type: 'array',
+      description: 'the reproducible PoC as an ORDERED list of steps (a blind reproduction agent re-runs THIS to the stated result). Step 1 is an entry point; the LAST step is the actual observed result that proves the finding. The single canonical step-by-step — not duplicated elsewhere.',
+      items: {
+        type: 'object', additionalProperties: true, required: ['description'],
+        properties: {
+          description: { type: 'string', description: 'what this step does / what you observe (prose)' },
+          command: { type: 'string', description: 'the EXACT command/URL/click to run at this step — verbatim and runnable; omit for a pure-observation step' },
+          image_url: { type: 'string', description: 'optional path (or URL) to a captured screenshot/output image for THIS step' },
         },
       },
     },
     report_fields: {
-      type: 'object', additionalProperties: true, description: 'the human-facing fields that render into the report (carried so JS assembles report_data.json without re-reading disk)',
+      type: 'object', additionalProperties: true, description: 'the human-facing fields that render into the report (carried so JS assembles report_data.json without re-reading disk). Evidence/PoC/screenshots live in poc[], NOT here.',
       properties: {
         title: { type: 'string' }, affected: { type: 'array', items: { type: 'string' } },
-        description: { type: 'string' }, evidence: { type: 'string' }, impact: { type: 'string' },
-        recommendation: { type: 'string' }, poc_request: { type: 'string' }, test_method: { type: 'string' },
+        description: { type: 'string' }, impact: { type: 'string' },
+        recommendation: { type: 'string' },
         ease_of_exploitation: { type: 'string', description: "exploitability rating/rationale, e.g. 'Easy — no auth, remotely reachable'" },
         references: { type: 'array', items: { type: 'string' }, description: 'advisory/standard URLs' },
         cwe: { type: ['string', 'null'] }, owasp: { type: ['string', 'null'] },
@@ -441,13 +487,11 @@ export const REPRO_SCHEMA = {
   type: 'object', additionalProperties: true,
   required: ['reproduced'],
   properties: {
-    reproduced: { type: 'boolean', description: 'the prerequisites+steps, run EXACTLY (given or corrected), produced the finding\'s stated result' },
-    prerequisites_ok: { type: 'boolean' },
+    reproduced: { type: 'boolean', description: 'the PoC steps, run EXACTLY (given or corrected), produced the finding\'s stated result' },
     entry_point_ok: { type: 'boolean', description: 'step 1 is a genuine entry point (terminal/browser/initial connection)' },
     result_matches: { type: 'boolean', description: 'the LAST step\'s observed result matches the finding' },
     observed_result: { type: 'string' },
-    corrected_prerequisites: { type: 'array', items: { type: 'object', additionalProperties: true } },
-    corrected_steps: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    corrected_steps: { type: 'array', description: 'the corrected PoC list (same {description, command, image_url} shape) if it did not reproduce as written', items: { type: 'object', additionalProperties: true } },
     notes: { type: 'string' },
   },
 };
@@ -471,12 +515,12 @@ export function checksPrompt(f, P = {}) {
       : `  - Do NOT modify poc.py (repair disabled). If it cannot prove the issue, exploit.proven=false.\n`) +
     `  - Always write ${f.dir}/evidence/validation/verification-script.py — a STANDALONE reproduction (own imports + target refs + output parsing; must NOT import the executor poc.py). A human runs this one script to reproduce.\n` +
     `  - If the target has a WEB/HTTP/browser surface: set is_web=true and capture Playwright evidence into ${f.dir}/evidence/validation/ — a full-page screenshots/<name>.png (playwright_screenshot full_page), plus network-requests.json (playwright_network_requests) and console.json (playwright_console_messages) where relevant. For raw TCP/UDP/DNS/SNMP/SSH-banner findings set is_web=false (no screenshot required). Mount skills/essential-tools/reference/playwright-automation.md.\n\n` +
-    `D) AUTHOR THE REPRODUCIBLE PoC (do NOT score risk — the workflow computes risk deterministically). Write ${f.dir}/evidence/validation/poc-steps.md AND return it as poc{prerequisites[], steps[]}:\n` +
-    `  - prerequisites[]: the tools/conditions that MUST be in place first (e.g. {item:"curl", reason:"issue the request"}, {item:"a valid low-privilege session cookie", reason:"the endpoint is authenticated", check:"curl -s .../me returns 200}). Someone starting cold must know exactly what to have ready.\n` +
-    `  - steps[]: ORDERED and reproducible. Step 1 MUST be an ENTRY POINT — literally "Open a terminal" / "Open a browser to <url>" / "Establish the initial connection". Each step = {n, action (the exact command/URL/click), expected (what you observe), artifact (optional path)}. The LAST step MUST be the ACTUAL RESULT that proves the finding (the SQLi row dump, the uid=0 line, the disclosed value). A separate blind agent will re-run these EXACTLY, so they must be self-contained and unambiguous.\n` +
-    `  - report_fields{title, affected[], description, evidence, impact, recommendation, poc_request, test_method, ease_of_exploitation (e.g. "Easy — no auth, remotely reachable"), references[] (advisory/standard URLs), cwe, owasp}: the human-facing fields — the workflow assembles these into report_data.json (do NOT include secrets/PII verbatim; the workflow also secret-scans).\n` +
+    `D) AUTHOR THE REPRODUCIBLE PoC (do NOT score risk — the workflow computes risk deterministically). Write ${f.dir}/evidence/validation/poc-steps.md AND return it as poc[] — an ORDERED list of steps:\n` +
+    `  - Each step = {description (what you do / what you observe, prose), command (the EXACT command/URL/click to run at this step — verbatim and runnable; omit for a pure-observation step), image_url (optional path to a captured screenshot/output image for THIS step — e.g. the Playwright screenshot from lane C)}.\n` +
+    `  - ORDERED and reproducible. Step 1 MUST be an ENTRY POINT — literally "Open a terminal" / "Open a browser to <url>" / "Establish the initial connection" (its command is that entry action). The LAST step MUST be the ACTUAL RESULT that proves the finding (the SQLi row dump, the uid=0 line, the disclosed value) — put the observed proof in its description. A separate blind agent re-runs each step's command EXACTLY, so they must be self-contained and unambiguous. Fold any prerequisites into the first step's description.\n` +
+    `  - report_fields{title, affected[], description, impact, recommendation, ease_of_exploitation (e.g. "Easy — no auth, remotely reachable"), references[] (advisory/standard URLs), cwe, owasp}: the human-facing fields — the workflow assembles these into report_data.json (do NOT include secrets/PII verbatim; the workflow also secret-scans). Evidence / PoC / screenshots now live in poc[] above, NOT in report_fields.\n` +
     `  - is_web (per lane C) and cites_code (true when the finding references source/config/logic — then also write code-references.md).\n\n` +
-    `Return CHECKS_SCHEMA with each lane's booleans + the reported numbers + poc{prerequisites,steps} + report_fields. Be strict and evidence-bound: if you cannot corroborate something, mark it false with detail.`;
+    `Return CHECKS_SCHEMA with each lane's booleans + the reported numbers + poc[] + report_fields. Be strict and evidence-bound: if you cannot corroborate something, mark it false with detail.`;
 }
 
 export function refuterPrompt(f, i, P = {}) {
@@ -492,13 +536,12 @@ export function probePrompt(f, manifest, P = {}) {
 }
 
 export function reproPrompt(f, poc, P = {}) {
-  return `ROLE: BLIND PoC REPRODUCER (context-free, independent). cwd is repo root. You are handed ONLY a finding's PREREQUISITES + STEP-BY-STEP and the target. You did NOT run the original test; you may NOT read the finding's description.md, poc.py, evidence/, attack-chain.md, session-memory.md, other findings, or any validator/refuter output. Reproduce the result as a competent tester with zero prior context would, by following the recipe EXACTLY.\n\n` +
-    `FINDING: ${f.id}\nTARGET: ${P.TARGET || '(from the steps)'}\nPREREQUISITES: ${JSON.stringify((poc && poc.prerequisites) || [])}\nSTEPS: ${JSON.stringify((poc && poc.steps) || [])}\n\n` +
+  return `ROLE: BLIND PoC REPRODUCER (context-free, independent). cwd is repo root. You are handed ONLY a finding's ordered PoC STEPS and the target. You did NOT run the original test; you may NOT read the finding's description.md, poc.py, evidence/, attack-chain.md, session-memory.md, other findings, or any validator/refuter output. Reproduce the result as a competent tester with zero prior context would, by following the recipe EXACTLY.\n\n` +
+    `FINDING: ${f.id}\nTARGET: ${P.TARGET || '(from the steps)'}\nSTEPS: ${JSON.stringify(Array.isArray(poc) ? poc : [])}\n\n` +
     `Rules: read-only / non-destructive only — NO brute force, NO DoS, NO destructive writes, stay on the given target.\n` +
-    `1. PREREQUISITES: verify each is actually available/true (run its \`check\` if given, or a non-destructive equivalent). prerequisites_ok = all satisfiable.\n` +
-    `2. ENTRY POINT: confirm step 1 is a genuine starting point (open a terminal / open a browser / establish the initial connection). entry_point_ok accordingly.\n` +
-    `3. EXECUTE the steps IN ORDER, exactly as written (timeout ~60s/step). At the LAST step, compare the observed output to the finding's claimed result; put the real observed final output in observed_result; result_matches accordingly.\n` +
-    `4. PERFECT IT: if a step is wrong/ambiguous or a prerequisite was missing but the finding IS still reproducible, return the minimal corrected_prerequisites/corrected_steps that DO reproduce it (step 1 still an entry point, LAST step still the actual result). Only set reproduced=true if you ACTUALLY observed the result — with the given OR the corrected recipe.\n` +
+    `1. ENTRY POINT: confirm step 1 is a genuine starting point (open a terminal / open a browser / establish the initial connection). entry_point_ok accordingly.\n` +
+    `2. EXECUTE each step IN ORDER, running its \`command\` exactly as written (timeout ~60s/step). At the LAST step, compare the observed output to the finding's claimed result; put the real observed final output in observed_result; result_matches accordingly.\n` +
+    `3. PERFECT IT: if a step is wrong/ambiguous but the finding IS still reproducible, return the minimal corrected_steps (same {description, command, image_url} shape) that DO reproduce it (step 1 still an entry point, LAST step still the actual result). Only set reproduced=true if you ACTUALLY observed the result — with the given OR the corrected recipe.\n` +
     `Write ${f.dir}/evidence/validation/reproduction.md (what you ran, what you observed, any corrections). Return REPRO_SCHEMA. reproduced=true ONLY when you independently observed the finding's result.`;
 }
 
@@ -679,7 +722,7 @@ export function redactSecrets(text) {
 // against the transilience report-data-schema (required keys + per-finding
 // id/title/severity-enum) and secret-scans the rendered fields.
 // ---------------------------------------------------------------------------
-export const RENDERED_FINDING_FIELDS = ['title', 'description', 'evidence', 'impact', 'recommendation', 'poc_request', 'calibration'];
+export const RENDERED_FINDING_FIELDS = ['title', 'description', 'impact', 'recommendation', 'calibration'];
 
 export function assertReportData(obj) {
   const errors = [];
@@ -696,6 +739,15 @@ export function assertReportData(obj) {
       if (!SEVERITY.includes(f.severity)) errors.push(`findings[${i}] (${f.id || '?'}) invalid severity: ${JSON.stringify(f.severity)}`);
       for (const fld of RENDERED_FINDING_FIELDS) {
         if (f[fld]) { const r = redactSecrets(f[fld]); if (r.hits.length) secretHits.push({ id: f.id, field: fld, kinds: r.hits }); }
+      }
+      // poc[] is an ordered list of steps; scan each step's rendered text fields.
+      if (Array.isArray(f.poc)) {
+        f.poc.forEach((s, j) => {
+          if (!s || typeof s !== 'object') return;
+          for (const fld of ['description', 'command']) {
+            if (s[fld]) { const r = redactSecrets(s[fld]); if (r.hits.length) secretHits.push({ id: f.id, field: `poc[${j}].${fld}`, kinds: r.hits }); }
+          }
+        });
       }
     });
   }

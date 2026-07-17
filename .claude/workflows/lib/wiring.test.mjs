@@ -22,7 +22,7 @@ const ok = (cond, msg) => { if (cond) pass++; else { fail++; fails.push(`✗ ${m
 ok(!/workflow\('validate-findings'/.test(pe), 'pentest-engagement no longer calls the validate-findings workflow (validation is inline)');
 ok((pe.match(/inline_validate: true/g) || []).length >= 2, 'inline_validate:true passed for BOTH the WEB and NETWORK deep-dive loops');
 ok(/nvd_cache_dir: nvdCacheDir/.test(pe) && /kev_snapshot: kevSnapshot/.test(pe), 'frozen NVD/KEV snapshot paths threaded into the loop');
-ok(/assets: N/.test(pe) && /assets: deepenHosts\.length/.test(pe), 'assets:N threaded so the governor can partition the agent cap (web + network)');
+ok(/assets: N,/.test(pe) && /assets: NH,/.test(pe), 'assets:N (web) + assets:NH (network) threaded — the governor partitions the cap by the PER-RUN running count');
 ok(/kev-lookup\.py --cache-dir/.test(pe), 'Setup freezes the KEV snapshot via kev-lookup.py --cache-dir');
 ok(!/validate: false/.test(pe), 'the retired validate:false flag is gone');
 ok((pe.match(/VALID\/REPAIRED/g) || []).length >= 2, 'Correlate reads VALID+REPAIRED (both modes), not VALID-only');
@@ -100,9 +100,9 @@ ok(/tools\/network_coverage_map\.py --engagement-dir/.test(pe), 'finalize runner
 ok(/coverage_complete: \{ type: 'boolean'/.test(pe), 'FINALIZE_SCHEMA carries coverage_complete');
 ok(/finalizeGate\(\{ report_data_ok: r\.report_data_ok, renderGateOk, coverage_complete: r\.coverage_complete/.test(pe), 'the JS hard gate routes through finalizeGate incl. coverage_complete');
 ok(/const coverageComplete = wantReport \? \(report\.coverage_complete === true\) : true/.test(pe), 'WEB engagement_status derives from the gate (fails closed)');
-ok(/const engagementStatus = \(!coverageGaps\.length && coverageComplete\) \? 'COMPLETE' : 'INCOMPLETE_coverage'/.test(pe), 'WEB COMPLETE requires no gaps AND gate coverage_complete');
+ok(/coverageComplete && convStatus === 'COMPLETE'/.test(pe), 'WEB COMPLETE requires the gate coverage_complete AND convergence (nothing resumable)');
 ok(/const netCoverageComplete = wantReport \? \(reportNet\.coverage_complete === true\) : true/.test(pe), 'NETWORK engagement_status derives from the gate (fails closed)');
-ok(/const netEngagementStatus = !scanComplete \? 'INCOMPLETE_scan' : \(netCoverageComplete \? 'COMPLETE' : 'INCOMPLETE_coverage'\)/.test(pe), 'NETWORK COMPLETE requires scanComplete AND gate coverage_complete');
+ok(/netCoverageComplete && netConvStatus === 'COMPLETE'/.test(pe), 'NETWORK COMPLETE requires scanComplete AND gate coverage_complete AND convergence');
 ok(/const isAppBearing = /.test(pe) && /allLive\.filter\(h => h && isAppBearing\(h\)\)/.test(pe), 'NETWORK deep-dive selects app-bearing hosts (tiered), not an arbitrary top-N');
 ok(/mode: 'coverage',\s+\/\/ tiered/.test(pe), 'NETWORK app-bearing deep-dive loops run in coverage mode');
 ok(/deepenTop === 0 \? \[\] : \(deepenTop > 0 \? ranked\.slice\(0, deepenTop\) : ranked\)/.test(pe), 'deepen_top: 0 disables, N caps, null(default) = ALL app-bearing hosts');
@@ -123,6 +123,68 @@ ok(/schema surface\/v2/.test(cl), 'coordinator-loop emits surface/v2 (bootstrap 
 ok(/python3 tools\/test_coverage_gate\.py/.test(ciYml) && /python3 tools\/test_validate_catalog\.py/.test(ciYml), 'CI runs the coverage-gate + catalog tests');
 ok(/python3 tools\/test_report_data_build\.py/.test(ciYml) && /python3 tools\/test_report_schema\.py/.test(ciYml), 'CI runs the report assembler + schema tests');
 ok(/'tools\/\*\*'/.test(ciYml), 'CI paths filter watches tools/** (so the new tools trigger the job)');
+
+// ---------------------------------------------------------------------------
+// Convergence-first depth (remove the cost-style budget) + honest cross-run resume
+// + E1/E2/E4 efficiency levers. The depth formulas are DELETED; completion is
+// coverage-convergence + a dry tail, backstopped by the per-asset agent slice.
+// ---------------------------------------------------------------------------
+// Negative locks: the three magic depth formulas are gone (a stray one would silently
+// re-cap depth / blow the 1000-agent kill limit).
+ok(!/loopBudgetBatches/.test(pe) && !/loopBudgetExperiments/.test(pe), 'WEB depth formula (loopBudget*) is deleted');
+ok(!/deepBudgetBatches/.test(pe) && !/deepBudgetExp/.test(pe), 'NETWORK deep-dive depth formula (deepBudget*) is deleted');
+ok(!/max_experiments: loopBudget/.test(pe) && !/max_batches: loopBudget/.test(pe) && !/max_experiments: deepBudget/.test(pe) && !/max_batches: deepBudget/.test(pe), 'derived max_experiments/max_batches are no longer passed into coordinator-loop');
+ok(!/userMaxExp/.test(pe), 'the dead userMaxExp bindings are removed (no ReferenceError)');
+
+// coordinator-loop: coverage-mode loop is convergence-bounded (agent slice + ceiling);
+// flag mode keeps the original budget-bounded loop.
+ok(/agentsSpawned < perAssetSlice && batch < ABSOLUTE_MAX_BATCHES/.test(cl), 'coverage loop head is the per-asset agent slice + absolute ceiling');
+ok(/exp < MAX_EXPERIMENTS && batch < MAX_BATCHES/.test(cl), 'flag-mode loop head is unchanged (htb-solve untouched)');
+ok(/const perAssetSlice = MODE === 'coverage' \? assetBudget\.perAsset/.test(cl), 'perAssetSlice derives from the (test-locked) assessBudget partition');
+ok(/assessBudget\(\{ assets: Number\(a\.assets\) \|\| 1, reserve: AGENT_RESERVE \}\)/.test(cl), 'assessBudget is called with the agent_reserve override');
+ok(/const done = MODE === 'coverage'\s*\?\s*convergenceDone\(/.test(cl), 'coverage completion is convergenceDone (not a bare pending===0 || goal_reached)');
+ok(/coverageDryStreak = nextDryStreak\(/.test(cl), 'the dry tail is advanced via nextDryStreak');
+ok(/const reopened = prevOpenCells != null && \[\.\.\.openSet\]\.some/.test(cl), 'reopen detection is a set-diff over the open-cell set (not a bare count)');
+ok(/INCOMPLETE_RESUMABLE/.test(cl) && /agent slice \(\$\{perAssetSlice\}\) exhausted/.test(cl), 'a slice-exhausted-with-open-cells exit is INCOMPLETE_RESUMABLE (resumable, not a gap)');
+ok(/DRY_TAIL = Number\(a\.dry_tail\)/.test(cl), 'dry_tail is a coordinator-loop arg');
+
+// pentest-engagement: convergence knobs threaded + honest cross-run resume (WEB + NETWORK).
+ok((pe.match(/dry_tail: dryTail/g) || []).length >= 2, 'dry_tail threaded into BOTH the web and network coverage loops');
+ok(/resumeSchedule\(\{ incompleteCount:/.test(pe), 'resumeSchedule picks the per-run asset slice; the rest defer');
+ok((pe.match(/classifyEngagement\(/g) || []).length >= 2, 'classifyEngagement derives the tri-state status (web + network)');
+ok(/label: 'resume-scan'/.test(pe) && /label: 'resume-scan-net'/.test(pe), 'a deterministic resume-scan runs coverage_gate.py per asset/host (web + network)');
+ok(/complete === true && Number\(r\.applicable\) > 0/.test(pe), 'resume-COMPLETE requires the gate boolean AND applicable>0 (no vacuous-complete skip)');
+ok(/input\.resume_dir/.test(pe) && /RESUME_DIR:/.test(pe), 'Setup reuses input.resume_dir to continue a prior engagement');
+ok(/max_resume_rounds/.test(pe), 'a resume-round churn guard caps endless retries of stuck assets');
+ok(/deep_asset_slice/.test(pe) && /const deepAssetSlice = /.test(pe), 'DEEP_ASSET_SLICE (per-asset agent budget) is configurable, default 200');
+
+// E1 tools-not-agents: the deterministic mechanical-class probe is wired into the loop.
+ok(/tools\/passive_web_probe\.py --asset-dir OUTPUT_DIR/.test(cl), 'E1: passive_web_probe.py runs at bootstrap to clear the mechanical attack-classes');
+ok(/RESUME-AWARE: if OUTPUT_DIR\/recon\/inventory\/surface\.json AND OUTPUT_DIR\/coverage\.json BOTH already exist/.test(cl), 'coverage bootstrap is resume-aware (preserves surface.json/coverage.json, re-derives the backlog)');
+
+// E2 equivalence-class validation: gate credit + loop instruction + validator sampling.
+ok(/EQUIVALENCE \(E2\)/.test(cl) && /validate ONE representative/.test(cl), 'COVERAGE-BY-VALID instructs one representative per (class x equiv_group)');
+ok(/EQUIV SAMPLING \(E2 guard\)/.test(cl) && /K_SAMPLE=3/.test(cl), 'the blind engagement-validator samples equiv-credited cells (mis-group -> GAPS_FOUND)');
+ok(/"equiv_group":<null OR a short group id/.test(cl), 'the surface/v2 emitter carries a conservative equiv_group directive');
+ok(/AND a conservative equiv_group/.test(pe), 'the network app-bearing goal carries the equiv_group directive too');
+
+// E4 replay-cache: restore before the lane (resume), store after (populate).
+ok(/validation_cache\.py restore --finding-dir/.test(cl) && /validation_cache\.py store --cache-dir/.test(cl), 'E4: validateOneCandidate restores on a resume hit and stores every terminal verdict');
+ok(/const REPLAY_CACHE = !!a\.replay_cache/.test(cl) && /prompt-id \$\{CACHE_PROMPT_ID\}/.test(cl), 'E4 is asset-namespaced + resume-gated (no cross-asset replay)');
+ok((pe.match(/validation_cache_dir:/g) || []).length >= 2 && (pe.match(/replay_cache: !!setup\.resumed/g) || []).length >= 2, 'pentest-engagement threads the cache dir + resume-gated replay flag into both loops');
+
+// CI registers the new E1 probe test.
+ok(/python3 tools\/test_passive_web_probe\.py/.test(ciYml), 'CI runs the passive_web_probe test');
+
+// Password-protected deliverable: finalize also emits an AES-256 protected copy
+// (kept alongside the plaintext), with an auto-generated out-of-band password.
+ok(/tools\/protect_deliverable\.py --engagement-dir/.test(pe), 'finalize runs protect_deliverable.py for an AES-256 protected copy');
+ok(/const wantProtect = opts\.protect !== false/.test(pe), 'protection is default-ON with a protect:false kill-switch');
+ok((pe.match(/protect: input\.protect !== false/g) || []).length >= 2, 'the protect flag is threaded from BOTH the web and network finalize calls');
+ok(/deliverable_password: \{ type/.test(pe) && /protected_zip: \{ type/.test(pe), 'FINALIZE_SCHEMA carries the protected artifacts + password');
+ok(/NEVER write the password VALUE into summary\.md/.test(pe), 'the runner is told to keep the password value out of the zipped summary');
+ok(/DELIVERABLE-PASSWORD\.txt/.test(pe), 'the password is surfaced via a root file excluded from the deliverable');
+ok(/python3 tools\/test_protect_deliverable\.py/.test(ciYml), 'CI runs the protect_deliverable test');
 
 console.log(`\nwiring: ${pass} passed, ${fail} failed`);
 if (fail) { console.log('\n' + fails.join('\n')); process.exit(1); }

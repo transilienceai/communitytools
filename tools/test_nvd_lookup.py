@@ -134,6 +134,23 @@ def test_f3_traversal_id_writes_nothing_outside_cache():
             assert not files or root == cache, f"stray file(s) under {root}: {files}"
 
 
+def test_severity_bands_v3_vs_v2():
+    mod = load_module()
+    # v3/v4 bands (None/Low/Medium/High/Critical)
+    assert mod.severity_label(9.0) == "CRITICAL"
+    assert mod.severity_label(7.0) == "HIGH"
+    assert mod.severity_label(4.0) == "MEDIUM"
+    assert mod.severity_label(0.1) == "LOW"
+    assert mod.severity_label(0.0) == "NONE"
+    assert mod.severity_label(None) == "UNKNOWN"
+    # v2 bands: NO Critical; High spans 7.0-10.0.
+    assert mod.severity_label_v2(9.2) == "HIGH", "v2 has no Critical band"
+    assert mod.severity_label_v2(7.0) == "HIGH"
+    assert mod.severity_label_v2(4.0) == "MEDIUM"
+    assert mod.severity_label_v2(3.9) == "LOW"
+    assert mod.severity_label_v2(None) == "UNKNOWN"
+
+
 def main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

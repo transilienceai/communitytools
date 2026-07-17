@@ -80,13 +80,14 @@ Find the entry symbol via `nm -D lib<name>.so | grep ' T ' | c++filt` — pick t
 - **Versioned symbols are mandatory.** A surrogate `libc.so` without `--version-script LIBC` fails the linker's `Verneed` check.
 - **Docker on macOS breaks ptrace** under qemu emulation — gdb won't attach. The LD_PRELOAD recipe needs no debugger, so this is fine; just avoid trying to debug through it.
 - **Multi-library setups.** If the comparison happens in a second `.so` that the first one `dlopen`s, hook there instead — the surrogate scope is global by default.
-- **Non-libc compares.** If the lib uses an inlined / vectorized compare (no PLT entry), this technique fails — fall back to `frida-hooking.md` or in-process patching.
+- **Non-libc compares.** If the lib uses an inlined / vectorized compare (no PLT entry), this technique fails — fall back to Frida (device-side [android-dynamic-analysis.md](../../android-dynamic-analysis.md), or the hooking primitives incl. Stalker in [reverse-engineering/frida-hooking.md](../../../../reverse-engineering/reference/scenarios/dynamic-analysis/frida-hooking.md)) or in-process patching.
 
 ## Cross-references
 
-- `scenarios/dynamic-analysis/frida-hooking.md` — alternative when device + ARM build is available.
-- `scenarios/dynamic-analysis/ltrace-strace.md` — same idea via `ltrace -e strcmp`, but typically too noisy on full Android runtime; this recipe extracts to a minimal harness.
-- `scenarios/static-analysis/elf-analysis.md` — for finding the entry symbol and verifying which libc primitive the `.so` actually calls.
+- [reverse-engineering/frida-hooking.md](../../../../reverse-engineering/reference/scenarios/dynamic-analysis/frida-hooking.md) — Interceptor/Stalker hooking primitives; the device-side alternative when an ARM build + device is available. Mobile bring-up (frida-server push, ABI match, gadget for non-rooted) is in [android-dynamic-analysis.md](../../android-dynamic-analysis.md).
+- [reverse-engineering/ltrace-strace.md](../../../../reverse-engineering/reference/scenarios/dynamic-analysis/ltrace-strace.md) — same idea via `ltrace -e strcmp`, but typically too noisy on the full Android runtime; this recipe extracts to a minimal harness.
+- [reverse-engineering/elf-analysis.md](../../../../reverse-engineering/reference/scenarios/static-analysis/elf-analysis.md) — for finding the entry symbol and verifying which libc primitive the `.so` actually calls.
+- [android-static-analysis.md](../../android-static-analysis.md) — where native-lib review sits in the stock-Android SAST flow.
 
 ## Anti-Patterns
 

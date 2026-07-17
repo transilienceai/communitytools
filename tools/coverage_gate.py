@@ -45,6 +45,12 @@ from enumerate_cells import build as enumerate_build
 _E_RE = re.compile(r"^\|\s*(E-\d+|SWEEP-[\w.\-]+)\s*\|")
 _TOOL_EXP_RE = re.compile(r"Experiment:\s*(E-\d+|SWEEP-[\w.\-]+)")
 
+# E2 equivalence-class validation: a unit-scope cell may be credited when a SIBLING
+# cell in the same equiv_group carries a DIRECT validated finding of that class.
+# Bounds "one representative collapses an unbounded group": at most this many
+# siblings per (asset_tag, class_id, equiv_group) may ride a single representative.
+EQUIV_GROUP_MAX = 8
+
 
 # --- evidence loaders (all scoped to a single asset directory) ---------------
 def load_coverage_rows(asset_dir: str) -> dict:
@@ -143,6 +149,30 @@ def _is_corroborated(entry, asset_dir, tool_eids):
     return bool(corr and os.path.isfile(os.path.join(asset_dir, corr)))
 
 
+def _equiv_representative(cell, ctx):
+    """E2 fallback (bounded). Return a SIBLING scope_key that carries a DIRECT
+    validated finding of this class in the same equiv_group, or None. Only ever
+    fires for unit-scope cells with a truthy equiv_group; never for host/asset
+    cells or None-group cells. A cell can never be its own representative, and at
+    most EQUIV_GROUP_MAX siblings per (asset, class, group) may ride one rep."""
+    if cell["scope"] != "unit":
+        return None
+    group = cell.get("equiv_group")
+    if not group:
+        return None
+    cid = cell["class_id"]
+    reps = ctx["equiv_reps"].get((cid, group)) or set()
+    others = sorted(reps - {cell["scope_key"]})
+    if not others:
+        return None
+    counts = ctx["equiv_counts"]
+    ckey = (cell["asset_tag"], cid, group)
+    if counts[ckey] >= EQUIV_GROUP_MAX:
+        return None
+    counts[ckey] += 1
+    return others[0]
+
+
 def eval_cell(cell, ctx):
     """Return (passed: bool, reason: str, mode: covered|covered_negative|None)."""
     cid = cell["class_id"]
@@ -165,7 +195,15 @@ def eval_cell(cell, ctx):
         ok, mismatch = _finding_matches(ctx["validated"], cid, key, cell["asset_tag"])
         if ok:
             return True, "covered", "covered"
-        return False, ("class_mismatch" if mismatch else "no_matching_finding"), None
+        if mismatch:
+            return False, "class_mismatch", None
+        # E2 equivalence-class fallback: credit this cell iff a DIFFERENT sibling in
+        # the same equiv_group has a direct validated finding of this class (bounded).
+        rep = _equiv_representative(cell, ctx)
+        if rep is not None:
+            ctx["chosen_rep"] = rep
+            return True, "covered_equiv", "covered_equiv"
+        return False, "no_matching_finding", None
 
     # covered_negative
     ok, _ = _finding_matches(ctx["validated"], cid, key, cell["asset_tag"])
@@ -219,10 +257,25 @@ def run_gate(root: str, single: bool) -> dict:
         for c in acells:
             applicable_keys[c["class_id"]].add(c["scope_key"])
 
+        # E2 first pass: which (class, equiv_group) have a DIRECT validated finding, and
+        # on which unit(s). Computed over the whole asset BEFORE scoring so a rep anywhere
+        # in the group is visible. equiv_counts bounds fallback credit per group.
+        equiv_reps = defaultdict(set)  # (class_id, equiv_group) -> {scope_key with a direct finding}
+        for c in acells:
+            if c["scope"] == "unit" and c.get("equiv_group"):
+                ok, _ = _finding_matches(ctx["validated"], c["class_id"], c["scope_key"], c["asset_tag"])
+                if ok:
+                    equiv_reps[(c["class_id"], c["equiv_group"])].add(c["scope_key"])
+        ctx["equiv_reps"] = equiv_reps
+        ctx["equiv_counts"] = defaultdict(int)  # (asset_tag, class_id, equiv_group) -> credited siblings
+
         for c in acells:
             passed, reason, mode = eval_cell(c, ctx)
             rec = {"asset_tag": asset_tag, "scope": c["scope"], "scope_key": c["scope_key"],
-                   "class_id": c["class_id"], "passed": passed, "reason": reason}
+                   "class_id": c["class_id"], "passed": passed, "reason": reason,
+                   "equiv_group": c.get("equiv_group")}
+            if mode == "covered_equiv":
+                rec["representative"] = ctx.get("chosen_rep")
             results.append(rec)
             per_class[c["class_id"]]["applicable"] += 1
             per_asset[asset_tag]["applicable"] += 1
@@ -251,6 +304,7 @@ def run_gate(root: str, single: bool) -> dict:
     passed = sum(1 for r in results if r["passed"])
     ratio = round(passed / applicable, 4) if applicable else 1.0
     missing_cells = [r for r in results if not r["passed"]]
+    covered_equiv = [r for r in results if "representative" in r]  # siblings collapsed onto a rep
 
     per_class_out = {}
     for cid, pc in per_class.items():
@@ -270,6 +324,7 @@ def run_gate(root: str, single: bool) -> dict:
         "coverage_ratio": ratio,
         "complete": complete,
         "missing_cells": sorted(missing_cells, key=lambda r: (r["asset_tag"], r["class_id"], r["scope_key"])),
+        "covered_equiv": sorted(covered_equiv, key=lambda r: (r["asset_tag"], r["class_id"], r["scope_key"])),
         "extra_cells": sorted(extra_cells, key=lambda r: (r["asset_tag"], r["class_id"], str(r["scope_key"]))),
         "false_NA": sorted(false_na, key=lambda r: (r["asset_tag"], r["class_id"])),
         "surface_undercount": sorted(surface_undercount, key=lambda r: r["asset_tag"]),
@@ -322,7 +377,8 @@ def _emit_open(result: dict) -> None:
         return
     if len(openc) <= 60:
         for r in openc:
-            print(f"OPEN {r['class_id']} @ {r['scope_key']} ({r['asset_tag']}) — {r['reason']}")
+            eq = f" [equiv:{r['equiv_group']}]" if r.get("equiv_group") else ""
+            print(f"OPEN {r['class_id']} @ {r['scope_key']} ({r['asset_tag']}){eq} — {r['reason']}")
     else:
         by_class = defaultdict(int)
         for r in openc:

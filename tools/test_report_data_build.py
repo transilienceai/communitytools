@@ -76,6 +76,41 @@ def test_demoted_and_unknown_are_hard_dropped():
         assert "demoted" not in summary, "dead 'demoted' summary key must be gone"
 
 
+def test_poc_list_normalized_and_passed_through():
+    """poc[] passes through as {description, command, image_url} steps; blank/None
+    keys and non-dict entries are dropped; the retired evidence/poc_request/
+    test_method fields never reach the payload."""
+    with tempfile.TemporaryDirectory() as d:
+        vdir = os.path.join(d, "asset1", "artifacts", "validated")
+        os.makedirs(vdir, exist_ok=True)
+        rec = {
+            "finding_id": "Fp", "verdict": "VALID", "severity": "High",
+            "risk": {"risk_score": 0.7},
+            "report_fields": {"title": "Fp title", "description": "d",
+                              "impact": "i", "recommendation": "r"},
+            "poc": [
+                {"description": "step 1", "command": "curl x", "image_url": "shot.png"},
+                {"description": "observation only"},
+                {"command": ""},                        # all-blank -> dropped
+                "not a dict",                           # non-dict -> dropped
+                {"description": "", "command": "run"},   # blank desc dropped, command kept
+            ],
+        }
+        with open(os.path.join(vdir, "Fp.json"), "w") as f:
+            json.dump(rec, f)
+        run_build(d)
+        rep = _load_report(d)
+        poc = rep["findings"][0]["poc"]
+        assert poc == [
+            {"description": "step 1", "command": "curl x", "image_url": "shot.png"},
+            {"description": "observation only"},
+            {"command": "run"},
+        ], poc
+        payload = open(os.path.join(d, "reports", "report_data.json")).read()
+        for tok in ("poc_request", "test_method", '"evidence"'):
+            assert tok not in payload, f"retired field leaked: {tok!r}"
+
+
 def test_no_assurance_gaps_and_no_timestamp_in_payload():
     with tempfile.TemporaryDirectory() as d:
         build_engagement(d, lambda i, fid: f"{fid}.json")

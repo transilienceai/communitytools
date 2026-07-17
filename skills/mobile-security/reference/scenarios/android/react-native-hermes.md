@@ -25,12 +25,12 @@ The HBC **version** (the `u32` after the 8-byte magic) sets tool compatibility �
 
 | Tool | Command | When | Notes |
 |------|---------|------|-------|
-| **hermes-dec** | `hbc-decompiler` / `hbc-disassembler` | primary | `pip3 install hermes-dec`. Version-flexible — decompiles **HBC v96** to readable pseudo-JS; disassembler emits `.hasm` with preserved function names. |
-| **hbctool** | `hbctool disasm` / `asm` | patch/repack | Version-locked builds (74/76/84/89/90/96); use when you need to *modify + reassemble* the bundle, not just read it. |
+| **hermes-dec** | `hbc-decompiler` / `hbc-disassembler` | primary | `pip3 install hermes-dec` (or `pip3 install git+https://github.com/P1sec/hermes-dec` if the PyPI name doesn't resolve). Version-flexible — decompiles **HBC v96** to readable pseudo-JS; disassembler emits `.hasm` with preserved function names. |
+| **hbctool** | `hbctool disasm` / `asm` | patch/repack | Only when you must *modify + reassemble* the bundle. ⚠ Upstream (bongtrop) tops out around **HBC 84** — v89/v90/v96 asm/disasm need a maintained community fork; verify the installed build's supported versions before repacking a newer bundle. `hermes-dec` stays fine for read-only decompilation of v96. |
 | **strings** | `strings -n 6` | fallback | The Hermes string table holds URLs/paths/keys/error messages; reassemble endpoints from it when a decompile is partial. |
 
 ```bash
-pip3 install hermes-dec
+pip3 install hermes-dec || pip3 install git+https://github.com/P1sec/hermes-dec
 hbc-decompiler index.android.bundle decompiled.js     # pseudo-JS (primary)
 hbc-disassembler index.android.bundle disasm.hasm     # cross-check / when decompile chokes
 strings -n 6 index.android.bundle > bundle_strings.txt
@@ -66,7 +66,7 @@ Treat every recovered key as live until proven otherwise — build-time-injected
 - **CODE / OTA** — **CodePush / App Center OTA**: when a `CodePushDeploymentKey` is present and no signing public key is configured (no `CodePushPublicKey` meta-data / Gradle key), anyone controlling the deployment key can push an arbitrary JS bundle that runs with full app privileges = RCE-equivalent in the sandbox. Verify both the deployment key and the absence of bundle signing.
 - **CODE / CVE** — recover bundled versions for CVE mapping: okhttp from its UA constant (`strings classes*.dex | grep -o 'okhttp/[0-9.]*'`), RN from `libhermes.so`, native parsers (`libpdfium.so`, Fresco) from `.so` + `.properties`. Run `python3 tools/nvd-lookup.py <CVE-ID>` per hit. An app that renders **server-supplied PDFs/images** through an outdated native parser carries a reachable memory-corruption class.
 - **AUTH** — client-side `jwt-decode` without signature verification is expected for display, but flag it where a claim drives a trust/authorization decision in JS. Confirm OAuth uses PKCE + `state`.
-- **RESILIENCE** — presence of `JailMonkey` (root/jailbreak), `react-native-ssl-pinning`, `ScreenGuard` (screenshot block), or Play Integrity is statically evident; document presence/absence (dynamic bypass needs a device and is typically out of static scope).
+- **RESILIENCE** — presence of `JailMonkey` (root/jailbreak), `react-native-ssl-pinning`, `ScreenGuard` (screenshot block), or Play Integrity is statically evident; document presence/absence here. When RESILIENCE is in scope (MAS-L2 / MASA), inventory is not the finding — actively bypass each control and show the protected flow still runs, and confirm the backend actually verifies the Play Integrity verdict/nonce (client-only checks are bypassable regardless). See [android-dynamic-analysis.md](../../android-dynamic-analysis.md). (Pinning is MASVS-NETWORK-2, screenshot-block is MASVS-PLATFORM-3; JailMonkey/Play-Integrity are the true MASVS-RESILIENCE items.)
 
 ## Anti-Patterns
 
@@ -78,5 +78,8 @@ Treat every recovered key as live until proven otherwise — build-time-injected
 
 ## Cross-references
 
-- `../../flutter-aot-reversing.md` — the Flutter/Dart analogue (when `libapp.so` is present instead of Hermes).
-- `native-lib-host-extraction.md` — when business logic sits in a custom native `.so` beyond the standard RN set.
+- [../../flutter-aot-reversing.md](../../flutter-aot-reversing.md) — the Flutter/Dart analogue (when `libapp.so` is present instead of Hermes).
+- [native-lib-host-extraction.md](native-lib-host-extraction.md) — when business logic sits in a custom native `.so` beyond the standard RN set.
+- [android-static-analysis.md](../../android-static-analysis.md) — stock-Android SAST around the RN app (manifest, exported components, storage, crypto, signing).
+- [android-dynamic-analysis.md](../../android-dynamic-analysis.md) — interception + dual-layer pinning bypass (native + JS), runtime storage/secret dump, RASP bypass.
+- [methodology.md](../../methodology.md) — phase flow and the client→API pivot for endpoints recovered from the bundle.

@@ -1,0 +1,16 @@
+model_list:
+  - model_name: zai-org/GLM-5.2-FP8
+    litellm_params:
+      model: hosted_vllm/zai-org/GLM-5.2-FP8
+      api_base: https://transilience-mcs-dev--ep-glm-5-2-fp8-server.us-west.modal.direct/v1
+      api_key: "dummy"                       # Modal gate is via the headers below; vLLM ignores this
+      extra_headers:
+        Modal-Key: os.environ/MODAL_PROXY_TOKEN_ID
+        Modal-Secret: os.environ/MODAL_PROXY_TOKEN_SECRET
+
+litellm_settings:
+  drop_params: true
+  enable_anthropic_messages_endpoint: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

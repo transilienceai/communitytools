@@ -60,7 +60,7 @@ Skills consumed by the cloud-agent task specifications under [`projects/rfp-3.2/
 | [`ai-threat-testing`](ai-threat-testing/SKILL.md) | Prompt injection, model extraction, RAG poisoning, OWASP LLM Top 10 | LLM-backed application |
 | [`cryptography`](cryptography/SKILL.md) | Lattice / AGCD / linear-collapse cryptanalysis, padding oracles, secret-sharing recovery | Custom crypto, structured RSA, oracle exposure |
 | [`reverse-engineering`](reverse-engineering/SKILL.md) | Static analysis of ELF/PE, custom-VM bytecode, callfuscation, MBA deobfuscation | Compiled binary / custom-ISA program-data file |
-| [`mobile-security`](mobile-security/SKILL.md) | Android / iOS app testing — Flutter AOT, IL2CPP, React Native/Hermes, smali, Frida, root-detection bypass | Mobile APK / IPA target |
+| [`mobile-security`](mobile-security/SKILL.md) | Android + iOS VAPT (MASVS/MASTG) — static RE (Flutter AOT, IL2CPP, RN/Hermes, Mach-O/Swift), SAST, dynamic analysis (Frida/objection, TLS-pinning + root/jailbreak bypass), privacy | Mobile APK / AAB / IPA target |
 | [`social-engineering`](social-engineering/SKILL.md) | Phishing, pretexting, vishing, physical sec | People-in-scope authorized engagements |
 | [`dfir`](dfir/SKILL.md) | Forensic Sherlocks, network/memory/log analysis, AD attack detection | Defensive / IR / Sherlock challenge |
 | [`firewall-review`](firewall-review/SKILL.md) | Static firewall ruleset audit (FortiGate, PAN, ASA, NSG, SG, iptables) | Firewall config provided |

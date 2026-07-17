@@ -111,23 +111,27 @@ evidence/validation/
 
 ### `poc` — the reproducible step-by-step, re-run by a separate blind agent
 
-Every finding carries **one canonical reproducible PoC** (there is no parallel `evidence_steps` — that would
-duplicate this). The `checks` stage authors `poc { prerequisites[], steps[] }`:
+Every finding carries **one canonical reproducible PoC** (it merges what used to be the separate *evidence*,
+*test/PoC*, and *screenshot* fields — there is no parallel `evidence_steps`). The `checks` stage authors `poc`
+as an **ordered list of step objects**:
 
-- **`prerequisites[]`** — the tools/conditions that must be in place first (`{item, reason, check}`), so a
-  tester starting cold knows exactly what to ready (e.g. `curl`, a valid low-priv session, target reachability).
-- **`steps[]`** — ordered `{n, action, expected, artifact}`. **Step 1 MUST be an entry point** (open a terminal
-  / open a browser / establish the initial connection). **The last step MUST be the actual observed result**
-  that proves the finding.
+- Each step = `{description, command, image_url}`. **`description`** (required) — prose: what the step does /
+  what you observe. **`command`** (optional) — the exact command/URL to run at that step, verbatim and runnable;
+  omit for a pure-observation step. **`image_url`** (optional) — path (or URL) to a captured screenshot/output
+  image for that step.
+- **Step 1 MUST be an entry point** (open a terminal / open a browser / establish the initial connection — its
+  `command` is that entry action). **The last step MUST be the actual observed result** that proves the finding
+  (put the observed proof in its `description`). Fold any prerequisites into step 1's description.
 
-A **separate, context-free reproduction agent** (`repro:*`) is then handed *only* the prerequisites + steps +
-target — it may not read the description, `poc.py`, evidence, chain, or any validator/refuter output. It follows
-the recipe exactly, and **corrects it minimally until it reproduces** (or can't). This is a distinct role from
-the refuters (which try to *doubt* the finding) and the evidence-probe (which stats files) — it *follows the
-recipe*. Its `{reproduced, corrected_steps, observed_result}` is structured; the pure-JS `computeVerdict()`
-gates on `reproduced` (no confirmation ⇒ **DEMOTED**, never a faked VALID), and `finalPoc()` records the
-agent's corrected recipe when it perfected one. The result flows to **both** the interim verdict JSON and the
-final `report_data.json` (`poc` structured + a deterministically-rendered `poc_request`).
+A **separate, context-free reproduction agent** (`repro:*`) is then handed *only* the PoC steps + target — it may
+not read the description, `poc.py`, evidence, chain, or any validator/refuter output. It follows the recipe
+exactly (running each step's `command`), and **corrects it minimally until it reproduces** (or can't). This is a
+distinct role from the refuters (which try to *doubt* the finding) and the evidence-probe (which stats files) —
+it *follows the recipe*. Its `{reproduced, corrected_steps, observed_result}` is structured; the pure-JS
+`computeVerdict()` gates on `reproduced` (no confirmation ⇒ **DEMOTED**, never a faked VALID), and `finalPoc()`
+records the agent's corrected recipe when it perfected one. The `poc` list flows to **both** the interim verdict
+JSON and the final `report_data.json`, where the PDF renders each step as prose + a code-styled command + an
+embedded image.
 
 ### code / screenshot artifacts — the machine-checked file trail
 

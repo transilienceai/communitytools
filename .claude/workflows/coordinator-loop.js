@@ -49,6 +49,12 @@ const PLATFORM = a.platform || 'generic'
 const MAX_EXPERIMENTS = Number(a.max_experiments) > 0 ? Math.floor(Number(a.max_experiments)) : 1000
 const MAX_BATCHES = Number(a.max_batches) > 0 ? Math.floor(Number(a.max_batches)) : 150
 const DRY_LIMIT = Number(a.dry_limit) > 0 ? Math.floor(Number(a.dry_limit)) : 8 // consecutive zero-progress batches (after a reset) -> stop
+// COVERAGE-MODE convergence knobs. In coverage mode the loop is NOT bounded by a
+// cost-style experiment budget: it runs until every applicable cell is covered AND a
+// dry tail of DRY_TAIL empty batches holds ("all techniques plus more"), backstopped
+// only by the per-asset agent slice + this absolute runaway ceiling.
+const ABSOLUTE_MAX_BATCHES = 1000
+const DRY_TAIL = Number(a.dry_tail) > 0 ? Math.floor(Number(a.dry_tail)) : 2 // empty batches past 100% coverage before done
 // COVERAGE MODE (web/API/cloud pentest) vs default FLAG mode (CTF/HTB). Every
 // coverage block below is guarded by `MODE === 'coverage'`, so flag-mode behavior
 // — and htb-solve, which passes no `mode` — is byte-identical to before.
@@ -66,6 +72,16 @@ const MAX_CURE_ROUNDS = Number(a.max_cure_rounds) >= 0 ? Math.floor(Number(a.max
 const MAX_VALIDATE_PER_BATCH = Number(a.max_validate_per_batch) > 0 ? Math.floor(Number(a.max_validate_per_batch)) : 4
 const NVD_CACHE_DIR = a.nvd_cache_dir || null
 const KEV_SNAPSHOT = a.kev_snapshot || null
+// E4 validation replay-cache (reuse tools/validation_cache.py; opt-in on resume runs
+// so a fresh run never pays a restore/store tax). CACHE_VERSION namespaces verdicts so
+// a lane change can't replay a stale one.
+const VALIDATION_CACHE_DIR = a.validation_cache_dir || null
+const REPLAY_CACHE = !!a.replay_cache && !!VALIDATION_CACHE_DIR
+const CACHE_VERSION = 1
+// Agent-cap reserve for this run's non-loop overhead (correlate/report/slack; the
+// network deep-dive folds in its pre-deep-dive sweep spend). undefined -> assessBudget
+// falls back to GLOBAL_RESERVE (which is declared later in this file).
+const AGENT_RESERVE = Number.isFinite(Number(a.agent_reserve)) ? Math.max(0, Math.floor(Number(a.agent_reserve))) : undefined
 // The per-asset attack-class matrix (from skills/coordination/reference/coverage-matrix.md).
 // When the orchestrator (pentest-engagement) supplies it, the coordinator drives the
 // THINK loop by it AND skips its own surface-expansion recon (the orchestrator already expanded).
@@ -161,7 +177,10 @@ function normVector(v) {
 }
 
 function cveReconcile({ claimed_score, computed_score, nvd_score, claimed_vector, computed_vector } = {}) {
-  const near = (x, y) => x != null && y != null && Math.abs(Number(x) - Number(y)) <= 0.1;
+  // 1e-9 epsilon: one-decimal scores exactly 0.1 apart (the legit 3.0-vs-3.1
+  // rounding-step gap) can land at 0.10000000000000009 in IEEE-754 and wrongly
+  // fail a bare `<= 0.1`, spuriously demoting a valid CVE finding.
+  const near = (x, y) => x != null && y != null && Math.abs(Number(x) - Number(y)) <= 0.1 + 1e-9;
   const haveComputed = computed_score != null;
   const vectorOk = !claimed_vector || !computed_vector || normVector(claimed_vector) === normVector(computed_vector);
   const nvdOk = nvd_score == null || near(computed_score, nvd_score);
@@ -243,16 +262,14 @@ function computeVerdict(finding, checks, votes, probe, repro, opts = {}) {
 
 // Deterministically pick the FINAL PoC to record: the reproduction agent's
 // corrected version wins when it adjusted the steps (that's the "perfected"
-// recipe); otherwise the checks agent's authored PoC. Shape: {prerequisites[], steps[]}.
+// recipe); otherwise the checks agent's authored PoC. Shape: an ordered list of
+// {description, command, image_url} steps.
 function finalPoc(checks, repro) {
-  const authored = (checks && checks.poc) || { prerequisites: [], steps: [] };
+  const authored = Array.isArray(checks && checks.poc) ? checks.poc : [];
   if (repro && repro.reproduced && Array.isArray(repro.corrected_steps) && repro.corrected_steps.length) {
-    return {
-      prerequisites: Array.isArray(repro.corrected_prerequisites) && repro.corrected_prerequisites.length ? repro.corrected_prerequisites : (authored.prerequisites || []),
-      steps: repro.corrected_steps,
-    };
+    return repro.corrected_steps;
   }
-  return { prerequisites: authored.prerequisites || [], steps: authored.steps || [] };
+  return authored;
 }
 
 // ---------------------------------------------------------------------------
@@ -318,11 +335,31 @@ function backstopDecision(agentsSpawned, hardReserve) {
 
 // Partition the shared 1000-agent lifetime budget across N assets so the worst-
 // case total stays under the runtime cap (invariant: perAsset*A + reserve <= cap).
-function assessBudget({ assets } = {}) {
+// `reserve` overrides GLOBAL_RESERVE (e.g. the network deep-dive folds in the
+// pre-deep-dive sweep spend); omitted -> GLOBAL_RESERVE.
+function assessBudget({ assets, reserve } = {}) {
   const A = Math.max(1, Math.floor(Number(assets) || 1));
-  const perAsset = Math.floor((AGENT_CAP - GLOBAL_RESERVE) / A);
+  const R = Number.isFinite(Number(reserve)) ? Math.max(0, Math.floor(Number(reserve))) : GLOBAL_RESERVE;
+  const perAsset = Math.floor((AGENT_CAP - R) / A);
   const hardReserve = Math.max(0, Math.floor(perAsset * 0.85));
-  return { assets: A, perAsset, hardReserve, agentCap: AGENT_CAP, globalReserve: GLOBAL_RESERVE };
+  return { assets: A, perAsset, hardReserve, agentCap: AGENT_CAP, globalReserve: R };
+}
+
+// Convergence-first completion (coverage mode): done only when every applicable
+// (surface-unit x attack-class) cell is covered/negated (coveragePending===0) AND
+// the dry tail has held for `dryTail` consecutive batches. "all techniques + more".
+function convergenceDone({ coveragePending, coverageDryStreak, dryTail } = {}) {
+  const K = Math.max(1, Math.floor(Number(dryTail) || 2));
+  return Number(coveragePending) === 0 && Math.floor(Number(coverageDryStreak) || 0) >= K;
+}
+
+// The dry-tail streak transition. The tail only accrues once coverage is complete
+// (pending 0); ANY new confirmed finding OR a reopened cell resets it to 0 so the
+// "plus more" tail keeps probing until the surface is genuinely quiet.
+function nextDryStreak(prevStreak, { coveragePending, newConfirmed, reopened } = {}) {
+  if (Number(coveragePending) !== 0) return 0;
+  if (newConfirmed || reopened) return 0;
+  return Math.max(0, Math.floor(Number(prevStreak) || 0)) + 1;
 }
 
 // Fold a batch's terminal candidate results into accumulators + a per-class
@@ -416,26 +453,23 @@ const CHECKS_SCHEMA = {
     is_web: { type: 'boolean', description: 'true if the target has an HTTP/HTTPS/browser surface (drives the screenshot requirement)' },
     cites_code: { type: 'boolean', description: 'true if the finding references source/config/logic (drives the code-references.md requirement)' },
     poc: {
-      type: 'object', additionalProperties: true,
-      description: 'the reproducible step-by-step PoC (a blind reproduction agent re-runs THIS to the stated result). The single canonical step-by-step — not duplicated elsewhere.',
-      required: ['prerequisites', 'steps'],
-      properties: {
-        prerequisites: {
-          type: 'array', description: 'tools/conditions that MUST be in place before the steps (e.g. curl/browser, a valid low-priv session, network reachability to the target)',
-          items: { type: 'object', additionalProperties: true, required: ['item'], properties: { item: { type: 'string' }, reason: { type: 'string' }, check: { type: 'string', description: 'a command/observation that confirms the prerequisite is met' } } },
-        },
-        steps: {
-          type: 'array', description: 'ordered. Step 1 MUST be an entry point (open a terminal / open a browser / establish the initial connection). The LAST step MUST be the actual observed result that proves the finding.',
-          items: { type: 'object', additionalProperties: true, required: ['n', 'action'], properties: { n: { type: 'number' }, action: { type: 'string', description: 'exactly what to do — command, URL, click' }, expected: { type: 'string', description: 'what you should observe after this step' }, artifact: { type: 'string', description: 'optional path to a captured artifact (screenshot/output) for this step' } } },
+      type: 'array',
+      description: 'the reproducible PoC as an ORDERED list of steps (a blind reproduction agent re-runs THIS to the stated result). Step 1 is an entry point; the LAST step is the actual observed result that proves the finding. The single canonical step-by-step — not duplicated elsewhere.',
+      items: {
+        type: 'object', additionalProperties: true, required: ['description'],
+        properties: {
+          description: { type: 'string', description: 'what this step does / what you observe (prose)' },
+          command: { type: 'string', description: 'the EXACT command/URL/click to run at this step — verbatim and runnable; omit for a pure-observation step' },
+          image_url: { type: 'string', description: 'optional path (or URL) to a captured screenshot/output image for THIS step' },
         },
       },
     },
     report_fields: {
-      type: 'object', additionalProperties: true, description: 'the human-facing fields that render into the report (carried so JS assembles report_data.json without re-reading disk)',
+      type: 'object', additionalProperties: true, description: 'the human-facing fields that render into the report (carried so JS assembles report_data.json without re-reading disk). Evidence/PoC/screenshots live in poc[], NOT here.',
       properties: {
         title: { type: 'string' }, affected: { type: 'array', items: { type: 'string' } },
-        description: { type: 'string' }, evidence: { type: 'string' }, impact: { type: 'string' },
-        recommendation: { type: 'string' }, poc_request: { type: 'string' }, test_method: { type: 'string' },
+        description: { type: 'string' }, impact: { type: 'string' },
+        recommendation: { type: 'string' },
         ease_of_exploitation: { type: 'string', description: "exploitability rating/rationale, e.g. 'Easy — no auth, remotely reachable'" },
         references: { type: 'array', items: { type: 'string' }, description: 'advisory/standard URLs' },
         cwe: { type: ['string', 'null'] }, owasp: { type: ['string', 'null'] },
@@ -473,13 +507,11 @@ const REPRO_SCHEMA = {
   type: 'object', additionalProperties: true,
   required: ['reproduced'],
   properties: {
-    reproduced: { type: 'boolean', description: 'the prerequisites+steps, run EXACTLY (given or corrected), produced the finding\'s stated result' },
-    prerequisites_ok: { type: 'boolean' },
+    reproduced: { type: 'boolean', description: 'the PoC steps, run EXACTLY (given or corrected), produced the finding\'s stated result' },
     entry_point_ok: { type: 'boolean', description: 'step 1 is a genuine entry point (terminal/browser/initial connection)' },
     result_matches: { type: 'boolean', description: 'the LAST step\'s observed result matches the finding' },
     observed_result: { type: 'string' },
-    corrected_prerequisites: { type: 'array', items: { type: 'object', additionalProperties: true } },
-    corrected_steps: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    corrected_steps: { type: 'array', description: 'the corrected PoC list (same {description, command, image_url} shape) if it did not reproduce as written', items: { type: 'object', additionalProperties: true } },
     notes: { type: 'string' },
   },
 };
@@ -503,12 +535,12 @@ function checksPrompt(f, P = {}) {
       : `  - Do NOT modify poc.py (repair disabled). If it cannot prove the issue, exploit.proven=false.\n`) +
     `  - Always write ${f.dir}/evidence/validation/verification-script.py — a STANDALONE reproduction (own imports + target refs + output parsing; must NOT import the executor poc.py). A human runs this one script to reproduce.\n` +
     `  - If the target has a WEB/HTTP/browser surface: set is_web=true and capture Playwright evidence into ${f.dir}/evidence/validation/ — a full-page screenshots/<name>.png (playwright_screenshot full_page), plus network-requests.json (playwright_network_requests) and console.json (playwright_console_messages) where relevant. For raw TCP/UDP/DNS/SNMP/SSH-banner findings set is_web=false (no screenshot required). Mount skills/essential-tools/reference/playwright-automation.md.\n\n` +
-    `D) AUTHOR THE REPRODUCIBLE PoC (do NOT score risk — the workflow computes risk deterministically). Write ${f.dir}/evidence/validation/poc-steps.md AND return it as poc{prerequisites[], steps[]}:\n` +
-    `  - prerequisites[]: the tools/conditions that MUST be in place first (e.g. {item:"curl", reason:"issue the request"}, {item:"a valid low-privilege session cookie", reason:"the endpoint is authenticated", check:"curl -s .../me returns 200}). Someone starting cold must know exactly what to have ready.\n` +
-    `  - steps[]: ORDERED and reproducible. Step 1 MUST be an ENTRY POINT — literally "Open a terminal" / "Open a browser to <url>" / "Establish the initial connection". Each step = {n, action (the exact command/URL/click), expected (what you observe), artifact (optional path)}. The LAST step MUST be the ACTUAL RESULT that proves the finding (the SQLi row dump, the uid=0 line, the disclosed value). A separate blind agent will re-run these EXACTLY, so they must be self-contained and unambiguous.\n` +
-    `  - report_fields{title, affected[], description, evidence, impact, recommendation, poc_request, test_method, ease_of_exploitation (e.g. "Easy — no auth, remotely reachable"), references[] (advisory/standard URLs), cwe, owasp}: the human-facing fields — the workflow assembles these into report_data.json (do NOT include secrets/PII verbatim; the workflow also secret-scans).\n` +
+    `D) AUTHOR THE REPRODUCIBLE PoC (do NOT score risk — the workflow computes risk deterministically). Write ${f.dir}/evidence/validation/poc-steps.md AND return it as poc[] — an ORDERED list of steps:\n` +
+    `  - Each step = {description (what you do / what you observe, prose), command (the EXACT command/URL/click to run at this step — verbatim and runnable; omit for a pure-observation step), image_url (optional path to a captured screenshot/output image for THIS step — e.g. the Playwright screenshot from lane C)}.\n` +
+    `  - ORDERED and reproducible. Step 1 MUST be an ENTRY POINT — literally "Open a terminal" / "Open a browser to <url>" / "Establish the initial connection" (its command is that entry action). The LAST step MUST be the ACTUAL RESULT that proves the finding (the SQLi row dump, the uid=0 line, the disclosed value) — put the observed proof in its description. A separate blind agent re-runs each step's command EXACTLY, so they must be self-contained and unambiguous. Fold any prerequisites into the first step's description.\n` +
+    `  - report_fields{title, affected[], description, impact, recommendation, ease_of_exploitation (e.g. "Easy — no auth, remotely reachable"), references[] (advisory/standard URLs), cwe, owasp}: the human-facing fields — the workflow assembles these into report_data.json (do NOT include secrets/PII verbatim; the workflow also secret-scans). Evidence / PoC / screenshots now live in poc[] above, NOT in report_fields.\n` +
     `  - is_web (per lane C) and cites_code (true when the finding references source/config/logic — then also write code-references.md).\n\n` +
-    `Return CHECKS_SCHEMA with each lane's booleans + the reported numbers + poc{prerequisites,steps} + report_fields. Be strict and evidence-bound: if you cannot corroborate something, mark it false with detail.`;
+    `Return CHECKS_SCHEMA with each lane's booleans + the reported numbers + poc[] + report_fields. Be strict and evidence-bound: if you cannot corroborate something, mark it false with detail.`;
 }
 
 function refuterPrompt(f, i, P = {}) {
@@ -524,13 +556,12 @@ function probePrompt(f, manifest, P = {}) {
 }
 
 function reproPrompt(f, poc, P = {}) {
-  return `ROLE: BLIND PoC REPRODUCER (context-free, independent). cwd is repo root. You are handed ONLY a finding's PREREQUISITES + STEP-BY-STEP and the target. You did NOT run the original test; you may NOT read the finding's description.md, poc.py, evidence/, attack-chain.md, session-memory.md, other findings, or any validator/refuter output. Reproduce the result as a competent tester with zero prior context would, by following the recipe EXACTLY.\n\n` +
-    `FINDING: ${f.id}\nTARGET: ${P.TARGET || '(from the steps)'}\nPREREQUISITES: ${JSON.stringify((poc && poc.prerequisites) || [])}\nSTEPS: ${JSON.stringify((poc && poc.steps) || [])}\n\n` +
+  return `ROLE: BLIND PoC REPRODUCER (context-free, independent). cwd is repo root. You are handed ONLY a finding's ordered PoC STEPS and the target. You did NOT run the original test; you may NOT read the finding's description.md, poc.py, evidence/, attack-chain.md, session-memory.md, other findings, or any validator/refuter output. Reproduce the result as a competent tester with zero prior context would, by following the recipe EXACTLY.\n\n` +
+    `FINDING: ${f.id}\nTARGET: ${P.TARGET || '(from the steps)'}\nSTEPS: ${JSON.stringify(Array.isArray(poc) ? poc : [])}\n\n` +
     `Rules: read-only / non-destructive only — NO brute force, NO DoS, NO destructive writes, stay on the given target.\n` +
-    `1. PREREQUISITES: verify each is actually available/true (run its \`check\` if given, or a non-destructive equivalent). prerequisites_ok = all satisfiable.\n` +
-    `2. ENTRY POINT: confirm step 1 is a genuine starting point (open a terminal / open a browser / establish the initial connection). entry_point_ok accordingly.\n` +
-    `3. EXECUTE the steps IN ORDER, exactly as written (timeout ~60s/step). At the LAST step, compare the observed output to the finding's claimed result; put the real observed final output in observed_result; result_matches accordingly.\n` +
-    `4. PERFECT IT: if a step is wrong/ambiguous or a prerequisite was missing but the finding IS still reproducible, return the minimal corrected_prerequisites/corrected_steps that DO reproduce it (step 1 still an entry point, LAST step still the actual result). Only set reproduced=true if you ACTUALLY observed the result — with the given OR the corrected recipe.\n` +
+    `1. ENTRY POINT: confirm step 1 is a genuine starting point (open a terminal / open a browser / establish the initial connection). entry_point_ok accordingly.\n` +
+    `2. EXECUTE each step IN ORDER, running its \`command\` exactly as written (timeout ~60s/step). At the LAST step, compare the observed output to the finding's claimed result; put the real observed final output in observed_result; result_matches accordingly.\n` +
+    `3. PERFECT IT: if a step is wrong/ambiguous but the finding IS still reproducible, return the minimal corrected_steps (same {description, command, image_url} shape) that DO reproduce it (step 1 still an entry point, LAST step still the actual result). Only set reproduced=true if you ACTUALLY observed the result — with the given OR the corrected recipe.\n` +
     `Write ${f.dir}/evidence/validation/reproduction.md (what you ran, what you observed, any corrections). Return REPRO_SCHEMA. reproduced=true ONLY when you independently observed the finding's result.`;
 }
 
@@ -718,6 +749,7 @@ const INTEGRATE_SCHEMA = {
     coverage_ratio: { type: 'number', description: 'coverage mode: coverage_gate.py coverage_ratio after this batch' },
     applicable_pending: { type: 'number', description: 'coverage mode: coverage_gate.py missing_cells count after this batch (0 => complete)' },
     coverage_complete: { type: 'boolean', description: 'coverage mode: coverage_gate.py reported "complete":true (ratio==1.0, no missing/extra/dangling/false_NA)' },
+    open_cells: { type: 'array', description: 'coverage mode: the CURRENT open-cell set from coverage_gate.py --emit-open (each "class_id @ scope_key") — drives the dry-tail reopen set-diff', items: { type: 'object', additionalProperties: true, properties: { key: { type: 'string' }, class_id: { type: 'string' } } } },
   },
 }
 
@@ -838,7 +870,7 @@ const bootstrap = await agent(
   `   ## Creative Leads         (wildcard ideas, research findings, intuitions worth trying)\n` +
   `   Seed it from recon (known facts, surface, any starter creds).\n` +
   (MODE === 'coverage'
-    ? `6. COVERAGE (deterministic): (a) ENUMERATE the discovered asset surface into OUTPUT_DIR/recon/inventory/surface.json — schema surface/v2: {"schema":"surface/v2","asset_tag":<the OUTPUT_DIR basename>,"apex":<apex or "">,"units":[{"unit_id":"u-0001","type":"page|endpoint|param|form|origin|host|port|service","address":<url or host:port>,"methods":[...],"flags":[<ONLY agent-set coverage flags that the observation warrants: object_by_id,json_body,role_verb_gated,sensitive_flow,server_fetched_url,input_sink,workflow,deser_or_ci,inbound_webhook,id_keyed_unauth,stored_field,auth_surface,consumes_upstream,static_js_or_repo>],"evidence_ref":["E-NNN"]}]}. (b) write OUTPUT_DIR/coverage.json = one row per class_id {class_id, applicability, status, units_tested:[]}. The catalog is skills/coordination/reference/coverage-matrix.json (machine) / .md (human); code (tools/enumerate_cells.py + tools/coverage_gate.py) computes applicability and the work-list from your surface.json — you supply the FACTS, code enforces coverage. Matrix hint:\n${COVERAGE_MATRIX ? JSON.stringify(COVERAGE_MATRIX) : 'READ skills/coordination/reference/coverage-matrix.json and instantiate its full class list.'}\n`
+    ? `6. COVERAGE (deterministic): (a) ENUMERATE the discovered asset surface into OUTPUT_DIR/recon/inventory/surface.json — schema surface/v2: {"schema":"surface/v2","asset_tag":<the OUTPUT_DIR basename>,"apex":<apex or "">,"units":[{"unit_id":"u-0001","type":"page|endpoint|param|form|origin|host|port|service","address":<url or host:port>,"methods":[...],"flags":[<ONLY agent-set coverage flags that the observation warrants: object_by_id,json_body,role_verb_gated,sensitive_flow,server_fetched_url,input_sink,workflow,deser_or_ci,inbound_webhook,id_keyed_unauth,stored_field,auth_surface,consumes_upstream,static_js_or_repo>],"evidence_ref":["E-NNN"],"equiv_group":<null OR a short group id shared ONLY by cells with the SAME route template / handler / param family (e.g. one id for /users/{id} across ids) — assign CONSERVATIVELY; when unsure, null>}]}. RESUME-AWARE: if OUTPUT_DIR/recon/inventory/surface.json AND OUTPUT_DIR/coverage.json BOTH already exist (a resume run), PRESERVE both verbatim — do NOT re-enumerate or overwrite — and skip straight to (c); if exactly one of the two exists, generate the missing one from the present one WITHOUT discarding the present file. (b) write OUTPUT_DIR/coverage.json = one row per class_id {class_id, applicability, status, units_tested:[]}. The catalog is skills/coordination/reference/coverage-matrix.json (machine) / .md (human); code (tools/enumerate_cells.py + tools/coverage_gate.py) computes applicability and the work-list from your surface.json — you supply the FACTS, code enforces coverage. (c) DETERMINISTIC MECHANICAL COVERAGE (E1 tools-not-agents): run \`python3 tools/passive_web_probe.py --asset-dir OUTPUT_DIR --allow <the in-scope host(s) from surface.json>\` — one non-destructive pass that clears the mechanical attack-classes (TLS posture, security headers, HTTPS downgrade/HSTS, verbose errors, CORS, vulnerable components, secret-exposure, inventory) as tool-corroborated covered_negative cells and READ-MERGES OUTPUT_DIR/coverage.json (it never clobbers). Then the reasoning loop only chases the harder classes. Matrix hint:\n${COVERAGE_MATRIX ? JSON.stringify(COVERAGE_MATRIX) : 'READ skills/coordination/reference/coverage-matrix.json and instantiate its full class list.'}\n`
     : ``) +
   `\nReturn BOOTSTRAP_SCHEMA: ok, output_dir (absolute), exp_count (0), services[], surface[], source_read[], initial_goal (the first concrete goal to pursue toward "${GOAL}"), blocked_reason (null unless an environmental wall like a privileged-port bind or pool mismatch makes the engagement impossible)${MODE === 'coverage' ? ', coverage_seeded (true once coverage.json is written), applicable_class_count (count of applicable rows)' : ''}.`,
   { schema: BOOTSTRAP_SCHEMA, label: 'bootstrap-synth', phase: 'Bootstrap', agentType: 'general-purpose' }
@@ -850,7 +882,7 @@ if (!bootstrap || !bootstrap.ok || bootstrap.blocked_reason) {
   return { status: 'BLOCKED', phase: 'Bootstrap', reason }
 }
 OUTPUT_DIR = (bootstrap.output_dir || OUTPUT_DIR).replace(/\/+$/, '')
-log(`Bootstrap complete. OUTPUT_DIR=${OUTPUT_DIR}. Loop budget: ${MAX_EXPERIMENTS} experiments / ${MAX_BATCHES} batches.`)
+log(`Bootstrap complete. OUTPUT_DIR=${OUTPUT_DIR}. ${MODE === 'coverage' ? `Convergence loop: run to full coverage + ${DRY_TAIL}-batch dry tail, per-asset agent-slice backstopped (ceiling ${ABSOLUTE_MAX_BATCHES} batches).` : `Loop budget: ${MAX_EXPERIMENTS} experiments / ${MAX_BATCHES} batches.`}`)
 
 // ============================================================================
 // Prompt builders for the loop
@@ -862,7 +894,7 @@ function thinkPrompt(batch, resetMode, resetGoal, skepticBriefs) {
     `${skepticBriefs.length ? ', and the latest skeptic brief(s): ' + skepticBriefs.join(', ') + ' — treat their counter-hypotheses as candidates for your wildcard slot' : ''}.\n` +
     `Also skim skills/INDEX.md and skills/coordination/reference/ATTACK_INDEX.md to map the surface to candidate techniques.\n\n` +
     (MODE === 'coverage'
-      ? `COVERAGE (deterministic backlog): FIRST run \`python3 tools/enumerate_cells.py --asset-dir OUTPUT_DIR\` then \`python3 tools/coverage_gate.py --asset-dir OUTPUT_DIR --emit-open\`. The OPEN lines are the EXACT remaining (attack-class @ scope_key) cells the gate computed from OUTPUT_DIR/recon/inventory/surface.json — this is your completion obligation, computed by code, NOT a memory task. If surface.json does not exist yet, ENUMERATE the asset surface into it FIRST (schema surface/v2, asset_tag = the OUTPUT_DIR basename, one unit per page/endpoint/param/form/origin with only the agent-set flags each warrants), then re-run the two tools. Rank the OPEN cells by value (impact x likelihood-on-surface x low-credential reachability). AT LEAST ONE mission this batch MUST target the highest-value open cell(s): set covers_cells=[{key,class_id}] AND covers_class=that class_id, and mount the class's scenario file (per coverage-matrix.md/.json). Populate coverage_state.open_cells. NEVER mark a code-applicable cell NA — the gate treats that as a hard fabrication FAIL; instead find fresh surface or record a corroborated genuine-negative.\n\n`
+      ? `COVERAGE (deterministic backlog): FIRST run \`python3 tools/enumerate_cells.py --asset-dir OUTPUT_DIR\` then \`python3 tools/coverage_gate.py --asset-dir OUTPUT_DIR --emit-open\`. The OPEN lines are the EXACT remaining (attack-class @ scope_key) cells the gate computed from OUTPUT_DIR/recon/inventory/surface.json — this is your completion obligation, computed by code, NOT a memory task. If surface.json does not exist yet, ENUMERATE the asset surface into it FIRST (schema surface/v2, asset_tag = the OUTPUT_DIR basename, one unit per page/endpoint/param/form/origin with only the agent-set flags each warrants), then re-run the two tools. Rank the OPEN cells by value (impact x likelihood-on-surface x low-credential reachability). AT LEAST ONE mission this batch MUST target the highest-value open cell(s): set covers_cells=[{key,class_id}] AND covers_class=that class_id, and mount the class's scenario file (per coverage-matrix.md/.json). Populate coverage_state.open_cells. EQUIV GROUPING (E2): the OPEN lines carry [equiv:<group>] — cells sharing a (class_id, equiv_group) are equivalent; target ONE representative per group (validate it for real) and the gate credits the siblings, so do NOT spend a separate mission on each sibling. NEVER mark a code-applicable cell NA — the gate treats that as a hard fabrication FAIL; instead find fresh surface or record a corroborated genuine-negative.\n\n`
       : ``) +
     (resetMode
       ? `*** P4b RESET MODE *** The goal "${resetGoal}" has 3+ failed attempts. ABANDON its current theory entirely. Re-read ALL recon + source + session-memory Dead Ends. Do NOT propose cosmetic variants of what already failed. Your 3 hypotheses must open genuinely new directions; at least one must CONTRADICT the prior dominant theory. research_needed MUST be true.\n\n`
@@ -917,7 +949,7 @@ function integratePrompt(batch, execResults, resetMode, verdictSignal = {}) {
     `4. Catalog any new finding dirs into new_findings[].\n` +
     `5. Decide: goal_reached (the engagement GOAL is met, with reproducible proof — be strict, require evidence); progress (did we gain new access/info/finding this batch?); per-goal goal_attempts; recommend_reset (true if the active goal now has goal_attempts>=3); terminate (true only if every avenue is exhausted AND creative research is dry AND session-memory Open Threads is empty — rare).\n` +
     (MODE === 'coverage'
-      ? `6. COVERAGE-BY-VALID (deterministic): update OUTPUT_DIR/coverage.json — every class row carries units_tested:[{key,status,e_id,finding_id?,negative_kind?,vantages?,corroborator?}], ONE entry per (scope_key) cell you exercised. A cell is 'covered' ONLY with a VALID/REPAIRED finding in OUTPUT_DIR/artifacts/validated/ whose class_id + unit_refs match that cell. A cell is 'covered_negative' only for a genuinely-clean probe: active_probe negatives need a non-agent corroborator (a tools/NNN_*.md whose 'Experiment: E-NNN' header cites the raw tool output, or a corroborator file path); reachability negatives need >=min_vantages distinct VERIFIED regions from logs/activity/source-ips.jsonl. A cell whose candidate was rejected/dropped STAYS uncovered — NEVER mark it covered on a raw/unvalidated finding, and NEVER mark a code-applicable cell NA. Interleaved verdicts so far: confirmed=${JSON.stringify(verdictSignal.confirmed || [])} rejected=${JSON.stringify(verdictSignal.rejected || [])} dropped=${JSON.stringify(verdictSignal.dropped || [])} (this batch's own new findings validate NEXT batch — do NOT pre-cover them). THEN run \`python3 tools/enumerate_cells.py --asset-dir OUTPUT_DIR\` and \`python3 tools/coverage_gate.py --asset-dir OUTPUT_DIR\`; report coverage_update[], coverage_ratio (the gate's), applicable_pending (the gate's missing_cells count), and coverage_complete (the gate's "complete" boolean). Set goal_reached=true ONLY when coverage_complete is true.\n`
+      ? `6. COVERAGE-BY-VALID (deterministic): update OUTPUT_DIR/coverage.json — every class row carries units_tested:[{key,status,e_id,finding_id?,negative_kind?,vantages?,corroborator?}], ONE entry per (scope_key) cell you exercised. A cell is 'covered' ONLY with a VALID/REPAIRED finding in OUTPUT_DIR/artifacts/validated/ whose class_id + unit_refs match that cell. A cell is 'covered_negative' only for a genuinely-clean probe: active_probe negatives need a non-agent corroborator (a tools/NNN_*.md whose 'Experiment: E-NNN' header cites the raw tool output, or a corroborator file path); reachability negatives need >=min_vantages distinct VERIFIED regions from logs/activity/source-ips.jsonl. A cell whose candidate was rejected/dropped STAYS uncovered — NEVER mark it covered on a raw/unvalidated finding, and NEVER mark a code-applicable cell NA. Interleaved verdicts so far: confirmed=${JSON.stringify(verdictSignal.confirmed || [])} rejected=${JSON.stringify(verdictSignal.rejected || [])} dropped=${JSON.stringify(verdictSignal.dropped || [])} (this batch's own new findings validate NEXT batch — do NOT pre-cover them). EQUIVALENCE (E2): for a (class_id x equiv_group) with several sibling unit cells, validate ONE representative (a VALID/REPAIRED finding in artifacts/validated/ with class_id + unit_refs=[the representative's key]); for each sibling in the SAME equiv_group write a units_tested entry {key:<sibling key>,status:'covered',e_id,representative:<the representative's key>} — the gate's covered_equiv branch credits it (bounded: one representative covers at most 8 siblings; a larger group needs additional representatives). Only cells sharing the SAME route template / handler / param family may share a representative. THEN run \`python3 tools/enumerate_cells.py --asset-dir OUTPUT_DIR\` and \`python3 tools/coverage_gate.py --asset-dir OUTPUT_DIR\`; report coverage_update[], coverage_ratio (the gate's), applicable_pending (the gate's missing_cells count), coverage_complete (the gate's "complete" boolean), and open_cells (the gate's missing_cells mapped to [{key:<scope_key>,class_id}] — the CURRENT open set, so the loop can detect a reopened cell). Set goal_reached=true ONLY when coverage_complete is true.\n`
       : ``) +
     `\nReturn INTEGRATE_SCHEMA. exp_count MUST be the authoritative total count of E- rows now in experiments.md.`
 }
@@ -948,6 +980,12 @@ let terminateReason = ''
 // filesystem, so we never read coverage.json from here; INTEGRATE reports the counts).
 let coveragePending = MODE === 'coverage' ? Infinity : 0
 let prevPending = Infinity
+// Convergence-first state (coverage mode): the dry tail accrues once pending hits 0;
+// prevOpenCells is the last batch's open-cell SET so a net-zero cover+reopen still
+// resets the tail (set-diff, not a bare count); prevConfirmedCount detects new findings.
+let coverageDryStreak = 0
+let prevOpenCells = null
+let prevConfirmedCount = 0
 const skepticBriefs = []
 const findings = []
 
@@ -958,7 +996,11 @@ const findings = []
 // (never shrink the quorum — that would make the REJECT threshold run-dependent).
 const P = { OUTPUT_DIR, TARGET, BUSINESS_TIER, REPAIR, nvd_cache_dir: NVD_CACHE_DIR, kev_snapshot: KEV_SNAPSHOT }
 P.NVD_KEV = nvdKevText(P)
-const HARD_RESERVE = assessBudget({ assets: Number(a.assets) || 1 }).hardReserve
+const assetBudget = assessBudget({ assets: Number(a.assets) || 1, reserve: AGENT_RESERVE })
+const HARD_RESERVE = assetBudget.hardReserve
+// The per-asset agent slice: in coverage mode the loop runs to convergence, backstopped
+// by this honest slice (never a cost-style batch budget). perAsset*N + reserve <= 1000.
+const perAssetSlice = MODE === 'coverage' ? assetBudget.perAsset : 0
 const seenIds = new Set()
 const confirmedFindings = []   // VALID/REPAIRED interim JSONs -> the report body
 const rejectedFindings = []    // adversarially refuted -> false-positives/ (audit only)
@@ -966,9 +1008,42 @@ const droppedFindings = []     // uncured DEMOTED -> dropped/ (audit only); drop
 const deferredCandidates = []  // budget-deferred -> validated at full quorum in the end-of-loop sweep
 let agentsSpawned = 0           // approx running agent cost this asset (governor input)
 
+// E4 replay-cache: a finding directory whose content is unchanged restores its
+// recorded terminal verdict via tools/validation_cache.py — skipping the ~6-agent
+// lane. Content-hash keyed by the finding dir; prompt_id namespaces by asset_tag +
+// CACHE_VERSION so a lane change (or a different asset) can never replay a stale one.
+const RESTORE_INTERIM_SCHEMA = {
+  type: 'object', additionalProperties: true, required: ['restored'],
+  properties: { restored: { type: 'boolean' }, verdict: { type: ['string', 'null'] }, interim: { type: ['object', 'null'], additionalProperties: true } },
+}
+const ASSET_TAG = OUTPUT_DIR.split('/').filter(Boolean).pop()
+const CACHE_PROMPT_ID = `cov-${ASSET_TAG}-v${CACHE_VERSION}`
+
+// Stamp the current cell's coverage-join fields onto an interim (C3). Idempotent —
+// applied after buildInterim (parity-locked) AND after a cache restore. coverage_gate.py
+// joins a 'covered' cell to this finding by class_id + (scope_key in unit_refs) + asset_tag.
+function stampCoverageJoin(interim, f) {
+  interim.class_id = f.covers_class || (f.covers_cells && f.covers_cells[0] && f.covers_cells[0].class_id) || null
+  interim.unit_refs = (f.covers_cells || []).map(c => c && c.key).filter(Boolean)
+  interim.asset_tag = OUTPUT_DIR.split('/').filter(Boolean).pop()
+  return interim
+}
+
 // Validate ONE candidate to a terminal verdict, curing the named gaps up to
 // MAX_CURE_ROUNDS on FRESH blind agents each round. Fixed DEFAULT_VOTES quorum.
 async function validateOneCandidate(f) {
+  if (REPLAY_CACHE && f.dir) {
+    const cached = await agent(
+      `ROLE: CACHE RESTORE (deterministic tool run; no judgment). cwd is repo root. Run EXACTLY:\n` +
+      `python3 tools/validation_cache.py restore --finding-dir ${f.dir} --cache-dir ${VALIDATION_CACHE_DIR} --output-dir ${OUTPUT_DIR} --prompt-id ${CACHE_PROMPT_ID}\n` +
+      `If it prints restored:true, ALSO read the restored interim JSON it wrote back to disk and return its full object verbatim as \`interim\`. Return {restored, verdict, interim}. On restored:false return {restored:false}.`,
+      { schema: RESTORE_INTERIM_SCHEMA, label: `cache-restore:${f.id}`, phase: 'Loop', agentType: 'general-purpose' }
+    ).catch(() => ({ restored: false }))
+    agentsSpawned += 1
+    if (cached && cached.restored && cached.verdict && cached.interim) {
+      return { finding_id: f.id, class_id: f.covers_class || null, verdict: cached.verdict, interim: stampCoverageJoin(cached.interim, f) }
+    }
+  }
   let round = 0
   while (true) {
     const checks = await agent(checksPrompt(f, P), { schema: CHECKS_SCHEMA, label: `checks:${f.id}`, phase: 'Loop', agentType: 'general-purpose' }).catch(() => null)
@@ -993,12 +1068,8 @@ async function validateOneCandidate(f) {
     }
     const verdict = computeVerdict(finding, checks, votes, probe, repro, { votesTotal: DEFAULT_VOTES })
     const interim = buildInterim(finding, checks, verdict, repro, { tier: BUSINESS_TIER, platform: PLATFORM, votes: DEFAULT_VOTES })
-    // C3 (coverage-join): stamp class_id/unit_refs/asset_tag onto the interim AFTER
-    // buildInterim (which is parity-locked — never edit it). coverage_gate.py joins a
-    // 'covered' cell to this finding by class_id + (scope_key in unit_refs) + asset_tag.
-    interim.class_id = f.covers_class || (f.covers_cells && f.covers_cells[0] && f.covers_cells[0].class_id) || null
-    interim.unit_refs = (f.covers_cells || []).map(c => c && c.key).filter(Boolean)
-    interim.asset_tag = OUTPUT_DIR.split('/').filter(Boolean).pop()
+    // C3 (coverage-join): stamp onto the interim AFTER buildInterim (parity-locked).
+    stampCoverageJoin(interim, f)
     const decision = cureLoopDecision(round, verdict.verdict, MAX_CURE_ROUNDS)
     if (decision === 'CURE') {
       await agent(curePrompt(f, verdict.failed_checks, verdict.missing_evidence, P), { label: `cure:${f.id}#${round + 1}`, phase: 'Loop', agentType: 'general-purpose' }).catch(() => null)
@@ -1029,6 +1100,18 @@ async function persistBatch(results) {
     { label: 'validate-writer', phase: 'Loop', agentType: 'general-purpose' }
   ).catch(() => null)
   agentsSpawned += 1
+  // E4 replay-cache STORE: record each terminal verdict content-hash-keyed so a
+  // later resume run restores it instead of re-running the lane. Populated on every
+  // run with a cache dir (restore is the resume-only side); prompt_id namespaces by asset.
+  if (VALIDATION_CACHE_DIR) {
+    const storeCmds = results.filter(Boolean).map(r =>
+      `python3 tools/validation_cache.py store --cache-dir ${VALIDATION_CACHE_DIR} --interim-file ${OUTPUT_DIR}/artifacts/${terminalSubdir(r.verdict)}/${r.finding_id}.json --root ${OUTPUT_DIR} --prompt-id ${CACHE_PROMPT_ID}`)
+    await agent(
+      `ROLE: CACHE STORE (deterministic tool runs; no judgment). cwd is repo root. Run EACH command; a failure on one is non-fatal (continue):\n${storeCmds.join('\n')}\nReturn {stored:${storeCmds.length}}.`,
+      { label: 'cache-store', phase: 'Loop', agentType: 'general-purpose' }
+    ).catch(() => null)
+    agentsSpawned += 1
+  }
 }
 
 // Validate a batch's NEW candidates strictly per-finding, before the next batch.
@@ -1052,7 +1135,12 @@ async function validateBatch(candidates) {
   await persistBatch(results)
 }
 
-while (exp < MAX_EXPERIMENTS && batch < MAX_BATCHES) {
+// COVERAGE mode: run to convergence (all cells covered + a DRY_TAIL of empty batches),
+// backstopped by the honest per-asset agent slice + an absolute runaway ceiling — NOT a
+// cost-style experiment budget. FLAG mode keeps the original budget-bounded loop.
+while (MODE === 'coverage'
+  ? (agentsSpawned < perAssetSlice && batch < ABSOLUTE_MAX_BATCHES)
+  : (exp < MAX_EXPERIMENTS && batch < MAX_BATCHES)) {
   batch++
 
   // --- P2: Think (+ P4b reset folded in) ---
@@ -1061,10 +1149,10 @@ while (exp < MAX_EXPERIMENTS && batch < MAX_BATCHES) {
   })
   if (!think) { terminated = true; terminateReason = 'think agent returned null'; break }
   if (think.terminate) {
-    // Coverage mode: a premature terminate is overridden while applicable classes
-    // remain pending. "I ran out of hypotheses / hit a goal" is not completion.
-    if (MODE === 'coverage' && coveragePending !== 0) {
-      log(`coverage: ignoring premature think.terminate — ${coveragePending === Infinity ? 'classes still' : coveragePending} pending`)
+    // Coverage mode: a premature terminate is overridden until convergence — every cell
+    // covered AND the dry tail satisfied. "I ran out of hypotheses / hit a goal" is not it.
+    if (MODE === 'coverage' && !convergenceDone({ coveragePending, coverageDryStreak, dryTail: DRY_TAIL })) {
+      log(`coverage: ignoring premature think.terminate — ${coveragePending === Infinity ? 'classes still' : coveragePending} pending, dry ${coverageDryStreak}/${DRY_TAIL}`)
       think.terminate = false
     } else {
       terminated = true; terminateReason = think.terminate_reason || 'think requested terminate'; break
@@ -1072,7 +1160,19 @@ while (exp < MAX_EXPERIMENTS && batch < MAX_BATCHES) {
   }
 
   const missions = (think.chosen || []).slice(0, 2)
-  if (!missions.length) { terminated = true; terminateReason = 'think produced no missions'; break }
+  if (!missions.length) {
+    // Coverage tail: once every cell is covered, a batch that surfaces no fresh mission
+    // is a genuine dry batch — advance the tail toward convergence instead of aborting.
+    if (MODE === 'coverage' && coveragePending === 0 &&
+        !convergenceDone({ coveragePending, coverageDryStreak, dryTail: DRY_TAIL })) {
+      agentsSpawned += 1 // this batch's think agent (accounted against the slice)
+      coverageDryStreak = nextDryStreak(coverageDryStreak, { coveragePending: 0, newConfirmed: false, reopened: false })
+      log(`coverage tail: dry batch (no fresh mission) -> streak ${coverageDryStreak}/${DRY_TAIL}`)
+      if (convergenceDone({ coveragePending: 0, coverageDryStreak, dryTail: DRY_TAIL })) { solved = true; break }
+      continue
+    }
+    terminated = true; terminateReason = 'think produced no missions'; break
+  }
 
   // --- P2b: Creative research (conditional) ---
   let brief = null
@@ -1116,19 +1216,31 @@ while (exp < MAX_EXPERIMENTS && batch < MAX_BATCHES) {
   if (MODE === 'coverage') {
     const pend = integ.coverage_complete === true ? 0
       : (typeof integ.applicable_pending === 'number' ? integ.applicable_pending : prevPending)
+    // set-diff reopen: a cell open now that was NOT open last batch means coverage
+    // regressed — reset the dry tail even if the net pending count is unchanged.
+    const openSet = new Set((Array.isArray(integ.open_cells) ? integ.open_cells : [])
+      .map(c => c && `${c.class_id}@${c.key}`).filter(Boolean))
+    const reopened = prevOpenCells != null && [...openSet].some(k => !prevOpenCells.has(k))
+    const newConfirmed = confirmedFindings.length > prevConfirmedCount
+    coverageDryStreak = nextDryStreak(coverageDryStreak, { coveragePending: pend, newConfirmed, reopened })
     coverageAdvanced = pend < prevPending
     prevPending = pend
     coveragePending = pend
+    prevOpenCells = openSet
+    prevConfirmedCount = confirmedFindings.length
   }
 
-  log(`batch ${batch}: experiments=${exp} progress=${integ.progress}${MODE === 'coverage' ? ` pending=${coveragePending}` : ''} ${integ.goal_reached ? 'GOAL_REACHED' : ''}${integ.recommend_reset ? ' (reset queued)' : ''}`)
+  log(`batch ${batch}: experiments=${exp} progress=${integ.progress}${MODE === 'coverage' ? ` pending=${coveragePending} dry=${coverageDryStreak}/${DRY_TAIL}` : ''} ${integ.goal_reached ? 'GOAL_REACHED' : ''}${integ.recommend_reset ? ' (reset queued)' : ''}`)
 
-  // Completion: flag mode -> goal_reached; coverage mode -> every applicable class covered/NA.
-  const done = MODE === 'coverage' ? (coveragePending === 0 || integ.goal_reached) : integ.goal_reached
+  // Completion: flag mode -> goal_reached; coverage mode -> convergence (every cell
+  // covered/negated AND the dry tail held). goal_reached alone does NOT satisfy it.
+  const done = MODE === 'coverage'
+    ? convergenceDone({ coveragePending, coverageDryStreak, dryTail: DRY_TAIL })
+    : integ.goal_reached
   if (done) { solved = true; break }
   if (integ.terminate) {
-    if (MODE === 'coverage' && coveragePending !== 0) {
-      log(`coverage: ignoring integrate terminate — ${coveragePending} classes pending`)
+    if (MODE === 'coverage' && !convergenceDone({ coveragePending, coverageDryStreak, dryTail: DRY_TAIL })) {
+      log(`coverage: ignoring integrate terminate — ${coveragePending} cell(s) pending, dry ${coverageDryStreak}/${DRY_TAIL}`)
     } else {
       terminated = true; terminateReason = integ.terminate_reason || 'integrate requested terminate'; break
     }
@@ -1152,8 +1264,14 @@ while (exp < MAX_EXPERIMENTS && batch < MAX_BATCHES) {
   }
 }
 
-if (!solved && !terminated && batch >= MAX_BATCHES) terminateReason = `batch cap (${MAX_BATCHES}) reached — agent-spawn backstop`
-if (!solved && !terminated && exp >= MAX_EXPERIMENTS) terminateReason = `experiment budget (${MAX_EXPERIMENTS}) exhausted`
+// Coverage mode: the loop is bounded by the honest per-asset agent slice (not a cost
+// budget). Slice-exhausted-with-cells-still-open is RESUMABLE — the remaining cells
+// carry over to a resume run; a stuck-but-slice-remaining exit is genuine INCOMPLETE.
+const sliceExhausted = MODE === 'coverage' && !solved && agentsSpawned >= perAssetSlice && coveragePending !== 0
+if (!solved && !terminated && MODE === 'coverage' && sliceExhausted) terminateReason = `agent slice (${perAssetSlice}) exhausted — ${coveragePending} cell(s) resumable`
+if (!solved && !terminated && MODE === 'coverage' && batch >= ABSOLUTE_MAX_BATCHES) terminateReason = `absolute batch ceiling (${ABSOLUTE_MAX_BATCHES}) reached`
+if (!solved && !terminated && MODE !== 'coverage' && batch >= MAX_BATCHES) terminateReason = `batch cap (${MAX_BATCHES}) reached — agent-spawn backstop`
+if (!solved && !terminated && MODE !== 'coverage' && exp >= MAX_EXPERIMENTS) terminateReason = `experiment budget (${MAX_EXPERIMENTS}) exhausted`
 log(`Loop ended after ${batch} batches / ${exp} experiments. solved=${solved}. ${terminateReason}`)
 
 // ============================================================================
@@ -1186,7 +1304,7 @@ if (INLINE_VALIDATE && (confirmedFindings.length || seenIds.size || MODE === 'co
     `ROLE: ENGAGEMENT VALIDATOR (blind, thoroughness audit). Read ONLY skills/coordination/reference/VALIDATION.md and skills/coordination/reference/validator-role.md (Engagement Validator checks); judge from the OUTPUT_DIR directory state — NOT from attack-chain.md or finding internals.\n` +
     `OUTPUT_DIR: ${OUTPUT_DIR}\n\n` +
     (MODE === 'coverage'
-      ? `Run the 8 thoroughness checks. Checks 1-7: port coverage vs experiments.md; share enumeration anon+guest (NA for pure web); source-code coverage; >=1 tested [wildcard] hypothesis; mandatory skeptic-brief-{5,15,25...} exist for the counts reached; time-to-first-finding <= 0.3*duration; zero AskUserQuestion calls. CHECK 8 attack-class coverage (DETERMINISTIC — hard 100% gate, no longer a 0.80 soft bar): run \`python3 tools/coverage_gate.py --asset-dir OUTPUT_DIR\` and read OUTPUT_DIR/reports/coverage-matrix.json; set coverage_ratio = its "coverage_ratio" and FAIL (engagement_status=GAPS_FOUND) UNLESS its "complete" is true (ratio==1.0 with NO missing/extra/dangling/false_NA/surface_undercount cells), listing the missing_cells (class_id @ scope_key) in remediation. Set coverage_ratio in the return.`
+      ? `Run the 8 thoroughness checks. Checks 1-7: port coverage vs experiments.md; share enumeration anon+guest (NA for pure web); source-code coverage; >=1 tested [wildcard] hypothesis; mandatory skeptic-brief-{5,15,25...} exist for the counts reached; time-to-first-finding <= 0.3*duration; zero AskUserQuestion calls. CHECK 8 attack-class coverage (DETERMINISTIC — hard 100% gate, no longer a 0.80 soft bar): run \`python3 tools/coverage_gate.py --asset-dir OUTPUT_DIR\` and read OUTPUT_DIR/reports/coverage-matrix.json; set coverage_ratio = its "coverage_ratio" and FAIL (engagement_status=GAPS_FOUND) UNLESS its "complete" is true (ratio==1.0 with NO missing/extra/dangling/false_NA/surface_undercount cells), listing the missing_cells (class_id @ scope_key) in remediation. EQUIV SAMPLING (E2 guard): sample up to K_SAMPLE=3 cells credited via mode=="covered_equiv" in reports/coverage-matrix.json (the covered_equiv list); for EACH, verify the credited sibling genuinely shares its representative's route template / handler / param family (cross-check OUTPUT_DIR/recon/inventory/surface.json). If ANY sampled sibling does not, set engagement_status=GAPS_FOUND and list the mis-grouped siblings in remediation (they re-open next run). Set coverage_ratio in the return.`
       : `Run the 7 thoroughness checks (port coverage vs experiments.md; share enumeration anon+guest; source-code coverage; >=1 tested [wildcard] hypothesis; mandatory skeptic-brief-{5,15,25...} exist for the counts reached; time-to-first-finding <= 0.3*duration; zero AskUserQuestion calls).`) +
     ` Write artifacts/engagement-validation.json + artifacts/engagement-validation-summary.md. Return ENGAGEMENT_SCHEMA.`,
     { schema: ENGAGEMENT_SCHEMA, label: 'validate:engagement', phase: 'Validate', agentType: 'general-purpose' }
@@ -1204,8 +1322,10 @@ phase('Report')
 // orchestrator/downstream validates those).
 const hasFindings = INLINE_VALIDATE ? confirmed.length : uniqFindings.length
 const coverageGapFail = MODE === 'coverage' && engagement && engagement.engagement_status === 'GAPS_FOUND'
+// Tri-state per-asset coverage status. RESUMABLE (slice spent, cells still open) is
+// carried forward to a resume run; INCOMPLETE_COVERAGE is a genuine gap/stuck asset.
 const status = MODE === 'coverage'
-  ? ((solved && !coverageGapFail) ? 'COVERAGE_COMPLETE' : 'INCOMPLETE_COVERAGE')
+  ? ((solved && !coverageGapFail) ? 'COVERAGE_COMPLETE' : (sliceExhausted ? 'INCOMPLETE_RESUMABLE' : 'INCOMPLETE_COVERAGE'))
   : (solved ? 'SUCCESS' : (hasFindings ? 'FAILED_partial' : (terminateReason.includes('budget') || terminateReason.includes('cap') ? 'EXHAUSTED' : 'BLOCKED')))
 
 // Report format: transilience (per-asset source + JSON; the orchestrator renders the
@@ -1243,6 +1363,8 @@ return {
   engagement_status: engagement ? engagement.engagement_status : null,
   coverage_status: MODE === 'coverage' ? status : null,
   coverage_pending: MODE === 'coverage' ? coveragePending : null,
+  resumable: MODE === 'coverage' ? sliceExhausted : false,
+  open_cells_remaining: MODE === 'coverage' ? coveragePending : null,
   coverage_ratio: engagement && typeof engagement.coverage_ratio === 'number' ? engagement.coverage_ratio : null,
   report_path: report ? report.report_path : `${OUTPUT_DIR}/reports/${REPORT_FORMAT === 'transilience' ? 'pentest-report-source.md' : 'completion-report.md'}`,
   narrative: report ? report.narrative : '',

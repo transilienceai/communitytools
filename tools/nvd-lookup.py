@@ -192,7 +192,7 @@ def fetch_cve_web(cve_id: str) -> dict:
             "type": "Primary",
             "cvssData": {
                 "baseScore": parsed["cvss2_score"],
-                "baseSeverity": severity_label(parsed["cvss2_score"]),
+                "baseSeverity": severity_label_v2(parsed["cvss2_score"]),
                 "vectorString": "N/A",
             },
             "exploitabilityScore": None,
@@ -284,7 +284,8 @@ def extract_cwes(weaknesses: list) -> list[str]:
 
 
 def severity_label(score: float | None) -> str:
-    """Map CVSS score to severity label."""
+    """Map a CVSS v3.x / v4.0 base score to its qualitative severity label.
+    (v3.1 and v4.0 share the same bands.) For CVSS v2 use severity_label_v2."""
     if score is None:
         return "UNKNOWN"
     if score >= 9.0:
@@ -296,6 +297,19 @@ def severity_label(score: float | None) -> str:
     if score > 0.0:
         return "LOW"
     return "NONE"
+
+
+def severity_label_v2(score: float | None) -> str:
+    """Map a CVSS v2 base score to its severity label. v2's qualitative scale
+    differs from v3/v4: there is NO 'Critical', and HIGH spans 7.0-10.0
+    (NVD CVSS v2 severity ratings: Low 0.0-3.9, Medium 4.0-6.9, High 7.0-10.0)."""
+    if score is None:
+        return "UNKNOWN"
+    if score >= 7.0:
+        return "HIGH"
+    if score >= 4.0:
+        return "MEDIUM"
+    return "LOW"
 
 
 def format_cve(data: dict) -> str:

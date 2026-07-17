@@ -336,6 +336,84 @@ def test_empty_engagement_is_graceful():
     assert rc == 0 and m["applicable"] == 0 and m["coverage_ratio"] == 1.0, f"empty engagement -> graceful COMPLETE: {out}"
 
 
+def test_equiv_class_credit_and_controls():
+    # E2 equivalence-class validation: a sibling in the same equiv_group rides a
+    # DIRECT validated finding on ONE representative; controls (different group,
+    # no group, host/asset) must NEVER take the fallback.
+    INJ = "WEB-A03-INJECTION"  # unit-scope class, applies on the `input_sink` flag
+    tmp = tempfile.mkdtemp()
+    units = [
+        {"unit_id": "u1", "type": "endpoint", "address": "https://api.demo.test/a", "flags": ["input_sink"], "equiv_group": "g1"},
+        {"unit_id": "u2", "type": "endpoint", "address": "https://api.demo.test/b", "flags": ["input_sink"], "equiv_group": "g1"},
+        {"unit_id": "u3", "type": "endpoint", "address": "https://api.demo.test/c", "flags": ["input_sink"], "equiv_group": "g2"},
+        {"unit_id": "u4", "type": "endpoint", "address": "https://api.demo.test/d", "flags": ["input_sink"]},  # no equiv_group
+    ]
+    d = web_asset(tmp, "webB", units=units)
+    load_cells(tmp, d)
+    append_experiment(d, "E-001")
+    write_validated(d, "F-1", INJ, ["u1"], "webB")  # sole direct finding, on u1
+    inj_entries = [
+        {"key": "u1", "status": "covered", "e_id": "E-001", "finding_id": "F-1"},
+        {"key": "u2", "status": "covered", "e_id": "E-001", "representative": "u1"},
+        {"key": "u3", "status": "covered", "e_id": "E-001"},
+        {"key": "u4", "status": "covered", "e_id": "E-001"},
+    ]
+    write_coverage(d, {INJ: inj_entries})
+    _, out, m = gate(d, single=True)
+
+    inj_missing = {r["scope_key"]: r["reason"] for r in m["missing_cells"] if r["class_id"] == INJ}
+    ce = {r["scope_key"]: r for r in m["covered_equiv"] if r["class_id"] == INJ}
+    # u1 passes directly, u2 rides u1 via equivalence -> BOTH pass
+    assert "u1" not in inj_missing, f"u1 (direct finding) should pass: {inj_missing}"
+    assert "u2" not in inj_missing, f"u2 should ride u1 via equiv: {inj_missing}"
+    assert "u2" in ce and ce["u2"]["representative"] == "u1" and ce["u2"]["reason"] == "covered_equiv", \
+        f"u2 must be covered_equiv w/ representative u1: {m['covered_equiv']}"
+    assert "u1" not in ce, "the representative itself must not be marked covered_equiv"
+    # control: u3 in a DIFFERENT group (g2) with no rep -> still missing no_matching_finding
+    assert inj_missing.get("u3") == "no_matching_finding", f"u3 (g2, no rep) must fail: {inj_missing}"
+    # control: u4 has equiv_group None -> never takes the fallback
+    assert inj_missing.get("u4") == "no_matching_finding", f"u4 (no group) must fail: {inj_missing}"
+    # host/asset cells (equiv_group None) never take the fallback
+    host_asset_missing = [r for r in m["missing_cells"] if r["scope"] in ("host", "asset")]
+    assert host_asset_missing, "sanity: open host/asset cells present"
+    assert all(r.get("equiv_group") is None for r in host_asset_missing), "host/asset cells carry no equiv_group"
+    assert not any(r["scope"] in ("host", "asset") for r in m["covered_equiv"]), "host/asset must never be equiv-credited"
+    # emit-open annotates open unit cells with their equiv group
+    _, out_o = _run(GATE, d, True, emit_open=True)
+    assert "[equiv:g2]" in out_o, f"emit-open should tag u3 with its equiv group: {out_o}"
+
+
+def test_equiv_group_bound():
+    # A single representative may only collapse EQUIV_GROUP_MAX siblings; the excess
+    # stay in missing_cells (bounds "one rep covers an unbounded group").
+    sys.path.insert(0, HERE)
+    from coverage_gate import EQUIV_GROUP_MAX
+    INJ = "WEB-A03-INJECTION"
+    n_sib = EQUIV_GROUP_MAX + 2  # more siblings than one rep can cover
+    tmp = tempfile.mkdtemp()
+    units = [{"unit_id": "u0", "type": "endpoint", "address": "https://api.demo.test/rep",
+              "flags": ["input_sink"], "equiv_group": "gbig"}]
+    for i in range(1, n_sib + 1):
+        units.append({"unit_id": f"s{i:02d}", "type": "endpoint",
+                      "address": f"https://api.demo.test/s{i}", "flags": ["input_sink"], "equiv_group": "gbig"})
+    d = web_asset(tmp, "webC", units=units)
+    load_cells(tmp, d)
+    append_experiment(d, "E-001")
+    write_validated(d, "F-1", INJ, ["u0"], "webC")  # rep u0 has the sole direct finding
+    entries = [{"key": "u0", "status": "covered", "e_id": "E-001", "finding_id": "F-1"}]
+    for i in range(1, n_sib + 1):
+        entries.append({"key": f"s{i:02d}", "status": "covered", "e_id": "E-001"})
+    write_coverage(d, {INJ: entries})
+    _, out, m = gate(d, single=True)
+
+    credited = [r for r in m["covered_equiv"] if r["class_id"] == INJ]
+    inj_missing = [r for r in m["missing_cells"] if r["class_id"] == INJ]
+    assert len(credited) == EQUIV_GROUP_MAX, f"exactly {EQUIV_GROUP_MAX} siblings credited, got {len(credited)}: {credited}"
+    assert all(r["representative"] == "u0" for r in credited), f"all credited siblings ride u0: {credited}"
+    assert len(inj_missing) == n_sib - EQUIV_GROUP_MAX, f"excess siblings must remain missing: {inj_missing}"
+    assert all(r["reason"] == "no_matching_finding" for r in inj_missing), f"excess reason: {inj_missing}"
+
+
 def main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     failed = 0

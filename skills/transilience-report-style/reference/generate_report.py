@@ -106,6 +106,11 @@ def score_band(score):
     if s < 9.0: return "High"
     return "Critical"
 
+def cvss_display(score):
+    """CVSS score for display: the numeric value, or 'n/a' when absent.
+    Every finding/CVE always shows this score cell paired with its severity label."""
+    return str(score) if score not in (None, "") else "n/a"
+
 def hx(c): return "#" + c.hexval()[2:]
 def esc(s): return html.escape(str(s if s is not None else ""), quote=False)
 def mask(s):  # defensive PII/secret masking
@@ -258,7 +263,8 @@ def build(data, dest, assets, theme=None):
         rows = []
         for lvl in ["Critical", "High", "Medium", "Low", "Info"]:
             for f in sorted([x for x in fs if x.get("severity", "Info") == lvl], key=lambda x: -(x.get("cvss_score") or 0)):
-                rows.append([esc(f.get("id", "")), esc(f.get("title", ""))[:66], lvl, str(f.get("cvss_score", "") or "")])
+                rows.append([esc(f.get("id", "")), esc(f.get("title", ""))[:66], lvl,
+                             esc(cvss_display(f.get("cvss_score")))])
         return rows
 
     E = []
@@ -337,8 +343,39 @@ def build(data, dest, assets, theme=None):
         E.append(PageBreak())
 
     # ---- findings (grouped by severity) ----
+    def image_flowable(src):
+        """A framed Image flowable for a PoC step's image_url, or None when the
+        image is not available. Accepts a local path or an http(s) URL (best-effort
+        download; silently skipped on any failure so 'show the image if available')."""
+        if not src or not isinstance(src, str):
+            return None
+        path = src
+        if src.startswith(("http://", "https://")):
+            try:
+                import urllib.request, tempfile
+                with urllib.request.urlopen(src, timeout=8) as resp:
+                    data = resp.read()
+                fd, path = tempfile.mkstemp(suffix=".img")
+                with os.fdopen(fd, "wb") as fh:
+                    fh.write(data)                       # reportlab reads it at build() time; keep the temp file
+            except Exception:
+                return None
+        if not os.path.exists(path):
+            return None
+        try:
+            iw, ih = ImageReader(path).getSize()
+            w = CW - 34; h = w * ih / iw
+            frame = Table([[Image(path, width=w, height=h)]], colWidths=[w + 2])
+            frame.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.6, T["BORDER"]), ("LEFTPADDING", (0, 0), (-1, -1), 1),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 1), ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1)]))
+            return frame
+        except Exception:
+            return None
+
     def cve_block(f):
-        rows = [[esc(c.get("id", "")), str(c.get("score", "")), esc(c.get("severity", ""))] for c in f.get("cves", [])]
+        rows = [[esc(c.get("id", "")),
+                 esc(cvss_display(c.get("score"))),
+                 esc(c.get("severity") or score_band(c.get("score")))] for c in f.get("cves", [])]
         out = [labelp("CVE RISK (authoritative NVD)", T["BLUE"]),
                tbl(["CVE", "CVSS", "Severity"], rows, [CW * 0.28, CW * 0.14, CW * 0.20], sevcol=2, scorecol=1, cell="bs")]
         if f.get("cve_caveat"):
@@ -346,21 +383,22 @@ def build(data, dest, assets, theme=None):
         return out
 
     def card(f):
-        skey = f.get("severity", "Info"); sc = T["SEV"].get(skey, T["SEV"]["Info"])
+        skey = f.get("severity") or "Info"; sc = T["SEV"].get(skey, T["SEV"]["Info"])
         rows = []
         def row(*flows): rows.append([list(flows)])
-        # header: id + [SEV] (colour-coded) + title
+        # header: id + [SEV label] (colour-coded, always present) + title
         row(Paragraph(f'<font name="{FB}" color="{hx(sc)}">{esc(f.get("id",""))}</font> '
-                      f'<font name="{FB}" color="{hx(sc)}">[{esc(f.get("severity","").upper())}]</font>  '
+                      f'<font name="{FB}" color="{hx(sc)}">[{esc(skey.upper())}]</font>  '
                       f'<font name="{FB}" color="{hx(T["INK"])}">{esc(f.get("title",""))}</font>', S["cardt"]))
-        # meta: CVSS (band-coloured) · CWE · OWASP · Status
-        scc = T["SEV"].get(score_band(f.get("cvss_score")), T["INK_SOFT"])
+        # meta: Severity label + CVSS score (always shown; n/a when no CVSS) · CWE · OWASP · Status
+        cvss_val = f.get("cvss_score")
+        has_cvss = cvss_val not in (None, "")
+        scc = T["SEV"].get(score_band(cvss_val), T["INK_SOFT"]) if has_cvss else T["INK_SOFT"]
         confirmed = not f.get("needs_live_confirmation")
-        status = "CONFIRMED (offline)" if confirmed else "EVIDENCED — needs live confirmation"
+        status = f.get("status_label") or ("CONFIRMED (offline)" if confirmed else "EVIDENCED — needs live confirmation")
         stc = T["GREEN"] if confirmed else T["AMBER"]
-        parts = []
-        if f.get("cvss_score") not in (None, ""):
-            parts.append(f'<font color="{hx(T["LBL"])}">CVSS</font> <font name="{FB}" color="{hx(scc)}">{esc(f.get("cvss_score"))}</font>')
+        parts = [f'<font color="{hx(T["LBL"])}">Severity</font> <font name="{FB}" color="{hx(sc)}">{esc(skey)}</font>',
+                 f'<font color="{hx(T["LBL"])}">CVSS</font> <font name="{FB}" color="{hx(scc)}">{esc(cvss_display(cvss_val))}</font>']
         if f.get("cwe"): parts.append(f'<font color="{hx(T["LBL"])}">CWE</font> {esc(f["cwe"])}')
         if f.get("owasp"): parts.append(f'<font color="{hx(T["LBL"])}">OWASP</font> {esc(f["owasp"])}')
         parts.append(f'<font color="{hx(T["LBL"])}">Status</font> <font color="{hx(stc)}">{status}</font>')
@@ -372,36 +410,26 @@ def build(data, dest, assets, theme=None):
         aff = "; ".join(f.get("affected", [])[:6]) + (" …" if len(f.get("affected", [])) > 6 else "")
         if aff:
             row(labelp("AFFECTED", T["BRAND"]), codebox(esc(mask(aff))))
-        for lbl, key, lim in [("DESCRIPTION", "description", 1500), ("EVIDENCE", "evidence", 1400), ("IMPACT", "impact", 1000)]:
+        for lbl, key, lim in [("DESCRIPTION", "description", 1500), ("IMPACT", "impact", 1000)]:
             if f.get(key):
                 row(labelp(lbl, T["BRAND"]), Paragraph(esc(mask(f[key]))[:lim], S["cardbody"]))
-        eps = f.get("affected_endpoints")
-        if eps:
-            blk = [labelp(f"AFFECTED ENDPOINTS ({len(eps)})", T["BLUE"])]
-            for i in range(0, len(eps), 20):
-                block = "<br/>".join(f"{j+1}. {esc(mask(str(e)))}" for j, e in enumerate(eps[i:i+20], start=i))
-                blk.append(codebox(block))
+        # PROOF OF CONCEPT — ordered list of steps; per step: prose description,
+        # code-styled command (exact command to run), and an embedded image if available.
+        poc = f.get("poc")
+        if isinstance(poc, list) and poc:
+            blk = [labelp("PROOF OF CONCEPT", T["BLUE"])]
+            for i, step in enumerate([s for s in poc if isinstance(s, dict)], start=1):
+                blk.append(Paragraph(f'<font name="{FB}" color="{hx(T["INK"])}">{i}.</font>&nbsp;&nbsp;'
+                                     f'{esc(mask(str(step.get("description") or "")))}', S["cardbody"]))
+                cmd = step.get("command")
+                if cmd not in (None, ""):
+                    blk.append(codebox(esc(mask(str(cmd)))))
+                img = image_flowable(step.get("image_url"))
+                if img is not None:
+                    blk.append(Spacer(1, 3)); blk.append(img)
             rows.append([blk])
         if f.get("calibration"):
             row(labelp("SEVERITY CALIBRATION", T["AMBER"]), Paragraph(esc(mask(f["calibration"])), S["cardbody"]))
-        if f.get("poc_request"):
-            blk = [labelp("TEST / PROOF-OF-CONCEPT", T["BLUE"]), codebox(esc(mask(f["poc_request"]))[:1100])]
-            if f.get("test_method"):
-                blk.append(Paragraph(f'<font color="{hx(T["LBL"])}">Confirms when:</font> {esc(mask(f["test_method"]))[:400]}', S["cardbody"]))
-            rows.append([blk])
-        shot = f.get("poc_screenshot")
-        if shot and os.path.exists(shot):
-            try:
-                iw, ih = ImageReader(shot).getSize()
-                w = CW - 34; h = w * ih / iw
-                blk = [labelp("PROOF-OF-CONCEPT (SCREENSHOT)", T["BLUE"])]
-                if f.get("poc_caption"): blk.append(Paragraph(esc(f["poc_caption"]), S["cardbody"]))
-                frame = Table([[Image(shot, width=w, height=h)]], colWidths=[w + 2])
-                frame.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.6, T["BORDER"]), ("LEFTPADDING", (0, 0), (-1, -1), 1),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 1), ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1)]))
-                blk.append(Spacer(1, 3)); blk.append(frame)
-                rows.append([blk])
-            except Exception: pass
         if f.get("cves"):
             rows.append([cve_block(f)])
         if f.get("recommendation"):
@@ -456,10 +484,6 @@ def build(data, dest, assets, theme=None):
         E.append(tbl(apc["header"], apc["rows"], [CW * w for w in apc["widths"]], statuscol=len(apc["header"]) - 1))
         if apc.get("note"): E.append(Spacer(1, 4)); E.append(Paragraph(esc(apc["note"]), S["bs"]))
         E.append(PageBreak())
-    if data.get("ruled_out"):
-        section("Ruled-Out Candidates (false positives)")
-        E.append(Paragraph("These candidates were investigated and ruled out — recorded for transparency.", S["body"]))
-        E.append(tbl(["Candidate", "Why rejected"], [[r.get("title", "")[:70], r.get("why", "")[:120]] for r in data["ruled_out"]], [CW * 0.40, CW * 0.60])); E.append(PageBreak())
     if data.get("tools_used"):
         section("Tools & Techniques Used")
         if data.get("tools_intro"): E.append(Paragraph(esc(data["tools_intro"]), S["body"]))

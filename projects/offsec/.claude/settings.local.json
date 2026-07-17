@@ -1,0 +1,11 @@
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://localhost:4000",
+    "ANTHROPIC_AUTH_TOKEN": "sk-33ff8a0a8013f885aa4f65f84d37f100",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "zai-org/GLM-5.2-FP8",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "zai-org/GLM-5.2-FP8",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "zai-org/GLM-5.2-FP8",
+    "ANTHROPIC_SMALL_FAST_MODEL": "zai-org/GLM-5.2-FP8",
+    "DISABLE_PROMPT_CACHING": "1"
+  }
+}

@@ -12,6 +12,7 @@ import {
   cureLoopDecision, terminalSubdir, coverageDecision, shouldInlineValidate,
   backstopDecision, assessBudget, reduceCandidateVerdicts, summarizeLoopCounts,
   detectAllowlist, resolveGeoZones,
+  convergenceDone, nextDryStreak, resumeSchedule, classifyEngagement,
 } from './wf-helpers.mjs';
 
 let pass = 0, fail = 0;
@@ -61,6 +62,10 @@ eq(exposureFor({ external: false }), 0.5, 'explicit external:false -> 0.5');
 eq(normVector('CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H'), normVector('AV:N/AC:L/UI:N/PR:N/S:U/A:H/C:H/I:H'), 'normVector order-insensitive');
 ok(cveReconcile({ claimed_score: 9.8, computed_score: 9.8, nvd_score: 9.8, claimed_vector: 'AV:N', computed_vector: 'AV:N' }).reconciled, 'reconcile all-agree');
 ok(cveReconcile({ computed_score: 9.8, nvd_score: 9.9 }).reconciled, 'reconcile boundary |Δ|=0.1 (0.9 vs 9.8... )'); // 9.9-9.8=0.1
+// IEEE-754 regression: 9.8-9.7 = 0.10000000000000009 > 0.1 without the epsilon,
+// which would wrongly demote a valid CVE at the exact one-step rounding gap.
+ok(cveReconcile({ computed_score: 9.8, nvd_score: 9.7 }).reconciled, 'reconcile boundary |Δ|=0.1 float-safe (9.8 vs 9.7)');
+ok(cveReconcile({ computed_score: 0.8, claimed_score: 0.7 }).reconciled, 'reconcile boundary |Δ|=0.1 float-safe (0.8 vs 0.7)');
 ok(!cveReconcile({ computed_score: 9.8, nvd_score: 9.95 }).reconciled, 'reconcile |Δ|=0.15 fails');
 ok(!cveReconcile({ computed_score: 7.0, claimed_vector: 'AV:N/AC:L', computed_vector: 'AV:L/AC:H' }).reconciled, 'reconcile vector mismatch fails');
 ok(!cveReconcile({ claimed_score: 7.0, nvd_score: 7.0 }).reconciled, 'reconcile with no computed score fails');
@@ -118,13 +123,14 @@ eq(computeVerdict(F, goodChecks, [], fullProbe(F), null, { votesTotal: 0 }).verd
   const noExploit = { canonical: goodChecks.canonical, cve: { applicable: false }, exploit: {} };
   eq(computeVerdict(info, noExploit, [], fullProbe(info), REPRO, { votesTotal: 0 }).verdict, 'VALID', 'info finding valid without exploit proof (PoC reproduced)');
 }
-// finalPoc: reproduction agent's corrected recipe wins when it adjusted steps
+// finalPoc: reproduction agent's corrected list wins when it adjusted steps.
+// PoC shape is now an ordered list of {description, command, image_url} steps.
 {
-  const authored = { poc: { prerequisites: [{ item: 'curl' }], steps: [{ n: 1, action: 'open terminal' }, { n: 2, action: 'result' }] } };
-  eq(finalPoc(authored, { reproduced: true }).steps.length, 2, 'finalPoc keeps authored steps when repro did not adjust');
-  const adj = finalPoc(authored, { reproduced: true, corrected_steps: [{ n: 1, action: 'open browser' }, { n: 2, action: 'x' }, { n: 3, action: 'result' }] });
-  eq(adj.steps.length, 3, 'finalPoc uses reproduction agent corrected_steps when present');
-  eq(adj.prerequisites, [{ item: 'curl' }], 'finalPoc falls back to authored prerequisites when repro did not correct them');
+  const authored = { poc: [{ description: 'open terminal', command: 'bash' }, { description: 'the disclosed value proves it' }] };
+  eq(finalPoc(authored, { reproduced: true }).length, 2, 'finalPoc keeps authored steps when repro did not adjust');
+  const adj = finalPoc(authored, { reproduced: true, corrected_steps: [{ description: 'open browser', command: 'open x' }, { description: 'x' }, { description: 'result' }] });
+  eq(adj.length, 3, 'finalPoc uses reproduction agent corrected_steps when present');
+  eq(finalPoc({}, {}), [], 'finalPoc returns [] when no poc was authored');
 }
 
 // --- reconcileAssessed / normalizeAssess ---------------------------------
@@ -171,8 +177,8 @@ eq(scopeDiff(['a.com', 'b.com'], ['b.com', 'c.com']), { added: ['c.com'], remove
   eq(assertReportData(good).ok, true, 'assertReportData accepts a valid object');
   eq(assertReportData({ engagement: {}, findings: [{ id: 'F1', title: 'X', severity: 'Sev5' }] }).ok, false, 'assertReportData rejects bad severity enum');
   eq(assertReportData({ engagement: {}, findings: [{ id: 'F1', title: 'X' }] }).ok, false, 'assertReportData rejects missing severity');
-  const withSecret = assertReportData({ engagement: {}, findings: [{ id: 'F1', title: 'X', severity: 'Low', evidence: 'token Bearer abcdef0123456789abcd' }] });
-  ok(withSecret.secretHits.length > 0, 'assertReportData surfaces secret hits in rendered fields');
+  const withSecret = assertReportData({ engagement: {}, findings: [{ id: 'F1', title: 'X', severity: 'Low', poc: [{ description: 'send the request', command: 'curl -H "Authorization: Bearer abcdef0123456789abcd"' }] }] });
+  ok(withSecret.secretHits.length > 0, 'assertReportData surfaces secret hits in poc step fields');
 }
 
 // --- strict per-finding interleave: decision helpers ---------------------
@@ -226,6 +232,55 @@ for (const A of [1, 2, 5, 10, 20, 50]) {
   ok(b.hardReserve <= b.perAsset, `assessBudget hardReserve <= perAsset for ${A}`);
 }
 eq(AGENT_CAP, 1000, 'AGENT_CAP is the runtime 1000-agent lifetime cap');
+// assessBudget reserve override: a larger reserve shrinks perAsset; invariant holds.
+{
+  const b = assessBudget({ assets: 4, reserve: 120 });
+  eq(b.perAsset, Math.floor((1000 - 120) / 4), 'assessBudget honors an explicit reserve in perAsset');
+  eq(b.globalReserve, 120, 'assessBudget returns the effective reserve');
+  ok(b.perAsset * 4 + 120 <= AGENT_CAP, 'assessBudget invariant holds with an explicit reserve');
+  eq(assessBudget({ assets: 5 }).perAsset, Math.floor(960 / 5), 'assessBudget default reserve = GLOBAL_RESERVE (40)');
+}
+// convergenceDone: coverage complete (pending 0) AND dry tail held for K batches.
+eq(convergenceDone({ coveragePending: 3, coverageDryStreak: 9, dryTail: 2 }), false, 'convergenceDone false while cells pending');
+eq(convergenceDone({ coveragePending: 0, coverageDryStreak: 1, dryTail: 2 }), false, 'convergenceDone false: tail not yet K');
+eq(convergenceDone({ coveragePending: 0, coverageDryStreak: 2, dryTail: 2 }), true, 'convergenceDone true: pending 0 + tail>=K');
+eq(convergenceDone({ coveragePending: 0, coverageDryStreak: 5 }), true, 'convergenceDone default K=2 satisfied');
+// nextDryStreak: only accrues at pending 0; new finding / reopen resets it.
+eq(nextDryStreak(4, { coveragePending: 2, newConfirmed: false, reopened: false }), 0, 'nextDryStreak resets while pending>0');
+eq(nextDryStreak(1, { coveragePending: 0, newConfirmed: false, reopened: false }), 2, 'nextDryStreak +1 on a clean complete batch');
+eq(nextDryStreak(3, { coveragePending: 0, newConfirmed: true, reopened: false }), 0, 'nextDryStreak resets on a new confirmed finding');
+eq(nextDryStreak(3, { coveragePending: 0, newConfirmed: false, reopened: true }), 0, 'nextDryStreak resets on a reopened cell (set-diff)');
+{ // the K=2 tail converges: two clean complete batches after pending hit 0
+  let s = 0;
+  s = nextDryStreak(s, { coveragePending: 0, newConfirmed: false, reopened: false });
+  ok(!convergenceDone({ coveragePending: 0, coverageDryStreak: s, dryTail: 2 }), 'tail batch 1 not yet done');
+  s = nextDryStreak(s, { coveragePending: 0, newConfirmed: false, reopened: false });
+  ok(convergenceDone({ coveragePending: 0, coverageDryStreak: s, dryTail: 2 }), 'tail batch 2 -> done');
+}
+// resumeSchedule: fully-converge as many as fit the agent slice; defer the rest.
+eq(resumeSchedule({ incompleteCount: 10, agentCap: 1000, deepSlice: 200, overhead: 40 }), { assetsThisRun: 4, deferred: 6 }, 'resumeSchedule 10 assets @200 slice -> 4 this run, 6 deferred');
+eq(resumeSchedule({ incompleteCount: 3, agentCap: 1000, deepSlice: 200, overhead: 40 }), { assetsThisRun: 3, deferred: 0 }, 'resumeSchedule fits all when under capacity');
+eq(resumeSchedule({ incompleteCount: 0, agentCap: 1000, deepSlice: 200, overhead: 40 }), { assetsThisRun: 0, deferred: 0 }, 'resumeSchedule nothing incomplete -> 0/0');
+eq(resumeSchedule({ incompleteCount: 3, agentCap: 1000, deepSlice: 2000, overhead: 40 }), { assetsThisRun: 1, deferred: 2 }, 'resumeSchedule always runs >=1 even when slice exceeds capacity');
+{ // partition invariant: this-run + deferred == incomplete, and this-run fits the cap
+  for (const inc of [1, 4, 7, 25]) {
+    const r = resumeSchedule({ incompleteCount: inc, agentCap: 1000, deepSlice: 200, overhead: 40 });
+    eq(r.assetsThisRun + r.deferred, inc, `resumeSchedule partitions all ${inc}`);
+    ok(r.assetsThisRun * 200 + 40 <= 1000 || r.assetsThisRun === 1, `resumeSchedule this-run fits the cap (${inc})`);
+  }
+}
+// classifyEngagement: tri-state status + resume list.
+eq(classifyEngagement([{ tag: 'a', coverage_status: 'COVERAGE_COMPLETE' }], []), { engagement_status: 'COMPLETE', resume: { remaining_assets: [], deferred_reason: null, rerun_hint: null } }, 'classifyEngagement all-complete -> COMPLETE');
+{
+  const c = classifyEngagement([{ tag: 'a', coverage_status: 'COVERAGE_COMPLETE' }, { tag: 'b', coverage_status: 'INCOMPLETE_RESUMABLE' }], ['c']);
+  eq(c.engagement_status, 'INCOMPLETE_resumable', 'classifyEngagement resumable+deferred, none stuck -> INCOMPLETE_resumable');
+  eq(c.resume.remaining_assets, ['b', 'c'], 'classifyEngagement resume list = resumable + deferred');
+}
+{
+  const c = classifyEngagement([{ tag: 'a', coverage_status: 'INCOMPLETE_COVERAGE' }, { tag: 'b', coverage_status: 'COVERAGE_COMPLETE' }], []);
+  eq(c.engagement_status, 'INCOMPLETE_coverage', 'classifyEngagement a stuck asset -> INCOMPLETE_coverage (needs human)');
+  ok(c.resume.remaining_assets.includes('a'), 'classifyEngagement retries the stuck asset next run');
+}
 // reduceCandidateVerdicts: fold terminal verdicts; only VALID/REPAIRED confirmed
 {
   const red = reduceCandidateVerdicts([

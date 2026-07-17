@@ -27,9 +27,12 @@ and DEMOTED under dropped/; neither is read here):
       "on_kev": false,
       "risk": {"risk_score": 0.56, "risk_bucket": "short_term"},
       "report_fields": {
-        "title": "...", "affected": ["..."], "description": "...", "evidence": "...",
-        "impact": "...", "recommendation": "...", "poc_request": "...", "test_method": "..."
-      }
+        "title": "...", "affected": ["..."], "description": "...",
+        "impact": "...", "recommendation": "..."
+      },
+      "poc": [                                    # ordered PoC steps (merges evidence/poc_request/screenshot)
+        {"description": "...", "command": "...", "image_url": "..."}
+      ]
     }
 
 engagement-meta.json supplies the `engagement` block (title/version/etc.) plus any
@@ -74,27 +77,19 @@ def load_json(path):
         return json.load(f)
 
 
-def format_poc(poc):
-    """Deterministic monospace render of the reproducible PoC (prerequisites +
-    entry-point-first / result-last steps) for the PDF's poc_request field."""
-    lines = []
-    prereq = poc.get("prerequisites") or []
-    if prereq:
-        lines.append("Prerequisites:")
-        for p in prereq:
-            item = p.get("item", "")
-            reason = p.get("reason")
-            lines.append(f"  - {item}" + (f" — {reason}" if reason else ""))
-        lines.append("")
-    steps = sorted(poc.get("steps") or [], key=lambda s: s.get("n", 0))
-    lines.append("Step-by-step:")
-    for i, s in enumerate(steps):
-        n = s.get("n", i + 1)
-        action = s.get("action", "")
-        expected = s.get("expected")
-        tag = "   [RESULT]" if i == len(steps) - 1 else ""
-        lines.append(f"  {n}. {action}" + (f"  =>  {expected}" if expected else "") + tag)
-    return "\n".join(lines)
+def normalize_poc(poc):
+    """The reproducible PoC as an ordered list of {description, command, image_url}
+    step dicts (only-if-present keys). Returns [] for anything else."""
+    out = []
+    if not isinstance(poc, list):
+        return out
+    for s in poc:
+        if not isinstance(s, dict):
+            continue
+        step = {k: s[k] for k in ("description", "command", "image_url") if s.get(k) not in (None, "")}
+        if step:
+            out.append(step)
+    return out
 
 
 def finding_from_verdict(v):
@@ -113,22 +108,18 @@ def finding_from_verdict(v):
                          ("cwe", "cwe"), ("owasp", "owasp")):
         if v.get(k_src) is not None:
             out[k_dst] = v[k_src]
-    for k in ("affected", "description", "evidence", "impact", "recommendation",
-              "poc_request", "test_method", "calibration", "ease_of_exploitation", "references"):
+    for k in ("affected", "description", "impact", "recommendation",
+              "calibration", "ease_of_exploitation", "references"):
         if rf.get(k) is not None:
             out[k] = rf[k]
     if v.get("cves"):
         out["cves"] = v["cves"]
-    # Reproducible PoC (prerequisites + step-by-step) — structured in the JSON,
-    # and rendered deterministically into poc_request for the PDF (overrides any
-    # agent-supplied poc_request so the rendered recipe is always the validated one).
-    poc = v.get("poc")
-    if poc and (poc.get("steps") or poc.get("prerequisites")):
+    # Reproducible PoC — an ordered list of {description, command, image_url} steps
+    # (merges the former evidence / poc_request / screenshot fields). The validated
+    # recipe from the verdict is the canonical one rendered by the PDF generator.
+    poc = normalize_poc(v.get("poc"))
+    if poc:
         out["poc"] = poc
-        out["poc_reproduced"] = bool(v.get("poc_reproduced"))
-        out["poc_request"] = format_poc(poc)
-        if v.get("observed_result"):
-            out["observed_result"] = v["observed_result"]
     return out
 
 

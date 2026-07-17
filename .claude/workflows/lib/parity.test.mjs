@@ -43,12 +43,12 @@ function extractFn(src, name) {
 // DIFFER: each file lists only what it actually embeds (no dead-code forced).
 const LANE = ['nvdKevText', 'terminalSubdir', 'buildInterim', 'checksPrompt', 'refuterPrompt', 'probePrompt', 'reproPrompt', 'curePrompt', 'CHECKS_SCHEMA', 'VOTE_SCHEMA', 'PROBE_SCHEMA', 'REPRO_SCHEMA'];
 const VERDICT = ['severityBand', 'riskBucket', 'riskScore', 'exposureFor', 'normVector', 'cveReconcile', 'EVIDENCE_MANIFEST', 'evidenceComplete', 'computeVerdict', 'finalPoc', 'round4', 'TIER_WEIGHTS', 'RISK_THRESHOLDS'];
-const GOVERNOR = ['cureLoopDecision', 'coverageDecision', 'shouldInlineValidate', 'backstopDecision', 'assessBudget', 'summarizeLoopCounts', 'reduceCandidateVerdicts'];
+const GOVERNOR = ['cureLoopDecision', 'coverageDecision', 'shouldInlineValidate', 'backstopDecision', 'assessBudget', 'convergenceDone', 'nextDryStreak', 'summarizeLoopCounts', 'reduceCandidateVerdicts'];
 const EXPECT = {
   'validate-findings.js': ['severityBand', 'riskBucket', 'riskScore', 'exposureFor', 'normVector', 'cveReconcile', 'EVIDENCE_MANIFEST', 'evidenceComplete', 'computeVerdict', 'finalPoc', 'round4', ...LANE],
   // coordinator-loop embeds the WHOLE interleaved validation lane (verdict + governor + prompts).
   'coordinator-loop.js': [...VERDICT, ...GOVERNOR, ...LANE],
-  'pentest-engagement.js': ['severityBand', 'normalizeAssess', 'reconcileAssessed', 'finalizeGate', 'bumpVersion', 'scopeDiff', 'resolveEngagementMeta', 'detectAllowlist', 'resolveGeoZones'],
+  'pentest-engagement.js': ['severityBand', 'normalizeAssess', 'reconcileAssessed', 'finalizeGate', 'bumpVersion', 'scopeDiff', 'resolveEngagementMeta', 'detectAllowlist', 'resolveGeoZones', 'resumeSchedule', 'classifyEngagement'],
 };
 
 // Scalar constants that must be identical everywhere they appear.
