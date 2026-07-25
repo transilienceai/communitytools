@@ -1,6 +1,6 @@
 ---
 name: firewall-review
-description: Claude-native firewall ruleset audit playbook — 17 vendor-agnostic detectors across FortiGate / PAN-OS / Cisco ASA·IOS / Azure NSG / AWS SG / iptables, with framework citations pinned to NIST CSF 2.0, PCI DSS v4.0.1, ISO/IEC 27001:2022, CIS Controls v8.1, and HIPAA. Static analysis only; produces audit-grade evidence with source-file + byte-offset + quoted-rule per finding.
+description: Claude-native firewall ruleset audit playbook — 22 detectors (17 vendor-agnostic across FortiGate / PAN-OS / Cisco ASA·IOS / Azure NSG / AWS SG / iptables, plus 5 FortiGate-specific), a 15-check semantic-check catalogue, and a CIS Fortinet FortiGate Benchmark pass. Framework citations pinned to NIST CSF 2.0, PCI DSS v4.0.1, ISO/IEC 27001:2022, CIS Controls v8.1, and HIPAA. Static analysis only; produces audit-grade evidence with source-file + byte-offset + quoted-rule per finding.
 ---
 
 # firewall-review
@@ -26,7 +26,7 @@ Forks may rename the persona via `brand.yaml` (`persona_name` key). Default ship
 ## 5-phase pipeline
 
 1. **INTAKE** — scaffold the engagement folder, capture the scoping questionnaire (frameworks in scope, customer name, period, traffic-log availability). Canonical command spec: [`reference/commands/start.md`](reference/commands/start.md).
-2. **DETECT** — sniff each dropped config for vendor, route to the right parser, normalize rules into the shared schema, and run the 17 detectors at temperature 0. Canonical command spec: [`reference/commands/launch.md`](reference/commands/launch.md).
+2. **DETECT** — sniff each dropped config for vendor, route to the right parser, normalize rules into the shared schema, and run the 22 detectors at temperature 0. FortiGate configs additionally get the semantic-check catalogue pass and the CIS Fortinet FortiGate Benchmark. Canonical command spec: [`reference/commands/launch.md`](reference/commands/launch.md).
 3. **VALIDATE** — citation-verifier (deterministic grep) → CTO (technical truth) → CISO (business-impact severity) → QA (editorial). Same `launch.md` spec dispatches the chain.
 4. **REVIEW** — surface findings to the operator for triage (approve / edit / skip). Canonical command spec: [`reference/commands/review.md`](reference/commands/review.md).
 5. **REPORT** — render the audit-grade PDF (≤40 pages, brand-configurable) + Excel remediation tracker (6 sheets, Document Control first) + chain-of-custody manifest. Canonical command spec: [`reference/commands/report.md`](reference/commands/report.md).
@@ -44,6 +44,9 @@ Skills are reference material for transferable knowledge — read them when you 
 | Adding a framework citation | `reference/compliance/<framework>.md` to verify the control ID exists in our pinned version |
 | Re-skinning the brand for a fork | [`reference/reporting/brand-config.md`](reference/reporting/brand-config.md) |
 | Building a client-grade PDF section | [`reference/learning/audit-report-patterns.md`](reference/learning/audit-report-patterns.md) (Nipper-class reference) |
+| Running the FortiGate-specific config checks | `reference/detectors/{admin-timeout-excess,sslvpn-timeout-excess,super-admin-trusthost,utm-status-orphan,service-all-ports}.md` |
+| "What did we check on each device?" (auditable LLM pass) | [`reference/semantic/semantic-check-catalogue.md`](reference/semantic/semantic-check-catalogue.md) |
+| Checking a FortiGate against the CIS hardening baseline | [`reference/compliance/cis-fortigate-benchmark.md`](reference/compliance/cis-fortigate-benchmark.md) |
 
 For deterministic detail (LOC counts, exact parser logic) read the reference implementation; skills carry the "why" and the gotchas, not the line-by-line.
 
@@ -51,9 +54,10 @@ For deterministic detail (LOC counts, exact parser logic) read the reference imp
 
 ```
 reference/
-├── detectors/         17 vendor-agnostic rule-quality detectors (any-any-broadness, public-source-allow, admin-services-exposure, …)
+├── detectors/         22 detectors — 17 vendor-agnostic (any-any-broadness, public-source-allow, …) + 5 FortiGate-specific (admin-timeout-excess, sslvpn-timeout-excess, super-admin-trusthost, utm-status-orphan, service-all-ports)
+├── semantic/          15-check semantic-check catalogue — the auditable LLM coverage-matrix layer (SEM-*)
 ├── parsers/           7 vendor parsers (FortiGate, PAN-OS, Cisco ASA/IOS, Azure NSG, AWS SG, iptables) + content-signature vendor-sniff
-├── compliance/        4 framework skill files — NIST CSF 2.0, PCI DSS v4.0.1, ISO/IEC 27001:2022, CIS Controls v8.1
+├── compliance/        4 controls-framework files (NIST CSF 2.0, PCI DSS v4.0.1, ISO/IEC 27001:2022, CIS Controls v8.1) + CIS Fortinet FortiGate Benchmark
 ├── validation/        2 chain-aware validation passes — precedence-awareness + post-process-enrich
 ├── reporting/         4 deliverable renderers — report-writer-pdf, report-writer-excel, narrative-framer, brand-config
 ├── personas/          5 sub-agent role briefs — citation-verifier, cto-reviewer, ciso-reviewer, qa-reviewer, senior-pentester
