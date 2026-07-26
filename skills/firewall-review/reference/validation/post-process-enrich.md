@@ -11,6 +11,8 @@ description: Post-detection enrichment that assigns Confidence (High/Medium/Low)
 ## Role in the pipeline
 Runs between detection and rendering. Does not modify detector logic — operates on the serialized JSONL finding payload. Called before `apply_precedence_awareness` (precedence pass relies on the confidence/validation values that enrich sets). `compute_discarded_fps` is consumed by the Excel renderer to populate the dedicated "False Positives (Discarded)" sheet.
 
+`enrich()` is not the final claim-safety decision. Apply [`evidence-state-contract.md`](evidence-state-contract.md) after enrichment and citation verification. In particular, `shadow-rule`, `contradicting-rule`, and `unused-rule` must remain `Needs Review` whenever their required match, runtime, or observation-window evidence is incomplete, even if this module's detector-class table initially assigns higher confidence.
+
 ## What it does
 Three functions:
 

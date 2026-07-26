@@ -7,11 +7,15 @@ description: Renders the 6-sheet audit-grade remediation tracker XLSX deliverabl
 # Report Writer — Excel (remediation tracker)
 
 **Reference implementation:** `fwrr.report.excel.render_excel` in [firewall-review](https://github.com/ipunithgowda/firewall-review)
-**Version pin:** `report-writer-excel:0.2.0` {{VERIFY}} — no `VERSIONS.md` in repo; pin string not authoritative.
+**Version pin:** see [`../VERSIONS.md`](../VERSIONS.md)
 **CLI:** `scripts/render-xlsx.py <engagement-dir>`
+
+**Capability status:** implementation not shipped in `communitytools` and the cited repository was inaccessible during current validation. The details below are inherited implementation notes, not an execution result; see [`../IMPLEMENTATION_STATUS.md`](../IMPLEMENTATION_STATUS.md).
 
 ## Role in the pipeline
 Reads `findings.final.jsonl` (enriched with Confidence + Validation Status by `fwrr.validation.post_process.enrich`) and `Pre-requisites/scoping-questionnaire.yaml`, then emits one `.xlsx` to the engagement's `Deliverables/` directory.
+
+This document describes the current base renderer. For a customer-facing, single-file network-team comment workflow, layer [`network-team-review-workbook.md`](network-team-review-workbook.md) over this output. Do not describe that profile as native runtime behaviour until the renderer implements it.
 
 ## Sheet layout (in creation order — `render_excel()`, lines 100-113)
 
@@ -40,6 +44,7 @@ Built by `_build_limitations()`. Three-column table (`Category`, `What we couldn
 - Missing `findings.final.jsonl` → CLI exits 1 with `[err] ... missing`.
 - Empty findings list → workbook still emits; charts are suppressed (empty-range guards at lines 227 + 272).
 - Hostname extraction reads each parsed config to find `set hostname "..."`; OS errors are swallowed and the device is treated as "config not supplied".
+- The base tracker does not provide the complete rule inventory or the network-team justification/classification fields. Use the collaboration profile when those are required, and disclose the runtime implementation gap.
 
 ## Output filename convention
 `scripts/render-xlsx.py` builds `<customer-slug>-firewall-review_<YYYY-MM-DD>.xlsx` from the questionnaire's `engagement.client` plus the date embedded in the engagement folder name. If either piece is missing, falls back to `remediation-tracker.xlsx`. Writes into `<engagement>/Deliverables/` (or legacy lowercase `deliverables/` when only that exists).

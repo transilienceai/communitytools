@@ -65,7 +65,7 @@ Skills consumed by the cloud-agent task specifications under [`projects/rfp-3.2/
 | [`mobile-security`](mobile-security/SKILL.md) | Android + iOS VAPT (MASVS/MASTG) — static RE (Flutter AOT, IL2CPP, RN/Hermes, Mach-O/Swift), SAST, dynamic analysis (Frida/objection, TLS-pinning + root/jailbreak bypass), privacy | Mobile APK / AAB / IPA target |
 | [`social-engineering`](social-engineering/SKILL.md) | Phishing, pretexting, vishing, physical sec | People-in-scope authorized engagements |
 | [`dfir`](dfir/SKILL.md) | Forensic Sherlocks, network/memory/log analysis, AD attack detection | Defensive / IR / Sherlock challenge |
-| [`firewall-review`](firewall-review/SKILL.md) | Static firewall ruleset audit (FortiGate, PAN, ASA, NSG, SG, iptables) | Firewall config provided |
+| [`firewall-review`](firewall-review/SKILL.md) | Evidence-safe static firewall audit methodology, custom policy checks, and consolidated Excel review specification; runtime separate | Firewall config or rule-review reporting request |
 | [`cloud-defense`](cloud-defense/SKILL.md) | Detect & break the cloud post-compromise chain (AWS/Azure/GCP): per-stage log signals + hardening controls | Cloud remediation, detection engineering, or blue-team posture review (pairs with cloud-containers) |
 | [`pci-secure-software`](pci-secure-software/SKILL.md) | Automated PCI Secure Software Standard (SSS) v2.0 readiness gap-assessment from source + docs — deterministic Test-Requirement catalog, evidence-bound per-requirement verdicts with blind refutation + citation verification, Transilience gap report | A PCI SSS v2.0 / Secure Software Standard readiness or gap assessment of an application |
 

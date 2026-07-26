@@ -1,13 +1,13 @@
 ---
 name: firewall-review
-description: Claude-native firewall ruleset audit playbook — 22 detectors (17 vendor-agnostic across FortiGate / PAN-OS / Cisco ASA·IOS / Azure NSG / AWS SG / iptables, plus 5 FortiGate-specific), a 15-check semantic-check catalogue, and a CIS Fortinet FortiGate Benchmark pass. Framework citations pinned to NIST CSF 2.0, PCI DSS v4.0.1, ISO/IEC 27001:2022, CIS Controls v8.1, and HIPAA. Static analysis only; produces audit-grade evidence with source-file + byte-offset + quoted-rule per finding.
+description: Evidence-safe firewall ruleset audit reference specification — 22 documented detector patterns (17 vendor-agnostic plus 5 FortiGate-specific), a 15-check semantic catalogue, CIS Fortinet FortiGate Benchmark guidance, a custom customer-policy benchmark, and a consolidated network-team Excel review profile. Separates configuration-proven findings from runtime, business-context, and external-evidence gaps; every static claim requires source-file + line/offset + quoted-rule evidence.
 ---
 
 # firewall-review
 
 ## About this skill
 
-A transferable knowledge layer for driving a forensically-defensible firewall ruleset audit end-to-end. Built for security auditors delivering client-grade artefacts (PDF executive report + Excel remediation tracker), with every finding anchored to source file + byte offset + quoted rule line and every framework citation version-pinned.
+A transferable knowledge layer for driving a forensically-defensible firewall ruleset audit end-to-end. Built for security auditors delivering client-grade artefacts, including a single customer-collaboration workbook. Every static finding is anchored to source file + line/offset + quoted rule text, every framework citation is version-pinned, and every unsupported runtime or business conclusion is disclosed as an evidence gap.
 
 ## Persona — Argus
 
@@ -26,10 +26,10 @@ Forks may rename the persona via `brand.yaml` (`persona_name` key). Default ship
 ## 5-phase pipeline
 
 1. **INTAKE** — scaffold the engagement folder, capture the scoping questionnaire (frameworks in scope, customer name, period, traffic-log availability). Canonical command spec: [`reference/commands/start.md`](reference/commands/start.md).
-2. **DETECT** — sniff each dropped config for vendor, route to the right parser, normalize rules into the shared schema, and run the 22 detectors at temperature 0. FortiGate configs additionally get the semantic-check catalogue pass and the CIS Fortinet FortiGate Benchmark. Canonical command spec: [`reference/commands/launch.md`](reference/commands/launch.md).
-3. **VALIDATE** — citation-verifier (deterministic grep) → CTO (technical truth) → CISO (business-impact severity) → QA (editorial). Same `launch.md` spec dispatches the chain.
+2. **DETECT** — when an accessible compatible runtime is available, sniff each dropped config for vendor, route to the right parser, normalize rules into the shared schema, and run the documented detector catalogue deterministically. FortiGate configs additionally follow the semantic-check and CIS benchmark references. Canonical command spec: [`reference/commands/launch.md`](reference/commands/launch.md).
+3. **VALIDATE** — citation-verifier (deterministic quote check) → [`evidence-state contract`](reference/validation/evidence-state-contract.md) → CTO (technical truth) → CISO (business-impact severity) → QA (editorial). Same `launch.md` spec dispatches the chain.
 4. **REVIEW** — surface findings to the operator for triage (approve / edit / skip). Canonical command spec: [`reference/commands/review.md`](reference/commands/review.md).
-5. **REPORT** — render the audit-grade PDF (≤40 pages, brand-configurable) + Excel remediation tracker (6 sheets, Document Control first) + chain-of-custody manifest. Canonical command spec: [`reference/commands/report.md`](reference/commands/report.md).
+5. **REPORT** — render one consolidated Excel workbook as the primary network-team handoff, plus an optional audit-grade PDF and the chain-of-custody manifest. When customer collaboration is in scope, the workbook opens on the filterable `Network Team Review` sheet and carries all supporting detail in the same file. Canonical specs: [`reference/commands/report.md`](reference/commands/report.md) and [`reference/reporting/network-team-review-workbook.md`](reference/reporting/network-team-review-workbook.md).
 
 ## When to invoke a sub-skill
 
@@ -40,26 +40,30 @@ Skills are reference material for transferable knowledge — read them when you 
 | Operator drops a config you haven't seen before | [`reference/parsers/vendor-sniff.md`](reference/parsers/vendor-sniff.md) (sniff signatures) → relevant `reference/parsers/<vendor>-parser.md` |
 | Operator asks "why is this severity Medium not Critical?" | [`reference/validation/precedence-awareness.md`](reference/validation/precedence-awareness.md) + [`reference/validation/post-process-enrich.md`](reference/validation/post-process-enrich.md) |
 | Authoring a new detector | `reference/detectors/<closest-existing>.md` as template + [`reference/core/schema.md`](reference/core/schema.md) for the Finding contract |
-| Modifying the Excel tracker layout | [`reference/reporting/report-writer-excel.md`](reference/reporting/report-writer-excel.md) (current 6-tab + 28-column layout) |
+| Modifying the base Excel renderer | [`reference/reporting/report-writer-excel.md`](reference/reporting/report-writer-excel.md) (current 6-tab + 28-column implementation) |
+| Customer asks for one Excel file in a network-team comment format | [`reference/reporting/network-team-review-workbook.md`](reference/reporting/network-team-review-workbook.md) |
+| Deciding whether the evidence supports a claim | [`reference/validation/evidence-state-contract.md`](reference/validation/evidence-state-contract.md) |
 | Adding a framework citation | `reference/compliance/<framework>.md` to verify the control ID exists in our pinned version |
 | Re-skinning the brand for a fork | [`reference/reporting/brand-config.md`](reference/reporting/brand-config.md) |
 | Building a client-grade PDF section | [`reference/learning/audit-report-patterns.md`](reference/learning/audit-report-patterns.md) (Nipper-class reference) |
 | Running the FortiGate-specific config checks | `reference/detectors/{admin-timeout-excess,sslvpn-timeout-excess,super-admin-trusthost,utm-status-orphan,service-all-ports}.md` |
 | "What did we check on each device?" (auditable LLM pass) | [`reference/semantic/semantic-check-catalogue.md`](reference/semantic/semantic-check-catalogue.md) |
+| Customer asks for UAT-to-PROD, PCI/CDE, partner, or other custom rule checks | [`reference/semantic/custom-policy-benchmark.md`](reference/semantic/custom-policy-benchmark.md) |
 | Checking a FortiGate against the CIS hardening baseline | [`reference/compliance/cis-fortigate-benchmark.md`](reference/compliance/cis-fortigate-benchmark.md) |
+| Making a product/functionality claim about this package | [`reference/IMPLEMENTATION_STATUS.md`](reference/IMPLEMENTATION_STATUS.md) |
 
-For deterministic detail (LOC counts, exact parser logic) read the reference implementation; skills carry the "why" and the gotchas, not the line-by-line.
+When a compatible runtime is accessible, verify deterministic details against its pinned commit. Otherwise treat this package as methodology and reference guidance; do not infer code coverage from the skill catalogue.
 
 ## Catalogue
 
 ```
 reference/
-├── detectors/         22 detectors — 17 vendor-agnostic (any-any-broadness, public-source-allow, …) + 5 FortiGate-specific (admin-timeout-excess, sslvpn-timeout-excess, super-admin-trusthost, utm-status-orphan, service-all-ports)
-├── semantic/          15-check semantic-check catalogue — the auditable LLM coverage-matrix layer (SEM-*)
+├── detectors/         22 detector references — 17 vendor-agnostic + 5 FortiGate-specific
+├── semantic/          15-check semantic catalogue + data-driven customer policy benchmark
 ├── parsers/           7 vendor parsers (FortiGate, PAN-OS, Cisco ASA/IOS, Azure NSG, AWS SG, iptables) + content-signature vendor-sniff
 ├── compliance/        4 controls-framework files (NIST CSF 2.0, PCI DSS v4.0.1, ISO/IEC 27001:2022, CIS Controls v8.1) + CIS Fortinet FortiGate Benchmark
-├── validation/        2 chain-aware validation passes — precedence-awareness + post-process-enrich
-├── reporting/         4 deliverable renderers — report-writer-pdf, report-writer-excel, narrative-framer, brand-config
+├── validation/        2 chain-aware passes + the evidence-state claim-safety contract
+├── reporting/         4 renderer references + the consolidated network-team workbook profile
 ├── personas/          5 sub-agent role briefs — citation-verifier, cto-reviewer, ciso-reviewer, qa-reviewer, senior-pentester
 ├── core/              Canonical NormalizedRule + Finding + ChainOfCustody data contracts (schema.md)
 ├── commands/          5 slash-command specifications — start, launch, review, report, pending
@@ -74,7 +78,7 @@ This skill audits a firewall/appliance **config statically**. To actively TEST a
 
 ## Reference implementation
 
-These skills are abstracted from the [firewall-review](https://github.com/ipunithgowda/firewall-review) tool's runtime catalogue. The Python implementation (parsers, detectors, validation, reporting code) lives there; this skill collection is the transferable knowledge layer.
+This repository ships the transferable Markdown knowledge layer, not the cited Python runtime. Existing pages attribute their implementation details to [firewall-review](https://github.com/ipunithgowda/firewall-review), but that repository was not accessible during this contribution's validation. Read [`reference/IMPLEMENTATION_STATUS.md`](reference/IMPLEMENTATION_STATUS.md) before making functionality or replacement claims.
 
 ## License note
 

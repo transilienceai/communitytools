@@ -1,6 +1,6 @@
 ---
 name: precedence-awareness
-description: Post-detection pass that downgrades findings whose primary affected rule is dead code due to an earlier explicit-deny rule in the same chain. Detectors evaluate rules in isolation and don't know the chain order; this pass reconstructs execution order, finds allow rules whose source/destination/ports are fully covered by an earlier deny in the same (vendor, chain), and one-step-downgrades any finding whose first affected_rule_id matches.
+description: Post-detection pass that identifies possible unreachable allows based on the match dimensions modeled by the current implementation. Because protocol and other platform semantics are not fully evaluated, its results are conservative candidates that lower confidence and require review, not proof that a rule is dead code.
 ---
 
 # Precedence-Awareness Pass
@@ -14,7 +14,7 @@ Runs after `enrich()` (post_process) and before rendering. Mutates the in-memory
 ## What it does
 Two algorithmic stages:
 
-**1. Identify shadowed allows (`_shadowed_allow_ids`).** Group `rules` by `(vendor, chain)` where `chain` is extracted from the `scope` string (`chain:<chain-id>` token, lowercased; falls back to the full scope when no chain token is present). Within each group, sort by `(priority or 0, source_lineno or 0)` — same fallback semantics as `shadow_rule.py`. For each allow rule, walk every earlier rule in execution order; if an earlier rule has `action in {"deny", "drop", "reject"}` and its `source` / `destination` / `destination_ports` form a superset of the allow's, mark the allow as shadowed and stop scanning earlier rules for that allow.
+**1. Identify possible shadowed allows (`_shadowed_allow_ids`).** Group `rules` by `(vendor, chain)` where `chain` is extracted from the `scope` string (`chain:<chain-id>` token, lowercased; falls back to the full scope when no chain token is present). Within each group, sort by `(priority or 0, source_lineno or 0)` — same fallback semantics as `shadow_rule.py`. For each allow rule, walk every earlier rule in execution order; if an earlier rule has `action in {"deny", "drop", "reject"}` and its modeled `source` / `destination` / `destination_ports` form a superset of the allow's, record a candidate and stop scanning earlier rules for that allow.
 
 **2. Downgrade matching findings (`apply_precedence_awareness`).** For each finding, look at `affected_rule_ids[0]` (the primary rule). If that id is in the shadowed set, apply the `_DOWNGRADE` ladder:
 
@@ -36,13 +36,13 @@ Containment helpers used by the cover check:
 - `rules: list[dict]` — serialized NormalizedRule payload. Reads `vendor`, `scope`, `action`, `priority`, `source_lineno`, `source`, `destination`, `destination_ports`, `rule_id`.
 
 ## Outputs
-Returns the same `findings` list (mutated). Side effects per shadowed finding:
+Returns the same `findings` list (mutated). Side effects per candidate finding:
 - `severity` -> next-lower step on the ladder (skipped if already Info / RequiresManualReview / unrecognized).
 - `description` -> appended with `_PRECEDENCE_NOTE`: `" [Precedence note: this rule appears unreachable because an earlier deny in the same chain already matches. Severity auto-downgraded.]"` (idempotent — checks the stripped form is not already present).
 - `confidence` -> `"Low"`.
 - `validation_status` -> `"Needs Review"`.
 
-If `_shadowed_allow_ids` returns an empty set, the function returns immediately with no mutation.
+If `_shadowed_allow_ids` returns an empty set, the function returns immediately with no mutation. A non-empty set is not sufficient for a confirmed shadow finding; apply the evidence-state contract and validate the missing match dimensions before remediation.
 
 ## Gotchas / failure modes
 - **Only the first `affected_rule_ids` entry is checked.** A finding affecting multiple rules where only the secondary is shadowed will not be downgraded.
@@ -55,4 +55,4 @@ If `_shadowed_allow_ids` returns an empty set, the function returns immediately 
 ## When to modify
 - **New severity levels:** extend the `_DOWNGRADE` ladder. Decide explicitly whether to downgrade Info or RequiresManualReview — current spec leaves them alone.
 - **New deny synonyms:** add to `_DENY_ACTIONS` (currently `{"deny", "drop", "reject"}`).
-- **Tighter shadowing:** add protocol matching to `_covers` (today protocol is ignored — a deny on TCP can shadow an allow on UDP).
+- **Tighter shadowing:** add protocol, direction/zone, schedule, NAT, address-family, application, object-expansion, and platform-order semantics to `_covers`. Until then, classify results as conservative candidates.

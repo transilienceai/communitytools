@@ -47,7 +47,7 @@ No arguments. Claude infers the engagement directory from the most recently scaf
 
 ### Step 3 — Parse configs (deterministic)
 - Run: `bash -c "cd <engagement-dir> && python3.11 ../../scripts/detect.py ."`
-- The script walks `Pre-requisites/` (flat layout, plus any legacy per-vendor sub-folders), runs `_sniff.detect_vendor()` on every file, picks the right parser per vendor, normalizes every rule into `NormalizedRule` schema, runs all 17 detectors at temperature 0, and writes `findings.draft.jsonl`.
+- A compatible runtime should walk `Pre-requisites/` (flat layout, plus any legacy per-vendor sub-folders), run `_sniff.detect_vendor()` on every file, select the parser, normalize every rule into `NormalizedRule`, execute the documented 22-detector catalogue deterministically (17 vendor-agnostic plus 5 FortiGate-specific where applicable), and write `findings.draft.jsonl`. The runtime is not shipped in `communitytools`; verify its implementation commit before running this command.
 - Report the finding count and detectors-fired list in chat.
 
 **Partial-export guard:** after the parse completes, grep each config under `Pre-requisites/` (any depth) for the vendor's policy-block anchor (FortiGate: `^config firewall policy`; PAN-OS: `<rulebase>`; Cisco ASA: `access-list`). If any config has ZERO matches, it is an incomplete export — flag it to the operator immediately with the likely reason and remediation. Common patterns:
@@ -114,5 +114,7 @@ Next: type /review to triage in chat.
 
 ## Hard rules
 - Detector output is deterministic — never edit or re-order it.
+- Apply [`../validation/evidence-state-contract.md`](../validation/evidence-state-contract.md) before a finding is labelled Confirmed. Runtime-, business-, and external-evidence dependencies stay `Needs Review` / `CANT-TELL` and enter the Evidence Gaps ledger.
+- “All enabled policies assessed” means every enabled parsed rule has an assessment status and the parser inventory reconciles; do not claim complete coverage for deferred, partial, or unsupported inputs.
 - Never surface a finding whose citation-verifier failed; quarantine is final.
 - Held findings (CTO uncertain) are NOT in `findings.final.jsonl` — they await human reviewer in `held/`.

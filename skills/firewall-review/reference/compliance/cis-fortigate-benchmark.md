@@ -6,6 +6,8 @@ description: Deterministic CIS Fortinet FortiGate Benchmark checker — 64 catal
 
 # CIS Fortinet FortiGate Benchmark
 
+**Capability status:** this page documents the catalogue described in PR #32. The inspector runtime and its test evidence are not shipped in `communitytools` and could not be independently executed during current validation; see [`../IMPLEMENTATION_STATUS.md`](../IMPLEMENTATION_STATUS.md).
+
 **Reference implementation:** `scripts/cis_fortigate.py` in [firewall-review](https://github.com/ipunithgowda/firewall-review)
 **Benchmark:** CIS Fortinet FortiGate Benchmark (CIS FortiOS)
 **API:** `run(config_text: str) -> {check_id: "PASSED" | "FAILED" | "WARNING"}`

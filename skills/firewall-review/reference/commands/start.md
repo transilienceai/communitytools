@@ -51,7 +51,7 @@ I'll parse it. Override only the lines you want to change.
   2. Engagement period          → H1 <YYYY>   (today's date defaults to first half)
   3. Regulatory frameworks      → NIST CSF 2.0 · PCI DSS v4.0.1 · ISO/IEC 27001:2022 · CIS Controls v8.1
                                   (add: HIPAA / GDPR · drop: any · or "all 4" to accept)
-  4. Traffic logs available?    → n   (lets unused-rule findings stay Informational)
+  4. Traffic logs available?    → n   (usage remains Needs Review; no zero-hit claim)
   5. Change tickets available?  → n   (or "embedded in rule comments" / "external dump")
   6. Out-of-scope zones         → none
 
