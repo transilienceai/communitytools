@@ -17,6 +17,7 @@ Run before spawning any executor batch. Write the checklist to `attack-chain.md`
 - [ ] All discovered hostnames added to `/etc/hosts`.
 - [ ] Source vantage recorded
 - [ ] Any extra egress (VM/proxy/VPN) registered via provision_vantage.sh / register_source_ip.py
+- [ ] Every vantage you intend to *count* is VERIFIED, not merely registered: an egress echo taken from that vantage (`curl -s ifconfig.me` run THERE) piped through `python3 tools/verify_source_ip.py --ip <ip> --role attack-vm|vpn --region <exit-geography> --evidence-file - --engagement <root>`. Registration alone writes `verified:false` and can never close a reachability negative. `region` = the real exit geography; one egress under two region spellings still counts once. `provision_vantage.sh --ssh-ready` does this for you on gcp.
 - [ ] On a filtered/dark signature (existence-confirmed but dark from the primary vantage), first DIAGNOSE: `python3 tools/vantage_diagnose.py --ip <host> [--json]` classifies **down | geo-fence | ip-allowlist | reachable** and runs the cloud-auth precheck (so "no vantage" is only ever concluded when no cloud provider is authed). check-host.net (active third-party probe) stays OFF unless RoE permits `--allow-third-party-probe`.
 - [ ] Provision a second-geography vantage (provision_vantage.sh) and re-probe the filtered hosts ONLY for a geo-fence/ip-allowlist classification AND only when cloud auth exists. Never assert "no external surface" without naming the vantage geographies tested AND the diagnosis.
 

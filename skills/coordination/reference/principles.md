@@ -48,6 +48,8 @@ Validators receive evidence only — never the coordinator's reasoning, never th
 
 **Rule — register every egress vantage.** Every source/egress IP the engagement uses — the local runner, any attack VM, proxy, or VPN — must be registered via `tools/register_source_ip.py` (or `tools/provision_vantage.sh`, which registers automatically), so `source-ips.jsonl` is a complete record of where traffic originated.
 
+**Rule — registered is not verified.** Registration records *intent* and writes `verified:false`; it proves nothing, because nothing sent a packet from that vantage. Only `tools/verify_source_ip.py` writes `verified:true`, and only against an **egress echo taken FROM that vantage** whose stored output contains the IP being claimed. `tools/coverage_gate.py` counts a region toward a `min_vantages` reachability negative only from a vantage-role row (`attack-vm`/`vpn`) that is verified with readable probe evidence, and dedupes by observed IP first — so one egress re-registered under two region names is one vantage, and a provider API reporting "your VM has address X" is not evidence (it proves allocation, not egress). The `region` you record must be the real **exit** geography.
+
 ## CLI tools first, library APIs second
 
 For Active Directory / Kerberos / SMB / LDAP work, prefer CLI tools (impacket secretsdump, ticketer, getST, getTGT, smbclient; bloodyAD; certipy) over writing custom Python against library internals. Only drop to Python when CLI can't do what you need — and read the library source first. The same rule holds for web/API work (see "Real tools before hand-rolled HTTP").

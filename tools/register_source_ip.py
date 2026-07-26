@@ -14,6 +14,17 @@ egress), ``detected`` (best-effort auto-scrape — written by activity-logger.py
 here). Every egress vantage MUST be registered — see
 skills/coordination/reference/principles.md.
 
+REGISTERED IS NOT VERIFIED. This tool writes ``verified: false``. It records that
+we *intend* to egress from an IP; it proves nothing, because nothing here sent a
+packet from that vantage. Only ``tools/verify_source_ip.py`` writes
+``verified: true``, and only against an on-disk probe-evidence file that actually
+contains the IP it claims. ``tools/coverage_gate.py`` counts a row as a distinct
+vantage ONLY when it is verified, carries readable probe evidence, and has a
+vantage role — so a registration alone can never satisfy a ``min_vantages``
+reachability negative. This split exists because the old unconditional
+``verified: true`` meant two ``--dry-run`` provisions with different ``--region``
+values could close a reachability cell having sent zero packets.
+
 Usage:
     python3 tools/register_source_ip.py <ip> --role <role> \
         [--provider gcp|aws|az|...] [--region <r>] [--note <text>] \
@@ -68,7 +79,10 @@ def main():
         "region": args.region,
         "note": args.note,
         "source": "register_source_ip",
-        "verified": True,
+        # Intent, not proof. tools/verify_source_ip.py is the only writer of
+        # verified:true, and only with probe_evidence backing it.
+        "verified": False,
+        "probe_evidence": "",
     }
     try:
         append_jsonl(path, obj)

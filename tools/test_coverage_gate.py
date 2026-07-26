@@ -90,11 +90,33 @@ def write_tool_md(asset_dir, e_id, n=1):
         f.write(f"# probe\nExperiment: {e_id}\n\n## Input\nnmap ...\n\n## Output\nclean\n")
 
 
-def register_region(asset_dir, region, verified=True):
+_REGION_IPS = {}
+
+
+def register_region(asset_dir, region, verified=True, ip=None, evidence=True,
+                    role="attack-vm"):
+    """Write one source-ips row for `region`.
+
+    Defaults mirror a REAL verified vantage: a distinct egress IP per region plus
+    an on-disk probe-evidence file containing that IP. Both are required by
+    coverage_gate.load_verified_regions — a row without evidence, or a second
+    region sharing an already-seen IP, must NOT count.
+    """
+    if ip is None:  # one distinct egress per region, as reality produces
+        ip = _REGION_IPS.setdefault(region, f"203.0.113.{len(_REGION_IPS) + 10}")
+    row = {"ip": ip, "role": role, "region": region, "verified": verified,
+           "probe_evidence": ""}
+    if evidence:
+        rel = os.path.join("logs", "activity", "vantage-probes", f"{ip}.txt")
+        p = os.path.join(asset_dir, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w") as f:
+            f.write(ip + "\n")
+        row["probe_evidence"] = rel
     path = os.path.join(asset_dir, "logs", "activity", "source-ips.jsonl")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "a") as f:
-        f.write(json.dumps({"ip": "1.2.3.4", "role": "attack-vm", "region": region, "verified": verified}) + "\n")
+        f.write(json.dumps(row) + "\n")
 
 
 def write_validated(asset_dir, finding_id, class_id, unit_refs, asset_tag, verdict="VALID"):
@@ -241,19 +263,23 @@ def test_reachability_negative():
     RC = "XC-SUBDOMAIN-ORIGIN"
     assert CLS[RC]["negative_kind"] == "reachability" and CLS[RC]["min_vantages"] == 2
 
-    def build(regions, verified_flags):
+    def build(regions, verified_flags, **kw):
         tmp = tempfile.mkdtemp()
         d = web_asset(tmp, "webA", units=[{"unit_id": "u1", "type": "endpoint",
                       "address": "https://api.demo.test/x", "flags": ["input_sink"]}], apex="demo.test")
         cells = load_cells(tmp, d)
         sub = next(c for c in cells if c["class_id"] == RC)
         for r, v in zip(regions, verified_flags):
-            register_region(d, r, verified=v)
+            register_region(d, r, verified=v, **kw)
         append_experiment(d, "E-001")
         entry = {"key": sub["scope_key"], "status": "covered_negative", "e_id": "E-001",
                  "negative_kind": "reachability", "vantages": regions}
         write_coverage(d, {RC: [entry]})
         return d
+
+    def insufficient(d):
+        _, _, m = gate(d, single=True)
+        return {r["reason"] for r in m["missing_cells"] if r["class_id"] == RC}
 
     # 2 verified regions -> the cell passes
     d = build(["eu-west", "us-east"], [True, True])
@@ -268,9 +294,49 @@ def test_reachability_negative():
 
     # 2 regions but one verified:false -> insufficient
     d = build(["eu-west", "us-east"], [True, False])
-    _, _, m = gate(d, single=True)
-    reasons = {r["reason"] for r in m["missing_cells"] if r["class_id"] == RC}
+    reasons = insufficient(d)
     assert "insufficient_vantages" in reasons, f"verified:false must be excluded: {reasons}"
+
+    # --- the fabrication holes these rules exist to close ---------------------
+
+    # verified:true but NO probe evidence on disk -> insufficient.
+    # This is the old hole: register_source_ip.py used to write verified:true
+    # unconditionally (even under --dry-run), so two registrations with different
+    # --region values closed this cell having sent zero packets.
+    d = build(["eu-west", "us-east"], [True, True], evidence=False)
+    reasons = insufficient(d)
+    assert "insufficient_vantages" in reasons, \
+        f"verified:true without probe evidence must not count: {reasons}"
+
+    # evidence file exists but does not contain the row's own IP -> insufficient.
+    tmp = tempfile.mkdtemp()
+    d = web_asset(tmp, "webA", units=[{"unit_id": "u1", "type": "endpoint",
+                  "address": "https://api.demo.test/x", "flags": ["input_sink"]}], apex="demo.test")
+    sub = next(c for c in load_cells(tmp, d) if c["class_id"] == RC)
+    for r, ip in (("eu-west", "203.0.113.201"), ("us-east", "203.0.113.202")):
+        register_region(d, r, ip=ip)
+        rel = os.path.join("logs", "activity", "vantage-probes", f"{ip}.txt")
+        with open(os.path.join(d, rel), "w") as f:
+            f.write("curl: (7) Failed to connect\n")  # a real echo would print the IP
+    append_experiment(d, "E-001")
+    write_coverage(d, {RC: [{"key": sub["scope_key"], "status": "covered_negative",
+                             "e_id": "E-001", "negative_kind": "reachability",
+                             "vantages": ["eu-west", "us-east"]}]})
+    reasons = insufficient(d)
+    assert "insufficient_vantages" in reasons, \
+        f"evidence not naming the row's IP must not count: {reasons}"
+
+    # one egress re-registered under two region spellings -> ONE vantage.
+    d = build(["us-east", "us-east-2"], [True, True], ip="203.0.113.77")
+    reasons = insufficient(d)
+    assert "insufficient_vantages" in reasons, \
+        f"same IP under two region names must dedupe to one vantage: {reasons}"
+
+    # a verified proxy is not a geography -> does not count toward min_vantages.
+    d = build(["eu-west", "us-east"], [True, True], role="proxy")
+    reasons = insufficient(d)
+    assert "insufficient_vantages" in reasons, \
+        f"role=proxy must not count as an attacking vantage: {reasons}"
 
 
 def test_active_probe_negative_needs_corroborator():

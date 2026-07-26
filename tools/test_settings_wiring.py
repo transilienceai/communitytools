@@ -60,6 +60,7 @@ def test_helper_script_permissions_present():
     allow = settings.get("permissions", {}).get("allow", [])
     for perm in (
         "Bash(python3 tools/register_source_ip.py:*)",
+        "Bash(python3 tools/verify_source_ip.py:*)",
         "Bash(bash tools/provision_vantage.sh:*)",
     ):
         assert perm in allow, f"permissions.allow must contain {perm!r}"

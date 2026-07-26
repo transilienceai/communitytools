@@ -22,6 +22,11 @@ assert r["role"] == "attack-vm", r
 assert r["provider"] == sys.argv[2], r
 assert r["region"] == "asia-south1", r
 assert r["ip"] == "203.0.113.7", r
+# A dry run must never be able to manufacture a vantage: registration is intent,
+# not proof. Two dry-runs with different --region values used to close a
+# min_vantages:2 reachability cell having sent zero packets.
+assert r["verified"] is False, f"dry-run must register verified:false, got {r}"
+assert r.get("probe_evidence", "") == "", r
 PY
   then echo "PASS $prov dry-run"; else echo "FAIL $prov: source-ips content wrong"; fail=1; fi
   rm -rf "$tmp"

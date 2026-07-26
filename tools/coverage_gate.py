@@ -17,7 +17,12 @@ PASS predicates per applicable cell:
   covered_negative   -> {status:covered_negative, e_id in experiments.md}, not contradicted
                         by a VALID finding, and per negative_kind:
                           reachability  -> >= min_vantages distinct VERIFIED regions in
-                                           source-ips.jsonl (verified:false excluded)
+                                           source-ips.jsonl. A region counts only from a
+                                           vantage-role row (attack-vm|vpn) that is
+                                           verified:true AND whose probe_evidence file
+                                           exists and contains that row's own IP; regions
+                                           are deduped by observed IP first. Registration
+                                           alone never counts — see verify_source_ip.py.
                           active_probe  -> a non-agent corroborator (tools/*.md 'Experiment:'
                                            header, or an existing 'corroborator' file)
                           none          -> the experiment reference alone suffices
@@ -117,8 +122,50 @@ def load_tool_eids(asset_dir: str) -> set:
     return ids
 
 
+# Only a real attacking position can be a distinct vantage. A proxy is not a
+# geography; the primary runner is the baseline the second vantage is compared
+# against, not a second vantage itself.
+VANTAGE_ROLES = {"attack-vm", "vpn"}
+
+
+def _probe_evidence_ok(row, root) -> bool:
+    """True iff the row's probe_evidence names a readable file that actually
+    contains the row's own IP — the same corroborator-file pattern as
+    _is_corroborated. Written only by tools/verify_source_ip.py."""
+    rel = row.get("probe_evidence")
+    ip = row.get("ip")
+    if not rel or not ip:
+        return False
+    path = os.path.join(root, rel)
+    if not os.path.isfile(path):
+        return False
+    try:
+        if os.path.getsize(path) <= 0:
+            return False
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            return ip in fh.read()
+    except OSError:
+        return False
+
+
 def load_verified_regions(dirs) -> set:
-    regions = set()
+    """Regions that count as distinct vantages for a reachability negative.
+
+    A row counts only when ALL of these hold:
+      * role is a vantage role (attack-vm | vpn);
+      * verified is true AND probe_evidence names a readable file containing the
+        row's IP — "registered" is not "proven", and only verify_source_ip.py
+        can produce that pairing;
+      * region is non-empty.
+
+    Regions are deduped BY OBSERVED IP first, so re-registering one egress under
+    two region spellings ("us-east" and "us-east-2") cannot manufacture a second
+    vantage. First region seen for an IP wins.
+
+    Note this is deliberately region-keyed, not ASN-keyed: eval_cell intersects
+    this set with the agent-authored entry["vantages"], which are region strings.
+    """
+    by_ip = {}
     for d in dirs:
         path = os.path.join(d, "logs", "activity", "source-ips.jsonl")
         if not os.path.isfile(path):
@@ -131,9 +178,14 @@ def load_verified_regions(dirs) -> set:
                 row = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if row.get("verified") and row.get("region"):
-                regions.add(row["region"])
-    return regions
+            if row.get("role") not in VANTAGE_ROLES:
+                continue
+            if not (row.get("verified") and row.get("region") and row.get("ip")):
+                continue
+            if not _probe_evidence_ok(row, d):
+                continue
+            by_ip.setdefault(row["ip"], row["region"])
+    return set(by_ip.values())
 
 
 # --- per-cell verdict --------------------------------------------------------

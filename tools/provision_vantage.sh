@@ -76,6 +76,27 @@ register() {  # register <ip> [role] [note]
     --note "${3:-provision_vantage ${name}}" --engagement "$engagement"
 }
 
+# verify_egress <ip> — prove the VM actually egresses from <ip> by echoing it
+# FROM the VM, then hand the raw output to verify_source_ip.py. Registration
+# alone is only intent (verified:false); this is what makes the vantage count
+# toward coverage_gate's min_vantages. Best-effort: a failed verification leaves
+# the vantage usable-but-unverified and never aborts provisioning.
+verify_egress() {
+  local vip="$1" echo_out=""
+  case "$provider" in
+    gcp) echo_out="$(gcloud compute ssh "$name" --zone "$region" \
+                       --command "curl -s --max-time 10 ifconfig.me || curl -s --max-time 10 https://api.ipify.org" \
+                       2>/dev/null || true)" ;;
+    *)   return 0 ;;   # aws/az have no uniform exec channel here; verify from the caller
+  esac
+  [[ -n "$echo_out" ]] || { echo "provision_vantage: egress echo empty; vantage stays unverified" >&2; return 0; }
+  printf '%s\n' "$echo_out" | python3 "$REPO_ROOT/tools/verify_source_ip.py" \
+    --ip "$vip" --role attack-vm --provider "$provider" --region "$region" \
+    --note "egress echo from ${name}" --evidence-file - --engagement "$engagement" \
+    >&2 || echo "provision_vantage: egress echo did not confirm ${vip}; vantage stays unverified" >&2
+  return 0
+}
+
 # ---------------------------------------------------------------------------
 # teardown: delete ONE VM by handle + append a role:decommissioned ledger line.
 # ---------------------------------------------------------------------------
@@ -187,5 +208,7 @@ if [[ "$ssh_ready" -eq 1 && "$provider" == "gcp" ]]; then
   for _ in $(seq 1 30); do
     gcloud compute ssh "$name" --zone "$region" --command "true" >/dev/null 2>&1 && break || sleep 5
   done
+  # Exec channel is up -> prove the egress so the vantage actually counts.
+  verify_egress "$ip"
 fi
 echo "provisioned ${provider} vantage: ip=${ip} handle=${handle} region=${region}"
