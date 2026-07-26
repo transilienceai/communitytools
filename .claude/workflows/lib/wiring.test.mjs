@@ -11,6 +11,7 @@ const read = (f) => readFileSync(join(wfDir, f), 'utf8');
 const pe = read('pentest-engagement.js');
 const cl = read('coordinator-loop.js');
 const vf = read('validate-findings.js');
+const mr = read('merge-reports.js');
 const pv = readFileSync(join(wfDir, '..', '..', 'tools', 'provision_vantage.sh'), 'utf8');
 const ciYml = readFileSync(join(wfDir, '..', '..', '.github', 'workflows', 'pentest-workflow-tests.yml'), 'utf8');
 
@@ -98,7 +99,20 @@ ok(/--role decommissioned/.test(pv) || /decommissioned "torn down/.test(pv), 'te
 ok(/tools\/coverage_gate\.py --engagement-dir/.test(pe), 'finalize runner runs coverage_gate.py --engagement-dir (deterministic gate)');
 ok(/tools\/network_coverage_map\.py --engagement-dir/.test(pe), 'finalize runner runs network_coverage_map.py before the gate (swept-host tail)');
 ok(/coverage_complete: \{ type: 'boolean'/.test(pe), 'FINALIZE_SCHEMA carries coverage_complete');
-ok(/finalizeGate\(\{ report_data_ok: r\.report_data_ok, renderGateOk, coverage_complete: r\.coverage_complete/.test(pe), 'the JS hard gate routes through finalizeGate incl. coverage_complete');
+ok(/finalizeGate\(\{ report_data_ok: r\.report_data_ok, report_data_lint_ok: r\.report_data_lint_ok, renderGateOk, coverage_complete: r\.coverage_complete/.test(pe), 'the JS hard gate routes through finalizeGate incl. report_data_lint_ok + coverage_complete');
+
+// P0 skill-gap tooling wiring (report_data_lint / netscan_guard / vantage_diagnose / deferred coverage)
+ok(/report_data_lint\.py/.test(pe), 'finalize runs report_data_lint.py as a hard gate before render');
+ok(/report_data_lint_ok: \{ type: 'boolean'/.test(pe), 'FINALIZE_SCHEMA carries report_data_lint_ok');
+ok(/netscan_guard\.py --xml '.*recon\/slice-\*-services\.xml'/.test(pe), 'finalize runs netscan_guard.py over the GUARANTEED slice service XMLs (not hosts/*/recon)');
+ok(/netscan_guard\.py --xml .*slice-\$\{idx\}-services\.xml/.test(pe), 'slice worker runs netscan_guard per-slice (isolated truncation check + --suppress-cves)');
+ok(/--suppress-cves/.test(pe), 'netscan_guard CVE-suppression runs before nvd-lookup enrichment');
+ok(/vantage_diagnose\.py --provider-auth/.test(pe), 'geo-escalation gates provisioning on the vantage_diagnose cloud-auth precheck');
+ok(/coverage_gate\.py --engagement-dir \$\{engagementDir\} --accept-deferrals/.test(pe), 'finalize coverage gate passes --accept-deferrals (substantiated deferrals finalize with caveat)');
+ok(/coverage_deferred: \{ type: 'number'/.test(pe), 'FINALIZE_SCHEMA carries coverage_deferred');
+// merge-reports: the same report_data_lint hard gate before render
+ok(/report_data_lint\.py/.test(mr), 'merge-reports runs report_data_lint.py before render');
+ok(/finalize\.report_data_lint_ok/.test(mr), 'merge-reports final gate requires report_data_lint_ok');
 ok(/const coverageComplete = wantReport \? \(report\.coverage_complete === true\) : true/.test(pe), 'WEB engagement_status derives from the gate (fails closed)');
 ok(/coverageComplete && convStatus === 'COMPLETE'/.test(pe), 'WEB COMPLETE requires the gate coverage_complete AND convergence (nothing resumable)');
 ok(/const netCoverageComplete = wantReport \? \(reportNet\.coverage_complete === true\) : true/.test(pe), 'NETWORK engagement_status derives from the gate (fails closed)');

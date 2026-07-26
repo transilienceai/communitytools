@@ -20,6 +20,7 @@ Test network infrastructure for vulnerabilities including network services, prot
 | **Sniffing** | Packet capture, credential harvesting, protocol analysis |
 | **DoS** | Resource exhaustion, amplification, application-layer |
 | **ICS/SCADA** | Modbus TCP, PLC exploitation, coil/register manipulation, session hijacking |
+| **Space / CCSDS** | Satellite telecommand framing (Space Packet + TC Transfer Frame), APID/SCID/VCID routing, VCFC sequencing, CRC-16/CCITT, ASCII `0x%02x:` command counters |
 | **UPnP / IoT / CPE** | rootDesc/SCPD enumeration, vendor SOAP info disclosure (`GetPassword`), command injection via vendor actions, cross-action auth-key reuse |
 | **Hardware / Embedded** | Logic captures (Saleae `.sal`), CAN/UART decoding, side-channel password recovery, legacy CPU errata, i386 tools via docker |
 
@@ -43,6 +44,7 @@ Test network infrastructure for vulnerabilities including network services, prot
 - `reference/sniffing-quickstart.md` - Network sniffing and capture
 - `reference/dos-quickstart.md` - DoS assessment
 - `reference/ics-modbus-quickstart.md` - ICS/SCADA Modbus PLC exploitation
+- `reference/ccsds-space-telecommand-quickstart.md` - Satellite CCSDS telecommand frame crafting (Space Packet + TC Transfer Frame)
 - `reference/upnp-iot-quickstart.md` - UPnP / IoT / CPE firmware web UI enumeration and exploitation
 - `reference/hardware-embedded-quickstart.md` - Logic captures, CAN/UART decoding, side-channel char-by-char recovery, legacy CPU bugs (6502), i386 tooling on ARM macOS
 

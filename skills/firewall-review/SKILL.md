@@ -64,6 +64,10 @@ reference/
 └── VERSIONS.md        Single source of truth for every detector / parser / compliance pin
 ```
 
+## Active counterpart
+
+This skill audits a firewall/appliance **config statically**. To actively TEST a live perimeter appliance or its VPN crypto (IKE aggressive-mode/transform enum, Check Point SIC/OPSEC, firmware→CVE-applicability, handshake TLS-version probe, RST-TTL forgery discriminator), use [`network-appliance-offensive`](../network-appliance-offensive/SKILL.md).
+
 ## Reference implementation
 
 These skills are abstracted from the [firewall-review](https://github.com/ipunithgowda/firewall-review) tool's runtime catalogue. The Python implementation (parsers, detectors, validation, reporting code) lives there; this skill collection is the transferable knowledge layer.

@@ -361,13 +361,15 @@ eq(resolveGeoZones({ geoVantages: [' z1 ', '', null] }), ['z1'], 'resolveGeoZone
 
 // --- finalizeGate (COMPLETE/BLOCKED incl. the deterministic coverage gate) -----
 {
-  const allGood = finalizeGate({ report_data_ok: true, renderGateOk: true, coverage_complete: true, coverage_untested: 0 });
+  const allGood = finalizeGate({ report_data_ok: true, report_data_lint_ok: true, renderGateOk: true, coverage_complete: true, coverage_untested: 0 });
   eq(allGood, { ok: true, status: 'COMPLETE', blocked_reason: null }, 'finalizeGate all-true -> COMPLETE');
-  const cov = finalizeGate({ report_data_ok: true, renderGateOk: true, coverage_complete: false, coverage_untested: 4 });
+  const cov = finalizeGate({ report_data_ok: true, report_data_lint_ok: true, renderGateOk: true, coverage_complete: false, coverage_untested: 4 });
   eq(cov, { ok: false, status: 'BLOCKED', blocked_reason: 'attack-class coverage < 100% (4 cell(s) untested)' }, 'finalizeGate incomplete coverage -> BLOCKED with count');
-  eq(finalizeGate({ report_data_ok: false, renderGateOk: true, coverage_complete: true }).blocked_reason, 'report_data_build failed', 'finalizeGate report_data failure wins');
-  eq(finalizeGate({ report_data_ok: true, renderGateOk: false, coverage_complete: true, renderBlockedReason: 'PDF is empty' }).blocked_reason, 'PDF is empty', 'finalizeGate render reason preserved');
-  eq(finalizeGate({ report_data_ok: true, renderGateOk: true, coverage_complete: undefined, coverage_untested: 2 }).ok, false, 'finalizeGate fails closed on missing coverage_complete');
+  eq(finalizeGate({ report_data_ok: false, report_data_lint_ok: true, renderGateOk: true, coverage_complete: true }).blocked_reason, 'report_data_build failed', 'finalizeGate report_data failure wins');
+  eq(finalizeGate({ report_data_ok: true, report_data_lint_ok: false, renderGateOk: true, coverage_complete: true }).blocked_reason, 'report_data lint failed (schema/escaping)', 'finalizeGate report_data lint failure blocks before render');
+  eq(finalizeGate({ report_data_ok: true, report_data_lint_ok: true, renderGateOk: false, coverage_complete: true, renderBlockedReason: 'PDF is empty' }).blocked_reason, 'PDF is empty', 'finalizeGate render reason preserved');
+  eq(finalizeGate({ report_data_ok: true, report_data_lint_ok: true, renderGateOk: true, coverage_complete: undefined, coverage_untested: 2 }).ok, false, 'finalizeGate fails closed on missing coverage_complete');
+  eq(finalizeGate({ report_data_ok: true, report_data_lint_ok: undefined, renderGateOk: true, coverage_complete: true }).ok, false, 'finalizeGate fails closed on missing report_data_lint_ok');
 }
 
 // --- report ---------------------------------------------------------------

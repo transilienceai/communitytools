@@ -23,7 +23,7 @@ The block to extract:
 ```
 key "rndc-key" {
     algorithm hmac-sha256;
-    secret "BASE64_TSIG_SECRET";
+    secret "<BASE64_TSIG_SECRET>";
 };
 ```
 

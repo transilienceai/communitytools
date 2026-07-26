@@ -56,6 +56,9 @@ Start at **[reference/methodology.md](reference/methodology.md)** — the phase 
 - [../reverse-engineering/reference/scenarios/obfuscation/hash-dispatcher-chain.md](../reverse-engineering/reference/scenarios/obfuscation/hash-dispatcher-chain.md) — Z3 over polynomial-hash dispatcher chains in a native `.so`.
 - [../api-security/reference/scenarios/rest/owasp-bola-bopla.md](../api-security/reference/scenarios/rest/owasp-bola-bopla.md) · [../api-security/reference/scenarios/rest/mass-assignment.md](../api-security/reference/scenarios/rest/mass-assignment.md) — the client→API pivot for endpoints/IDOR recovered from the client.
 
+**Deterministic control-wiring detector**
+- [`../../tools/apk_control_wiring.py`](../../tools/apk_control_wiring.py) — static cross-reference over a decompiled Android tree that distinguishes a REAL applied control from an ORPHANED one: RootBeer/SafetyNet/Play-Integrity **shipped-but-unwired** (referenced but the result gates nothing), `CertificatePinner` **built-but-not-attached** to an OkHttpClient, hardcoded AES/DES key literals + their invoke-sites, and bundled-but-never-loaded `.so`. Run it in the STATIC phase BEFORE authoring remediation verdicts — a naive re-test that only greps for the control's presence wrongly reports an inert control "fixed" (a recurring mobile re-test crux).
+
 ## Anti-patterns
 
 - Reaching for Frida/emulator before the static dump exists — static-first is faster and needs no device. But do not treat dynamic as out of scope: pinning enforcement, Keystore binding, root reaction, and IPC reachability are runtime-only.

@@ -10,11 +10,15 @@ Run before spawning any executor batch. Write the checklist to `attack-chain.md`
 - [ ] Every binary downloaded from the target decompiled or strings-dumped.
 - [ ] Every form/admin panel surveyed — each input field is a potential injection point.
 - [ ] Platform/lab metadata read (whatever the host platform exposes — starter creds, machine info, tags).
+- [ ] Credential presence — for every var in the scope file's `creds_env`, load via `python3 tools/env-reader.py <vars>` (per `credential-loading.md`). Never `AskUserQuestion`.
+- [ ] Credential reachability (per in-scope realm/tenant) — present creds are not working creds. For each realm, acquire a session via [`authenticated-session-acquisition`](../../authenticated-session-acquisition/SKILL.md) (or send one minimal authenticated request) and confirm an authorized response (not 401/403/login-redirect). Creds that are present but unauthenticated (expired, wrong tenant, MFA/OTP-gated with no seed, IP-allowlist blocked) count as **missing for that realm**.
+- [ ] On reachability failure — route, do NOT global-block. A missing/unreachable credential never blocks the whole engagement (the unauthenticated surface is always tested): file `reports/client-input-requests/CIR-NNN.md` ("needs test account / OTP seed / allowlist for `<realm>`"), set a realm-level `BLOCKED_REASON` in `attack-chain.md`, and mark that realm's post-auth coverage cells `status:"deferred"` (with `deferral_reason` + `client_input_request` → the CIR; see `coverage-matrix.md`). Terminate `status=BLOCKED` only if the ENTIRE scope is auth-gated.
 - [ ] DNS / vhost enumeration done if HTTP services present.
 - [ ] All discovered hostnames added to `/etc/hosts`.
 - [ ] Source vantage recorded
 - [ ] Any extra egress (VM/proxy/VPN) registered via provision_vantage.sh / register_source_ip.py
-- [ ] On a source-IP/geo-allowlist signature (a host is existence-confirmed but dark from the primary vantage), provision a second-geography vantage (provision_vantage.sh) and re-probe the filtered hosts before concluding "no surface." Never assert "no external surface" without naming the vantage geographies tested.
+- [ ] On a filtered/dark signature (existence-confirmed but dark from the primary vantage), first DIAGNOSE: `python3 tools/vantage_diagnose.py --ip <host> [--json]` classifies **down | geo-fence | ip-allowlist | reachable** and runs the cloud-auth precheck (so "no vantage" is only ever concluded when no cloud provider is authed). check-host.net (active third-party probe) stays OFF unless RoE permits `--allow-third-party-probe`.
+- [ ] Provision a second-geography vantage (provision_vantage.sh) and re-probe the filtered hosts ONLY for a geo-fence/ip-allowlist classification AND only when cloud auth exists. Never assert "no external surface" without naming the vantage geographies tested AND the diagnosis.
 
 ## Surface-expansion gate (mandatory when an apex domain is in scope)
 

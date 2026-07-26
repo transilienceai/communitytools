@@ -20,6 +20,12 @@ All reports use the Transilience design system:
 | Design System | [transilience-report-style/SKILL.md](transilience-report-style/SKILL.md) | Page config, typography, color palette, advisory card layout, ReportLab PDF generation |
 | Pentest Report | [transilience-report-style/pentest-report.md](transilience-report-style/pentest-report.md) | Pentest report structure, finding quality standard, severity calibration, compliance mapping |
 
+## Regulatory / Submission Formats
+
+| Format | File | Description |
+|--------|------|-------------|
+| CERT-In Audit Metadata | [certin-audit-metadata/certin-audit-metadata.md](certin-audit-metadata/certin-audit-metadata.md) | CERT-In Audit Metadata Format v2.3 export — intermediate JSON + filled xlsx (built by `tools/certin_metadata_build.py` / `certin-export` workflow). Emitted when a scope sets `certin_export: true`. |
+
 ## Reconnaissance
 
 | Format | File | Description |

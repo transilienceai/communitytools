@@ -1,0 +1,153 @@
+<mxfile host="app.diagrams.net" type="device">
+  <diagram name="Skill-Gap Build Flow" id="skillgapflow">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1550" pageHeight="1500" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Skill-Gap Build — Changes to the Pentest Engagement Flow" style="text;html=1;fontSize=22;fontStyle=1;align=left;verticalAlign=middle;fontColor=#1A237E;" vertex="1" parent="1">
+          <mxGeometry x="40" y="16" width="1000" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="16 gaps closed (5 P0 + 11 P1) mapped onto the engagement lifecycle. Each card = one change: Why it hurt · What was built · How · Effect. Deterministic tools own the bytes; blind validators and parity/adversarial guards verify." style="text;html=1;fontSize=12;align=left;verticalAlign=middle;fontColor=#37474F;" vertex="1" parent="1">
+          <mxGeometry x="40" y="52" width="1180" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="legNew" value="NEW capability" style="rounded=1;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontColor=#1B5E20;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1270" y="18" width="150" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="legExt" value="EXTEND existing" style="rounded=1;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontColor=#0D47A1;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1270" y="46" width="150" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="legStage" value="Engagement stage" style="rounded=1;html=1;fillColor=#37474F;strokeColor=#263238;fontColor=#ffffff;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1270" y="74" width="150" height="24" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== STAGE SPINE ===================== -->
+        <mxCell id="s1" value="1 · PREFLIGHT / RECON" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#37474F;strokeColor=#263238;fontColor=#ffffff;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="130" width="200" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="s2" value="2 · SCAN (network)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#37474F;strokeColor=#263238;fontColor=#ffffff;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="298" width="200" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="3 · TEST (web / API / mobile)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#37474F;strokeColor=#263238;fontColor=#ffffff;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="466" width="200" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="s4" value="4 · AUTHOR FINDING" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#37474F;strokeColor=#263238;fontColor=#ffffff;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="634" width="200" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="s5" value="5 · VALIDATE (blind, adversarial)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#37474F;strokeColor=#263238;fontColor=#ffffff;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="802" width="200" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="s6" value="6 · COVERAGE GATE (100%)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#37474F;strokeColor=#263238;fontColor=#ffffff;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="970" width="200" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="s7" value="7 · REPORT (Transilience PDF)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#37474F;strokeColor=#263238;fontColor=#ffffff;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1138" width="200" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="s8" value="8 · MERGE / RETEST (downstream)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#37474F;strokeColor=#263238;fontColor=#ffffff;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1306" width="200" height="130" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_s12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#455A64;strokeWidth=2;endArrow=block;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="s1" target="s2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_s23" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#455A64;strokeWidth=2;endArrow=block;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="s2" target="s3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_s34" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#455A64;strokeWidth=2;endArrow=block;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="s3" target="s4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_s45" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#455A64;strokeWidth=2;endArrow=block;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="s4" target="s5"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_s56" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#455A64;strokeWidth=2;endArrow=block;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="s5" target="s6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_s67" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#455A64;strokeWidth=2;endArrow=block;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="s6" target="s7"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_s78" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#455A64;strokeWidth=2;endArrow=block;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="s7" target="s8"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- ===================== PREFLIGHT / RECON CARDS ===================== -->
+        <mxCell id="p1" value="&lt;b&gt;vantage_diagnose&amp;nbsp; | &amp;nbsp;NEW&amp;nbsp; | &amp;nbsp;#1&lt;/b&gt;&lt;hr size=1&gt;&lt;b&gt;Why:&lt;/b&gt; a timeout from one vantage is indistinguishable from a host that is genuinely down&lt;br&gt;&lt;b&gt;What:&lt;/b&gt; classifier: down / geo-fence / ip-allowlist / reachable&lt;br&gt;&lt;b&gt;How:&lt;/b&gt; multi-egress differential + gcloud/aws/az auth precheck&lt;br&gt;&lt;b&gt;Effect:&lt;/b&gt; no-surface only when truly dark AND no cloud auth; re-probe first" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;spacingRight=6;fontSize=10;fillColor=#E8F5E9;strokeColor=#2E7D32;" vertex="1" parent="1">
+          <mxGeometry x="270" y="130" width="300" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="p2" value="&lt;b&gt;authenticated-session-acquisition&amp;nbsp; | &amp;nbsp;NEW&amp;nbsp; | &amp;nbsp;#5&lt;/b&gt;&lt;hr size=1&gt;&lt;b&gt;Why:&lt;/b&gt; MFA/OTP login blocked the whole post-auth surface (BOLA/IDOR)&lt;br&gt;&lt;b&gt;What:&lt;/b&gt; session skill + preflight cred-reach probe&lt;br&gt;&lt;b&gt;How:&lt;/b&gt; TOTP-from-seed / OTP / human-relay → storageState + Bearer&lt;br&gt;&lt;b&gt;Effect:&lt;/b&gt; post-auth classes tested, or honestly deferred (never silently skipped)" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;spacingRight=6;fontSize=10;fillColor=#E8F5E9;strokeColor=#2E7D32;" vertex="1" parent="1">
+          <mxGeometry x="590" y="130" width="300" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="p3" value="&lt;b&gt;waf-edge-bypass&amp;nbsp; | &amp;nbsp;EXTEND&amp;nbsp; | &amp;nbsp;#8&lt;/b&gt;&lt;hr size=1&gt;&lt;b&gt;Why:&lt;/b&gt; WAF/CDN denied all vantages; block pages logged as file leaks&lt;br&gt;&lt;b&gt;What:&lt;/b&gt; origin-discovery playbook + block-page / soft-404 classifiers&lt;br&gt;&lt;b&gt;How:&lt;/b&gt; sibling/CT/SAN → curl --resolve host-pin; fingerprint reject bodies&lt;br&gt;&lt;b&gt;Effect:&lt;/b&gt; WAF-fronted apps reached (bypass = a finding); no false .env/.git hits" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;spacingRight=6;fontSize=10;fillColor=#E3F2FD;strokeColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="910" y="130" width="300" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="p4" value="&lt;b&gt;dns_email_posture&amp;nbsp; | &amp;nbsp;NEW&amp;nbsp; | &amp;nbsp;#14&lt;/b&gt;&lt;hr size=1&gt;&lt;b&gt;Why:&lt;/b&gt; SPF/DKIM/DMARC judged by ad-hoc dig → inconsistent severities&lt;br&gt;&lt;b&gt;What:&lt;/b&gt; enumerate full record set + positive/negative controls&lt;br&gt;&lt;b&gt;How:&lt;/b&gt; seam-injected DNS lookups over an apex list, fixed rubric&lt;br&gt;&lt;b&gt;Effect:&lt;/b&gt; email/DNS/TLS posture finding-class scored consistently" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;spacingRight=6;fontSize=10;fillColor=#E8F5E9;strokeColor=#2E7D32;" vertex="1" parent="1">
+          <mxGeometry x="1230" y="130" width="300" height="130" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== SCAN CARDS ===================== -->
+        <mxCell id="c3" value="&lt;b&gt;netscan_guard&amp;nbsp; | &amp;nbsp;NEW&amp;nbsp; | &amp;nbsp;#3&lt;/b&gt;&lt;hr size=1&gt;&lt;b&gt;Why:&lt;/b&gt; --host-timeout + -sT truncation → false 0-open; banner-artifact CVEs&lt;br&gt;&lt;b&gt;What:&lt;/b&gt; nmap-XML guards: truncation / RTT / CVE-suppress / UDP-state&lt;br&gt;&lt;b&gt;How:&lt;/b&gt; detect all-zero-under-host-timeout; suppress MariaDB 5.5.5- phantoms&lt;br&gt;&lt;b&gt;Effect:&lt;/b&gt; a 0-open host is re-scanned before dead; ~200 phantom CVEs cut" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;spacingRight=6;fontSize=10;fillColor=#E8F5E9;strokeColor=#2E7D32;" vertex="1" parent="1">
+          <mxGeometry x="270" y="298" width="300" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="c13" value="&lt;b&gt;network-appliance-offensive&amp;nbsp; | &amp;nbsp;NEW&amp;nbsp; | &amp;nbsp;#13&lt;/b&gt;&lt;hr size=1&gt;&lt;b&gt;Why:&lt;/b&gt; appliance/VPN testing reinvented from sockets; CVE applicability guessed&lt;br&gt;&lt;b&gt;What:&lt;/b&gt; NEW skill + 6 tools: IKE / NTLM / TLS-handshake / CheckPoint / version / TTL&lt;br&gt;&lt;b&gt;How:&lt;/b&gt; deterministic parsers + precondition-gated CVE map (live I/O behind seams)&lt;br&gt;&lt;b&gt;Effect:&lt;/b&gt; consistent tests; CVE scored only when precondition holds; no false internal-host" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;spacingRight=6;fontSize=10;fillColor=#E8F5E9;strokeColor=#2E7D32;" vertex="1" parent="1">
+          <mxGeometry x="590" y="298" width="300" height="130" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== TEST CARDS ===================== -->
+        <mxCell id="c9" value="&lt;b&gt;API-at-scale: fixture_ingest → auth_replay_harness&amp;nbsp; | &amp;nbsp;NEW&amp;nbsp; | &amp;nbsp;#9&lt;/b&gt;&lt;hr size=1&gt;&lt;b&gt;Why:&lt;/b&gt; 2000+ path swaggers / Postman corpora untested when auth flapped&lt;br&gt;&lt;b&gt;What:&lt;/b&gt; corpus → per-endpoint fixtures → per-role/cross-tenant replay + OData/Cognito/WS&lt;br&gt;&lt;b&gt;How:&lt;/b&gt; strip auth, inject per-role tokens, flag BOLA/BFLA, log evidence_id&lt;br&gt;&lt;b&gt;Effect:&lt;/b&gt; whole API BOLA/BFLA-tested at scale, resumable through auth flaps" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;spacingRight=6;fontSize=10;fillColor=#E8F5E9;strokeColor=#2E7D32;" vertex="1" parent="1">
+          <mxGeometry x="270" y="466" width="300" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="c7" value="&lt;b&gt;apk_control_wiring&amp;nbsp; | &amp;nbsp;NEW&amp;nbsp; | &amp;nbsp;#7&lt;/b&gt;&lt;hr size=1&gt;&lt;b&gt;Why:&lt;/b&gt; presence of a control is not proof it is wired into control flow&lt;br&gt;&lt;b&gt;What:&lt;/b&gt; detect orphaned .so / unwired root-check / built-not-attached pinner / hardcoded key&lt;br&gt;&lt;b&gt;How:&lt;/b&gt; cross-ref smali loadLibrary vs bundled .so; DEX xrefs; pinner attach check&lt;br&gt;&lt;b&gt;Effect:&lt;/b&gt; verdicts tell a real applied control from a shipped-but-inert one" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;spacingRight=6;fontSize=10;fillColor=#E8F5E9;strokeColor=#2E7D32;" vertex="1" parent="1">
+          <mxGeometry x="590" y="466" width="300" height="130" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== AUTHOR FINDING CARDS ===================== -->
+        <mxCell id="c4" value="&lt;b&gt;cvss_lint&amp;nbsp; | &amp;nbsp;NEW&amp;nbsp; | &amp;nbsp;#4&lt;/b&gt;&lt;hr size=1&gt;&lt;b&gt;Why:&lt;/b&gt; findings authored with score≠vector; genuine ones dropped on a 1-band delta a round later&lt;br&gt;&lt;b&gt;What:&lt;/b&gt; authoring-time score↔vector↔band self-consistency linter&lt;br&gt;&lt;b&gt;How:&lt;/b&gt; recompute via cvss_calc (the one calculator); flag delta over 0.1 + band mismatch, incl. cves[]&lt;br&gt;&lt;b&gt;Effect:&lt;/b&gt; inconsistent numbers blocked at creation; no genuine finding dropped on a cosmetic label" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;spacingRight=6;fontSize=10;fillColor=#E8F5E9;strokeColor=#2E7D32;" vertex="1" parent="1">
+          <mxGeometry x="270" y="634" width="300" height="130" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== VALIDATE CARDS ===================== -->
+        <mxCell id="c6" value="&lt;b&gt;severity-calibration&amp;nbsp; | &amp;nbsp;EXTEND&amp;nbsp; | &amp;nbsp;#6&lt;/b&gt;&lt;hr size=1&gt;&lt;b&gt;Why:&lt;/b&gt; CORS-as-token-theft, AADSTS50126=MFA-off, enabler-as-compromise inflated findings, fixed late&lt;br&gt;&lt;b&gt;What:&lt;/b&gt; common-false-High checklist wired into the blind refuters&lt;br&gt;&lt;b&gt;How:&lt;/b&gt; severity-calibration.md fires in validate-findings + merge-reports refutation&lt;br&gt;&lt;b&gt;Effect:&lt;/b&gt; inflation refuted/downgraded before the PDF is built, not re-scored a round later" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;spacingRight=6;fontSize=10;fillColor=#E3F2FD;strokeColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="270" y="802" width="300" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="c16" value="&lt;b&gt;validation resilience&amp;nbsp; | &amp;nbsp;EXTEND&amp;nbsp; | &amp;nbsp;#16&lt;/b&gt;&lt;hr size=1&gt;&lt;b&gt;Why:&lt;/b&gt; strong-negatives dropped on log-format; one provider limit auto-confirmed 0/99&lt;br&gt;&lt;b&gt;What:&lt;/b&gt; log-corroboration made advisory (not dispositive) + incremental per-finding cache&lt;br&gt;&lt;b&gt;How:&lt;/b&gt; refuter/checks prompt clarified; Stage-D persists+caches each verdict as it lands&lt;br&gt;&lt;b&gt;Effect:&lt;/b&gt; proven findings kept; a mid-run limit no longer zeroes confirmations" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;spacingRight=6;fontSize=10;fillColor=#E3F2FD;strokeColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="590" y="802" width="300" height="130" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== COVERAGE GATE CARDS ===================== -->
+        <mxCell id="c5b" value="&lt;b&gt;deferred coverage state&amp;nbsp; | &amp;nbsp;EXTEND coverage_gate&amp;nbsp; | &amp;nbsp;#5&lt;/b&gt;&lt;hr size=1&gt;&lt;b&gt;Why:&lt;/b&gt; MFA-blocked cells had no honest state → fabricated NA, silent miss, or a permanently-blocked gate&lt;br&gt;&lt;b&gt;What:&lt;/b&gt; a substantiated deferred status (requires an on-disk client-input request)&lt;br&gt;&lt;b&gt;How:&lt;/b&gt; ratio over resolvable cells; complete fail-closed unless --accept-deferrals; all-deferred hard-blocks&lt;br&gt;&lt;b&gt;Effect:&lt;/b&gt; deferred surface disclosed in the report; engagement finalizes honestly with a caveat" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;spacingRight=6;fontSize=10;fillColor=#E3F2FD;strokeColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="270" y="970" width="300" height="130" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== REPORT CARDS ===================== -->
+        <mxCell id="c2" value="&lt;b&gt;report_data_lint + fail-closed generator&amp;nbsp; | &amp;nbsp;NEW+EXTEND&amp;nbsp; | &amp;nbsp;#2&lt;/b&gt;&lt;hr size=1&gt;&lt;b&gt;Why:&lt;/b&gt; report JSON can satisfy the schema yet render garbled or carry unescaped markup&lt;br&gt;&lt;b&gt;What:&lt;/b&gt; lint (schema + escaping + tag-allowlist) + generator fail-closed guard + KPI-Critical fix&lt;br&gt;&lt;b&gt;How:&lt;/b&gt; hard-fail string-narrative / bad-severity / img / a-href; validate before render&lt;br&gt;&lt;b&gt;Effect:&lt;/b&gt; broken/unsafe markup cannot reach a client PDF; mandatory gate in both finalize chains" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;spacingRight=6;fontSize=10;fillColor=#E8F5E9;strokeColor=#2E7D32;" vertex="1" parent="1">
+          <mxGeometry x="270" y="1138" width="300" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="c11" value="&lt;b&gt;report_data_revise&amp;nbsp; | &amp;nbsp;NEW&amp;nbsp; | &amp;nbsp;#11&lt;/b&gt;&lt;hr size=1&gt;&lt;b&gt;Why:&lt;/b&gt; folding a round/re-score/scope-subset via fragile insert()+replace; narrative counts desynced&lt;br&gt;&lt;b&gt;What:&lt;/b&gt; in-place revision (append / supersede / rescore / scope / cross-feed)&lt;br&gt;&lt;b&gt;How:&lt;/b&gt; reuse report_data_build helpers; always re-derive KPIs + scrub narrative counts&lt;br&gt;&lt;b&gt;Effect:&lt;/b&gt; safe incremental edits; prose counts never drift from the finding set" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;spacingRight=6;fontSize=10;fillColor=#E8F5E9;strokeColor=#2E7D32;" vertex="1" parent="1">
+          <mxGeometry x="590" y="1138" width="300" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="c10" value="&lt;b&gt;report_ingest&amp;nbsp; | &amp;nbsp;NEW&amp;nbsp; | &amp;nbsp;#10&lt;/b&gt;&lt;hr size=1&gt;&lt;b&gt;Why:&lt;/b&gt; every merge/retest/CERT-In assumed report_data.json; sources arrive as PDF/xlsx/DOCX → re-keying&lt;br&gt;&lt;b&gt;What:&lt;/b&gt; foreign report → canonical finding schema&lt;br&gt;&lt;b&gt;How:&lt;/b&gt; deterministic xlsx/md/json extract (+best-effort PDF/DOCX); cwe/vector non-null guards&lt;br&gt;&lt;b&gt;Effect:&lt;/b&gt; downstream flows bootstrap from a finished report; lossy transcription removed" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;spacingRight=6;fontSize=10;fillColor=#E8F5E9;strokeColor=#2E7D32;" vertex="1" parent="1">
+          <mxGeometry x="910" y="1138" width="300" height="130" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== MERGE / RETEST CARDS ===================== -->
+        <mxCell id="c12" value="&lt;b&gt;merge_reports_cluster fixes&amp;nbsp; | &amp;nbsp;EXTEND&amp;nbsp; | &amp;nbsp;#12&lt;/b&gt;&lt;hr size=1&gt;&lt;b&gt;Why:&lt;/b&gt; free-text assets → same-host dedup fell to the LLM; a 100-off port merged silently; refutation emptied a report&lt;br&gt;&lt;b&gt;What:&lt;/b&gt; host[:port] canonical key + host-overlap candidate pairs + divergent-port warning&lt;br&gt;&lt;b&gt;How:&lt;/b&gt; canonical host parse; CWE-independent edge feeds the sweep; warnings surfaced&lt;br&gt;&lt;b&gt;Effect:&lt;/b&gt; cross-report same-host dups caught; port divergences flagged, never silently collapsed" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;spacingRight=6;fontSize=10;fillColor=#E3F2FD;strokeColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="270" y="1306" width="300" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="c15" value="&lt;b&gt;retest-engagement workflow&amp;nbsp; | &amp;nbsp;NEW&amp;nbsp; | &amp;nbsp;#15&lt;/b&gt;&lt;hr size=1&gt;&lt;b&gt;Why:&lt;/b&gt; retesting a prior report rebuilt the verdict vocab + rollup each time (410-line hand-typed matrix)&lt;br&gt;&lt;b&gt;What:&lt;/b&gt; NEW workflow + retest_status_build (fixed vocab + _SSL_Disabled_ detector + portfolio rollup)&lt;br&gt;&lt;b&gt;How:&lt;/b&gt; report_ingest baseline → blind per-finding retest → deterministic status report_data → PDF&lt;br&gt;&lt;b&gt;Effect:&lt;/b&gt; one-off retest scaffolding retired; controls-disabled builds flagged for prod re-verification" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;spacingRight=6;fontSize=10;fillColor=#E8F5E9;strokeColor=#2E7D32;" vertex="1" parent="1">
+          <mxGeometry x="590" y="1306" width="300" height="130" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== STAGE → CARD CONNECTORS ===================== -->
+        <mxCell id="ep1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B0BEC5;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="s1" target="p1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ep2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B0BEC5;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="s1" target="p2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ep3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B0BEC5;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="s1" target="p3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ep4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B0BEC5;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="s1" target="p4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ec3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B0BEC5;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="s2" target="c3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ec13" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B0BEC5;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="s2" target="c13"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ec9" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B0BEC5;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="s3" target="c9"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ec7" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B0BEC5;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="s3" target="c7"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ec4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B0BEC5;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="s4" target="c4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ec6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B0BEC5;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="s5" target="c6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ec16" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B0BEC5;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="s5" target="c16"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ec5b" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B0BEC5;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="s6" target="c5b"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ec2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B0BEC5;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="s7" target="c2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ec11" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B0BEC5;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="s7" target="c11"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ec10" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B0BEC5;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="s7" target="c10"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ec12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B0BEC5;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="s8" target="c12"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ec15" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B0BEC5;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="s8" target="c15"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- ===================== ASSURANCE FOOTER ===================== -->
+        <mxCell id="foot" value="&lt;b&gt;Cross-cutting assurance (unchanged discipline, now enforcing the new work):&lt;/b&gt;&amp;nbsp; Deterministic tools own every byte · blind adversarial refuters (severity-calibration) gate acceptance · the coverage gate fails closed · the CVSS parity guard caught a real prompt-mirror drift during this build · client-neutrality + no-forked-generator CI guards · 36/36 checks green." style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;fillColor=#FFF8E1;strokeColor=#F9A825;fontSize=11;spacingLeft=10;spacingRight=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1456" width="1490" height="44" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

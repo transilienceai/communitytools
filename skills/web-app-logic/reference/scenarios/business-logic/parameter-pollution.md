@@ -160,6 +160,39 @@ role=0  // May match "admin" in loose comparison
 token=0  // May match any non-numeric token
 ```
 
+### Cross-service JSON key parser differential (proxy parses then forwards raw body)
+
+When a front-end/gateway parses a JSON body, makes an authz or routing decision on ONE field,
+then forwards the ORIGINAL raw bytes to an internal service, the two parsers can be desynced so
+the gateway and the backend read a DIFFERENT value for the same logical key. Language quirks that
+enable the desync:
+
+- **Go `encoding/json`** matches struct keys **case-insensitively**, and when several JSON keys
+  map to the same struct field the **last one processed wins**. So `{"action":"x","Action":"y"}`
+  decodes `Action="y"` in Go.
+- **Python/Flask, Node `JSON.parse`, most others** are **case-sensitive** and keep `action` and
+  `Action` as distinct keys; `data['action']` reads the FIRST-declared lowercase value.
+
+```http
+# Gateway (Go): gates on action=="getcosmic" then proxies the RAW body to the backend.
+# Backend (Flask): reads data['action']; "getSecureCode" returns the secret.
+POST /execute HTTP/1.1
+Content-Type: application/json
+
+{"action":"getSecureCode","Action":"getcosmic"}
+# Go sees action=getcosmic (last, case-insensitive) -> passes the gate, forwards raw body
+# Flask sees action=getSecureCode (case-sensitive lowercase key) -> privileged branch -> leaks flag
+```
+
+Also test plain duplicate keys `{"role":"user","role":"admin"}` (Go/most JSON libs = last wins;
+some streaming/`simplejson` configs = first), and Unicode/whitespace-decorated key variants. The
+tell for this class: a public gateway forwards to an internal microservice ("Sender/Receiver",
+"proxy", `http.Post("http://localhost:...")`) while validating only its own parse of the body.
+
+**Fix:** re-serialize a validated canonical object before proxying (never forward raw bytes),
+strict-decode with Go `Decoder.DisallowUnknownFields()`, and enforce the authz decision at the
+receiver, not only the sender.
+
 ### Content-Type confusion
 
 ```http

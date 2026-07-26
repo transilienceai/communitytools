@@ -28,6 +28,24 @@ from reportlab.platypus import (BaseDocTemplate, PageTemplate, Frame, Paragraph,
                                 Table, TableStyle, Image, PageBreak, NextPageTemplate, KeepTogether)
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+
+
+def _load_shape():
+    """Import the stdlib crash-invariant guard + KPI helper from repo tools/.
+    Resolved from this file's canonical location (symlink-safe via realpath), with
+    a cwd/tools fallback so the workflows' `python3 skills/.../generate_report.py`
+    invocation always finds it."""
+    here = os.path.dirname(os.path.realpath(__file__))
+    for d in (os.path.abspath(os.path.join(here, "..", "..", "..", "tools")),
+              os.path.abspath(os.path.join(os.getcwd(), "tools"))):
+        if os.path.isfile(os.path.join(d, "report_data_shape.py")) and d not in sys.path:
+            sys.path.insert(0, d)
+            break
+    from report_data_shape import require_report_data_shape, default_metrics
+    return require_report_data_shape, default_metrics
+
+
+require_report_data_shape, default_metrics = _load_shape()
 from reportlab.graphics.shapes import Drawing, Rect, String
 
 
@@ -110,6 +128,15 @@ def cvss_display(score):
     """CVSS score for display: the numeric value, or 'n/a' when absent.
     Every finding/CVE always shows this score cell paired with its severity label."""
     return str(score) if score not in (None, "") else "n/a"
+
+def cvss_version_label(vector):
+    """CVSS version tag ('v4.0'/'v3.1'/'v3.0'/'v2.0') derived from a vector's
+    prefix, or '' when unknown. v4.0 is the primary version repo-wide; a
+    prefix-less vector is CVSS v2.0."""
+    m = re.match(r'(?i)^CVSS:(\d\.\d)/', str(vector or ""))
+    if m:
+        return "v" + m.group(1)
+    return "v2.0" if vector else ""
 
 def hx(c): return "#" + c.hexval()[2:]
 def esc(s): return html.escape(str(s if s is not None else ""), quote=False)
@@ -308,7 +335,7 @@ def build(data, dest, assets, theme=None):
             E.append(Paragraph(p, S["body"]))
         metrics = data.get("metrics")
         if metrics is None:
-            metrics = [{"label": k.upper(), "value": sm.get(k, 0), "sev": k} for k in ["High", "Medium", "Low", "Info"]]
+            metrics = default_metrics(data.get("findings") or [])  # includes Critical when present
         strip = [mbox(m["label"], m["value"], T["SEV"].get(m.get("sev"), T["BRAND"]) if not m.get("color") else colors.HexColor(m["color"])) for m in metrics[:6]]
         if strip:
             ms = Table([strip], colWidths=[CW / max(6.05, len(strip) + 0.05)] * len(strip))
@@ -397,8 +424,10 @@ def build(data, dest, assets, theme=None):
         confirmed = not f.get("needs_live_confirmation")
         status = f.get("status_label") or ("CONFIRMED (offline)" if confirmed else "EVIDENCED — needs live confirmation")
         stc = T["GREEN"] if confirmed else T["AMBER"]
+        cvss_ver = cvss_version_label(f.get("cvss_vector"))
+        cvss_lbl = ("CVSS " + cvss_ver) if (has_cvss and cvss_ver) else "CVSS"
         parts = [f'<font color="{hx(T["LBL"])}">Severity</font> <font name="{FB}" color="{hx(sc)}">{esc(skey)}</font>',
-                 f'<font color="{hx(T["LBL"])}">CVSS</font> <font name="{FB}" color="{hx(scc)}">{esc(cvss_display(cvss_val))}</font>']
+                 f'<font color="{hx(T["LBL"])}">{cvss_lbl}</font> <font name="{FB}" color="{hx(scc)}">{esc(cvss_display(cvss_val))}</font>']
         if f.get("cwe"): parts.append(f'<font color="{hx(T["LBL"])}">CWE</font> {esc(f["cwe"])}')
         if f.get("owasp"): parts.append(f'<font color="{hx(T["LBL"])}">OWASP</font> {esc(f["owasp"])}')
         parts.append(f'<font color="{hx(T["LBL"])}">Status</font> <font color="{hx(stc)}">{status}</font>')
@@ -417,17 +446,20 @@ def build(data, dest, assets, theme=None):
         # code-styled command (exact command to run), and an embedded image if available.
         poc = f.get("poc")
         if isinstance(poc, list) and poc:
-            blk = [labelp("PROOF OF CONCEPT", T["BLUE"])]
+            # One card row per PoC step so an image-heavy PoC splits across pages at
+            # step boundaries (a single row cannot split, and stacked screenshots can
+            # exceed one page). The card's box/stripe is redrawn per page fragment.
+            row(labelp("PROOF OF CONCEPT", T["BLUE"]))
             for i, step in enumerate([s for s in poc if isinstance(s, dict)], start=1):
-                blk.append(Paragraph(f'<font name="{FB}" color="{hx(T["INK"])}">{i}.</font>&nbsp;&nbsp;'
-                                     f'{esc(mask(str(step.get("description") or "")))}', S["cardbody"]))
+                stepflows = [Paragraph(f'<font name="{FB}" color="{hx(T["INK"])}">{i}.</font>&nbsp;&nbsp;'
+                                       f'{esc(mask(str(step.get("description") or "")))}', S["cardbody"])]
                 cmd = step.get("command")
                 if cmd not in (None, ""):
-                    blk.append(codebox(esc(mask(str(cmd)))))
+                    stepflows.append(codebox(esc(mask(str(cmd)))))
                 img = image_flowable(step.get("image_url"))
                 if img is not None:
-                    blk.append(Spacer(1, 3)); blk.append(img)
-            rows.append([blk])
+                    stepflows.append(Spacer(1, 3)); stepflows.append(img)
+                rows.append([stepflows])
         if f.get("calibration"):
             row(labelp("SEVERITY CALIBRATION", T["AMBER"]), Paragraph(esc(mask(f["calibration"])), S["cardbody"]))
         if f.get("cves"):
@@ -484,6 +516,14 @@ def build(data, dest, assets, theme=None):
         E.append(tbl(apc["header"], apc["rows"], [CW * w for w in apc["widths"]], statuscol=len(apc["header"]) - 1))
         if apc.get("note"): E.append(Spacer(1, 4)); E.append(Paragraph(esc(apc["note"]), S["bs"]))
         E.append(PageBreak())
+    if data.get("ruled_out"):
+        section("Investigated and Ruled Out")
+        E.append(Paragraph("The following candidate issues were investigated during the engagement and dismissed with "
+                            "corroborating evidence. They are recorded to document assessment coverage and to distinguish "
+                            "tested-clean classes from untested ones.", S["body"]))
+        rows = [[r.get("title", ""), r.get("why", "")] for r in data["ruled_out"]]
+        E.append(tbl(["Candidate issue", "Why it was ruled out"], rows, [CW * 0.34, CW * 0.66]))
+        E.append(PageBreak())
     if data.get("tools_used"):
         section("Tools & Techniques Used")
         if data.get("tools_intro"): E.append(Paragraph(esc(data["tools_intro"]), S["body"]))
@@ -534,6 +574,11 @@ def main():
     ap.add_argument("--theme", default=None, help="light (default) | dark; unknown falls back to light")
     a = ap.parse_args()
     data = json.load(open(a.data))
+    try:  # fail-closed: block the crash-invariants (string narrative, bad severity, ...) before rendering
+        require_report_data_shape(data)
+    except ValueError as e:
+        print(f"generate_report: invalid report_data — {e}", file=sys.stderr)
+        raise SystemExit(2)
     out = a.output or os.path.splitext(a.data)[0] + ".pdf"
     assets = find_assets(a.assets)
     build(data, out, assets, theme=a.theme)

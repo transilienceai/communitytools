@@ -8,7 +8,7 @@ Validation is **interleaved, strict per-finding** — NOT a separate one-shot pa
 
 | Step | Who | What |
 |------|-----|------|
-| Prepare | Executor | Author evidence (files exist, CVSS consistent) |
+| Prepare | Executor | Author evidence (files exist); run `python3 tools/cvss_lint.py <finding.json>` so the score↔vector↔band is self-consistent BEFORE filing (see Check 1) |
 | INTEGRATE | Coordinator | Materialize the candidate (id + finding dir) — the sole ledger writer |
 | Validate now | Coordinator | Run the per-finding convergence loop below on fresh blind agents, before the next batch |
 
@@ -31,7 +31,8 @@ For each newly-materialized candidate, before continuing the search:
 
 ### 1. CVSS Consistency
 
-Severity label must match CVSS v3.1 score exactly:
+Severity label must match the CVSS score's band exactly (CVSS v4.0 is the primary
+version; v4.0 and v3.1 share the same bands, so this table applies to both):
 
 | Severity | Range |
 |----------|------:|
@@ -42,6 +43,8 @@ Severity label must match CVSS v3.1 score exactly:
 | INFORMATIONAL | 0.0 |
 
 CVSS 5.3 labeled "LOW" → REJECTED (should be MEDIUM).
+
+**Automate it at authoring time:** `python3 tools/cvss_lint.py <finding.json | report_data.json>` recomputes the base score + band from the finding's `cvss_vector` via `tools/cvss_calc.py` (the one sanctioned calculator — v2.0 has no Critical band) and exits non-zero on a `score_mismatch` (|Δ|>0.1 vs the claimed `cvss_score`) or `band_mismatch` (vs the claimed `severity`), including each `cves[]` entry. Run it at **Prepare** so a self-inconsistent score is blocked at creation, not caught a whole round later here — and so a genuine finding is never dropped as a false positive on a one-band label delta.
 
 ### 2. Evidence Exists
 
@@ -78,13 +81,17 @@ Rule: ALL claims must be corroborated; one uncorroborated claim = REJECTED. A fi
 
 ### 5. Log Corroboration
 
-Executor log must show all 4 phases (`recon`, `experiment`, `test`, `verify`), with verify timestamps spaced ≥ 2s apart (no bulk-stamping).
+Executor log must show all 4 phases (`recon`, `experiment`, `test`, `verify`), with verify timestamps spaced ≥ 2s apart (no bulk-stamping). This is an ANTI-FABRICATION heuristic — fail it only on genuine bulk-stamping (all verify entries share one identical timestamp). When Check 4 (claims_vs_raw) already passes — every factual claim corroborated by a raw scan/log file — or the finding is a fully-evidenced **tested-negative**, a log-format technicality alone is **advisory, not dispositive**: a substantively-proven finding is not demoted on bookkeeping. (Resume: `validate-findings.js` persists + caches each verdict as it lands via `tools/validation_cache.py store`, so a mid-run provider/rate limit never zeroes out already-earned confirmations — a re-run restores them.)
 
 ### 6. Root-cause severity floor
 
 The inverse of Check 1. REJECT a finding for UNDER-rating when its own `description.md` asserts a latent higher-impact outcome that follows from a CONFIRMED missing control (missing tenant/ownership filter, unauthenticated state-change, unvalidated server-fetched URL, etc.) yet scores CVSS C/I/A only on the demonstrated sub-impact because the higher impact was blocked by a TRANSIENT/REVERSIBLE condition (empty data, deleted records, IMDSv2, toggled-off feature). Recompute C/I/A from the root-cause-implied outcome per `formats/transilience-report-style/pentest-report.md` §7.1 and REJECT if the executor's band is more than one band below the recomputed band.
 
 Check 1 stops inflation; Check 6 stops deflation. Apply ONLY when the description itself asserts the higher latent impact from a confirmed control gap — never invent impact the finding does not claim.
+
+### 7. Common false-High calibration (domain preconditions)
+
+Beyond the CVSS arithmetic (Check 1) and the root-cause floor (Check 6), apply the domain-fallacy checklist [`severity-calibration.md`](severity-calibration.md) to every proposed High/Critical and every CVE-backed finding: CORS reflected-origin needs `ACAC:true` + cookie-auth to be token-theft; Azure `AADSTS50126` on a failed auth is not "MFA disabled"; an enabler (spray/template/ACL/SSRF-reachability) scores at the *demonstrated* step, not the hypothesized end-state; a scanner version-only "Critical" on a backported/appliance-bundled package is a candidate until the backport is checked; a verified CVE scores at impact only when the vulnerable feature is confirmed enabled and reachable. Downgrade to the calibrated band, or REJECT when the claimed impact collapses. This fires inside the adversarial refuters of `validate-findings.js` and `merge-reports.js`, before a finding is accepted.
 
 ## Proof of Validation
 

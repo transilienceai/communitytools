@@ -30,6 +30,10 @@ import urllib.request
 import urllib.error
 import urllib.parse
 
+# Canonical CVSS selection lives in the sibling module (v4.0-primary ladder).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import cvss_calc  # noqa: E402
+
 NVD_API_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 NVD_WEB_URL = "https://nvd.nist.gov/vuln/detail"
 
@@ -237,11 +241,16 @@ def fetch_cve(cve_id: str, api_key: str | None = None) -> dict:
 
 
 def extract_cvss(metrics: dict) -> dict:
-    """Extract the best available CVSS score from NVD metrics."""
+    """Extract every CVSS score present in NVD metrics.
+
+    CVSS v4.0 is the primary/canonical version, so it is emitted FIRST; v3.1,
+    v3.0 and v2.0 follow as the fallback ladder. `select_primary_cvss` picks the
+    authoritative one per that ladder (v4.0 -> v3.1 -> v3.0 -> v2.0)."""
     result = {}
 
-    # Prefer CVSS v3.1, then v3.0, then v2.0
+    # v4.0 first (primary), then the fallback ladder v3.1 -> v3.0 -> v2.0.
     for version_key, label in [
+        ("cvssMetricV40", "CVSS v4.0"),
         ("cvssMetricV31", "CVSS v3.1"),
         ("cvssMetricV30", "CVSS v3.0"),
         ("cvssMetricV2", "CVSS v2.0"),
@@ -260,16 +269,25 @@ def extract_cvss(metrics: dict) -> dict:
             "impact_score": entry.get("impactScore"),
         }
 
-    # Also check CVSS v4.0
-    for entry in metrics.get("cvssMetricV40", []):
-        cvss = entry.get("cvssData", {})
-        result["CVSS v4.0"] = {
-            "score": cvss.get("baseScore"),
-            "severity": cvss.get("baseSeverity", "UNKNOWN"),
-            "vector": cvss.get("vectorString"),
-        }
-
     return result
+
+
+def select_primary_cvss(cvss_data: dict) -> dict | None:
+    """Pick the authoritative CVSS score using the v4.0-first fallback ladder
+    (see tools/cvss_calc.py). Returns {version_label, score, severity, vector}
+    or None when nothing is scored."""
+    primary = cvss_calc.select_primary(cvss_data)
+    if not primary:
+        return None
+    label = {"4.0": "CVSS v4.0", "3.1": "CVSS v3.1",
+             "3.0": "CVSS v3.0", "2.0": "CVSS v2.0"}[primary["version"]]
+    return {
+        "version_label": label,
+        "version": primary["version"],
+        "score": primary["base_score"],
+        "severity": primary["severity"],
+        "vector": primary["vector"],
+    }
 
 
 def extract_cwes(weaknesses: list) -> list[str]:
@@ -352,13 +370,15 @@ def format_cve(data: dict) -> str:
     ]
 
     if cvss_data:
+        primary_label = (select_primary_cvss(cvss_data) or {}).get("version_label")
         lines.append("")
-        lines.append("RISK SCORES:")
+        lines.append("RISK SCORES (primary = v4.0-first ladder):")
         for label, info in cvss_data.items():
             score = info.get("score")
             sev = info.get("severity", severity_label(score))
             vector = info.get("vector", "N/A")
-            lines.append(f"  {label}: {score} ({sev})")
+            tag = "  <- PRIMARY" if label == primary_label else ""
+            lines.append(f"  {label}: {score} ({sev}){tag}")
             lines.append(f"    Vector: {vector}")
             if info.get("exploitability_score") is not None:
                 lines.append(f"    Exploitability: {info['exploitability_score']}")
@@ -376,19 +396,16 @@ def format_cve(data: dict) -> str:
     lines.append(f"DESCRIPTION: {desc}")
     lines.append(f"{'=' * 70}")
 
-    # JSON summary for programmatic use
-    best_score = None
-    best_severity = "UNKNOWN"
-    for info in cvss_data.values():
-        s = info.get("score")
-        if s is not None and (best_score is None or s > best_score):
-            best_score = s
-            best_severity = info.get("severity", severity_label(s))
-
+    # JSON summary for programmatic use. The headline score is the PRIMARY per
+    # the v4.0-first ladder (v4.0 -> v3.1 -> v3.0 -> v2.0) — NOT the max across
+    # versions — so downstream consumers report CVSS v4.0 whenever NVD provides it.
+    primary = select_primary_cvss(cvss_data)
     summary = {
         "cve_id": cve_id,
-        "score": best_score,
-        "severity": best_severity,
+        "score": primary["score"] if primary else None,
+        "severity": primary["severity"] if primary else "UNKNOWN",
+        "cvss_version": primary["version"] if primary else None,
+        "cvss_vector": primary["vector"] if primary else None,
         "cwes": cwes,
         "status": status,
     }

@@ -42,6 +42,7 @@ Skills consumed by the cloud-agent task specifications under [`projects/rfp-3.2/
 | [`client-side`](client-side/SKILL.md) | XSS (R/S/DOM), CSRF, clickjacking, CORS, prototype pollution | Browser executes attacker-controlled content |
 | [`api-security`](api-security/SKILL.md) | GraphQL, REST, WebSocket, Web LLM | API surface in scope |
 | [`authentication`](authentication/SKILL.md) | Auth bypass, JWT, OAuth, password attacks, 2FA | Login/session in scope |
+| [`authenticated-session-acquisition`](authenticated-session-acquisition/SKILL.md) | Acquire a session THROUGH MFA/OTP (TOTP-from-seed / OTP / human-in-loop) → reusable storageState + Bearer for the post-auth surface | Post-auth testing blocked by login/MFA/OTP (distinct from `authentication`, which attacks auth) |
 | [`web-app-logic`](web-app-logic/SKILL.md) | Race conditions, IDOR, mass assignment, cache poisoning, business logic | Application logic gates a privileged action |
 
 ## Network & System
@@ -49,6 +50,7 @@ Skills consumed by the cloud-agent task specifications under [`projects/rfp-3.2/
 | Skill | Purpose | Trigger |
 |-------|---------|---------|
 | [`infrastructure`](infrastructure/SKILL.md) | Port scanning, DNS, SMB/NetBIOS, MITM, IPv6, ICS, hardware/embedded, UPnP/IoT | Non-HTTP services in scope |
+| [`network-appliance-offensive`](network-appliance-offensive/SKILL.md) | Active testing of perimeter appliances/VPN: IKE (aggressive-mode/transform/NAT-T), Check Point SIC/OPSEC, safe firmware→CVE-applicability (Forti/PAN/ASA/Citrix), NTLM Type-2 decode, handshake TLS-version probe, RST-TTL forgery discriminator | A firewall/VPN/appliance to TEST (offensive counterpart to `firewall-review`) |
 | [`system`](system/SKILL.md) | Active Directory, privilege escalation (Linux + Windows), exploit dev | Foothold + need privesc, or AD environment |
 | [`cloud-containers`](cloud-containers/SKILL.md) | AWS, Azure, GCP, Docker, Kubernetes | Cloud or container target |
 
@@ -75,6 +77,7 @@ Skills consumed by the cloud-agent task specifications under [`projects/rfp-3.2/
 | [`source-code-scanning`](source-code-scanning/SKILL.md) | SAST, dependency CVEs, secret scanning, malicious-code detection | Source provided |
 | [`cve-poc-generator`](cve-poc-generator/SKILL.md) | Research a CVE and produce a PoC + report | CVE in scope, no public PoC found |
 | [`cve-risk-score`](cve-risk-score/SKILL.md) | Fetch authoritative CVSS/CWE from NVD | Any CVE mentioned anywhere |
+| [`protect-with-password`](protect-with-password/SKILL.md) | Generate one strong password and AES-256 protect each referenced file (PDF native, others via 7z) | Asked to password-protect/encrypt deliverable file(s) before sharing |
 
 ## Platform Operations
 

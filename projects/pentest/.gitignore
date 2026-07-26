@@ -1,9 +1,26 @@
-# Ignore everything in this directory
+# Fail-closed: ignore everything in this engagement tree...
 *
 
-# ...except these
+# ...except the reusable scaffolding.
 !.gitignore
 !.claude/
 !.claude/**
 !CLAUDE.md
 !projects.json
+
+# Re-ignore per-machine state that the `!.claude/**` allowlist above would
+# otherwise re-admit. These files hold machine-local values (tokens, absolute
+# paths, session ids) and must never be published.
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/state/
+.claude/**/.DS_Store
+.DS_Store
+
+# Asset symlinks are generated per clone by scripts/link-pentest-assets.sh and
+# point at machine-specific paths; they are not tracked.
+.claude/skills/*
+.claude/formats
+.claude/tools/*
+tools/*.py
+!.claude/skills/.gitignore

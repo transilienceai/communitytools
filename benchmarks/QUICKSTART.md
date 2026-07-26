@@ -4,7 +4,7 @@
 
 1. Navigate to benchmarks directory:
    ```bash
-   cd /Users/alexander/dev/benchmarks
+   cd ~/dev/benchmarks
    ```
 
 2. Create your first test suite:

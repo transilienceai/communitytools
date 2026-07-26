@@ -68,13 +68,16 @@ export function exposureFor(asset) {
 
 // ---------------------------------------------------------------------------
 // CVE reconcile — the CVSS score itself comes from the verified tool-runner
-// (cvss lib -> cvss31.py -> NVD). JS only decides whether the numbers agree.
+// (tools/cvss_calc.py -> NVD; CVSS v4.0 is primary, falling back v3.1 -> v3.0
+// -> v2.0). JS only decides whether the numbers agree.
 // Rule: computed (from vector) must exist and agree with NVD and the claim
 // within |Δ| <= 0.1, and vectors must match when both present.
 // ---------------------------------------------------------------------------
 export function normVector(v) {
   if (!v) return '';
-  return String(v).replace(/^CVSS:3\.[01]\//i, '').split('/').filter(Boolean).sort().join('/').toUpperCase();
+  // Strip the version prefix of any supported version so v4.0/v3.x/v2.0 vectors
+  // normalize consistently for comparison.
+  return String(v).replace(/^CVSS:(?:4\.0|3\.[01]|2\.0)\//i, '').split('/').filter(Boolean).sort().join('/').toUpperCase();
 }
 
 export function cveReconcile({ claimed_score, computed_score, nvd_score, claimed_vector, computed_vector } = {}) {
@@ -380,7 +383,7 @@ export function nvdKevText(P = {}) {
   const kev = P.nvd_cache_dir ? `python3 tools/kev-lookup.py --cache-dir ${P.nvd_cache_dir} <CVE-ID> (reads the frozen ${P.kev_snapshot || 'kev-snapshot.json'}, create-on-miss)` : `WebFetch https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json and check whether the CVE is listed`;
   return [
     'AUTHORITATIVE CVE SOURCES (do not rely on the finding\'s own claim):',
-    `1. NVD: \`${nvd}\` — parse the final \`JSON_SUMMARY: {...}\` line (cve_id, score, severity, cwes[], status) AND the per-version "Vector:" lines for the vector string. v3.1 preferred, then v3.0, v2.0; v4.0 if present.`,
+    `1. NVD: \`${nvd}\` — parse the final \`JSON_SUMMARY: {...}\` line (cve_id, score, severity, cvss_version, cvss_vector, cwes[], status) AND the per-version "Vector:" lines. Use the PRIMARY per the v4.0-first ladder: CVSS v4.0 preferred, then v3.1 -> v3.0 -> v2.0 (nvd-lookup already marks the primary and fills cvss_version/cvss_vector).`,
     `2. CISA KEV (known-exploited): ${kev} (records {cveID, dateAdded, requiredAction, knownRansomwareCampaignUse}). Being on KEV raises real-world priority regardless of base score.`,
     '3. Vendor/official advisory: follow the authoritative reference URLs NVD returns (cve.references) and confirm affected versions + the vulnerability class match the finding. Quote the source.',
     'Reconcile: the finding\'s claimed CVE id, CVSS vector, base score, and severity must all agree with NVD and with your from-vector recomputation (|delta| <= 0.1 on the score, exact match on the vector and band). Flag KEV status. Any unreconciled divergence => CVE check FAILS.',
@@ -404,7 +407,7 @@ export const CHECKS_SCHEMA = {
       type: 'object', additionalProperties: true,
       properties: {
         applicable: { type: 'boolean' },
-        nvd_score: { type: ['number', 'null'] }, computed_score: { type: ['number', 'null'], description: 'from-vector recompute via the cvss lib / nvd-lookup (the TOOL computes it; JS reconciles)' },
+        nvd_score: { type: ['number', 'null'] }, computed_score: { type: ['number', 'null'], description: 'from-vector recompute via tools/cvss_calc.py / nvd-lookup (the TOOL computes it, v4.0-primary; JS reconciles)' },
         claimed_score: { type: ['number', 'null'] }, vector: { type: ['string', 'null'], description: 'the authoritative NVD vector' }, claimed_vector: { type: ['string', 'null'] },
         severity: { type: ['string', 'null'] }, on_kev: { type: 'boolean' },
         primary_cve: { type: ['string', 'null'] }, cwes: { type: 'array', items: { type: 'string' } },
@@ -502,10 +505,10 @@ export function checksPrompt(f, P = {}) {
     `CLAIMED: severity=${f.claimed_severity || '?'} vector=${f.claimed_cvss_vector || '?'} score=${f.claimed_score != null ? f.claimed_score : '?'}\n` +
     `OUTPUT_DIR: ${P.OUTPUT_DIR}   BUSINESS_TIER: ${P.BUSINESS_TIER}   REPAIR: ${P.REPAIR}\n\n` +
     `Run ALL of the following and write the proof package to ${f.dir}/evidence/validation/ (validation-summary.md per the VALIDATION.md template; plus the files below):\n\n` +
-    `A) CANONICAL 5 CHECKS (VALIDATION.md): cvss_consistency (severity band == score), evidence_exists (description.md, poc.py, poc_output.txt, evidence/raw-source.txt), poc_validation (ast.parse + references target), claims_vs_raw (every factual claim corroborated by a raw scan/log file), log_corroboration (recon/experiment/test/verify phases, verify timestamps >=2s apart).\n\n` +
+    `A) CANONICAL 5 CHECKS (VALIDATION.md): cvss_consistency (severity band == score), evidence_exists (description.md, poc.py, poc_output.txt, evidence/raw-source.txt), poc_validation (ast.parse + references target), claims_vs_raw (every factual claim corroborated by a raw scan/log file), log_corroboration (recon/experiment/test/verify phases present, verify timestamps >=2s apart). NOTE on log_corroboration: fail it ONLY on genuine bulk-stamping (all verify entries share one identical second, i.e. fabricated) — NOT merely because timestamps are close. When claims_vs_raw already PASSES (every factual claim is corroborated by a raw scan/log file) OR the finding is a fully-evidenced tested-negative, a log-format technicality alone is ADVISORY: pass log_corroboration (note the format issue in detail) rather than demoting a substantively-proven finding on bookkeeping.\n\n` +
     `B) CVE LANE (if CVE(s) present) — you are the TOOL that fetches the numbers; the workflow reconciles them deterministically, so REPORT them, do NOT decide the verdict:\n${(P.NVD_KEV || nvdKevText(P)).join('\n')}\n` +
-    `  Compute the base score from the vector with the cvss library (\`from cvss import CVSS3; CVSS3(vector).base_score\`; CVSS4 for v4.0) — this is the ONLY sanctioned score computation; do not hand-roll the math.\n` +
-    `  Write ${f.dir}/evidence/validation/cve-verification.md (per CVE: NVD JSON_SUMMARY, the NVD vector, the cvss-lib computed score, KEV status, advisory URL + quoted affected-version line).\n` +
+    `  Compute the base score from the vector with the canonical tool \`python3 tools/cvss_calc.py "<vector>"\` (CVSS v4.0-primary; it scores v4.0/v3.1/v3.0/v2.0). When NVD offers vectors in several versions, prefer the CVSS v4.0 vector and fall back v3.1 -> v3.0 -> v2.0 (\`nvd-lookup.py\` JSON_SUMMARY already exposes cvss_version + cvss_vector for the primary). This is the ONLY sanctioned score computation — do not hand-roll the math or rely on an ad-hoc \`cvss\` install.\n` +
+    `  Write ${f.dir}/evidence/validation/cve-verification.md (per CVE: NVD JSON_SUMMARY, the chosen CVSS version + vector, the tools/cvss_calc.py computed score, KEV status, advisory URL + quoted affected-version line).\n` +
     `  Return cve.{applicable, primary_cve, nvd_score, computed_score, claimed_score, vector (the NVD vector), claimed_vector, on_kev, cwes[], cves:[{id,score,severity}]}. Do NOT set a 'verified'/'reconciled' flag — the workflow computes reconciliation from these numbers.\n\n` +
     `C) EXPLOIT/EVIDENCE LANE — EVERY finding must end with a script that RUNS and prints the evidence that proves the issue:\n` +
     `  - ast.parse poc.py; run it against the target read-only (timeout 60s). Capture stdout+stderr to ${f.dir}/evidence/validation/poc-rerun-output.txt. Re-run 3x.\n` +
@@ -526,6 +529,7 @@ export function checksPrompt(f, P = {}) {
 export function refuterPrompt(f, i, P = {}) {
   return `ROLE: ADVERSARIAL VALIDATOR #${i} (blind). Your job is to REFUTE finding ${f.id}. You see ONLY its evidence package — NOT any validator's verdict, NOT attack-chain/session-memory, NOT other findings. Default to skepticism: if a claim is not independently supported, it is refuted.\n\n` +
     `Read ${f.dir}/description.md, ${f.dir}/poc.py, ${f.dir}/poc_output.txt, ${f.dir}/evidence/ (including evidence/validation/poc-rerun-output.txt, cve-verification.md, verification-script.py). For a CVE, independently sanity-check against the SAME frozen operands the validator used: ${(P.NVD_KEV || nvdKevText(P))[1]} Does the claimed CVSS vector actually yield the claimed score? does NVD agree? For the exploit: does the captured output actually PROVE the vulnerability, or is the "evidence" incidental/ambiguous/self-asserted? Could the output be produced on a non-vulnerable target? Are the factual claims present in raw scan output?\n\n` +
+    `COMMON FALSE-HIGH CALIBRATION — apply \`skills/coordination/reference/severity-calibration.md\`. REFUTE (impact not demonstrated/reachable as claimed) and name the unmet precondition as weakest_link if the finding is any of: CORS reflected-origin scored as token-theft WITHOUT \`Access-Control-Allow-Credentials: true\` + ambient-cookie-auth'd sensitive data; Azure \`AADSTS50126\` (failed auth) read as "MFA disabled" (Entra checks credentials BEFORE MFA — a failed login never reaches the MFA prompt); an ENABLER (spray-capability / Golden-SAML or cert template / writable ACL / SSRF reachability) scored as a DEMONSTRATED compromise it never actually performed; a scanner/vulners version-only "Critical" on a backported-distro or appliance-bundled package (version banner ≠ patch level); or a verified CVE scored at base WITHOUT confirming the vulnerable feature is enabled and reachable (e.g. IKEv1 CVE on an IKEv2-only gateway, an inbound-HRS CVE on an outbound-only client).\n\n` +
     `Return VOTE_SCHEMA: refuted (true if you found a real reason to doubt the finding, the score, or the CVE), reason, and weakest_link (the single most doubtful element).`;
 }
 
@@ -636,10 +640,11 @@ export function reconcileAssessed(expected, assessed, keyOf) {
 // runner's reported facts. A deliverable ships only when the report assembled, the
 // branded PDF rendered, AND the code-computed attack-class coverage is 100%
 // (coverage_complete). Fails closed: a missing/false coverage_complete blocks.
-export function finalizeGate({ report_data_ok, renderGateOk, coverage_complete, coverage_untested, renderBlockedReason }) {
-  const ok = !!(report_data_ok && renderGateOk && coverage_complete);
+export function finalizeGate({ report_data_ok, report_data_lint_ok, renderGateOk, coverage_complete, coverage_untested, renderBlockedReason }) {
+  const ok = !!(report_data_ok && report_data_lint_ok && renderGateOk && coverage_complete);
   const blocked_reason = ok ? null
     : !report_data_ok ? 'report_data_build failed'
+    : !report_data_lint_ok ? 'report_data lint failed (schema/escaping)'
     : !renderGateOk ? (renderBlockedReason || 'render failed')
     : `attack-class coverage < 100% (${coverage_untested} cell(s) untested)`;
   return { ok, status: ok ? 'COMPLETE' : 'BLOCKED', blocked_reason };

@@ -21,13 +21,25 @@ PASS predicates per applicable cell:
                           active_probe  -> a non-agent corroborator (tools/*.md 'Experiment:'
                                            header, or an existing 'corroborator' file)
                           none          -> the experiment reference alone suffices
+  deferred           -> an MFA/OTP/allowlist-blocked cell with an HONEST resting state:
+                        {status:deferred, deferral_reason, client_input_request} where the
+                        client_input_request path resolves to a real on-disk CIR file. Never
+                        counted as passed and never silently satisfies the gate — it is pulled
+                        out of missing_cells into its own bucket and keeps complete=False unless
+                        the parent orchestrator passes --accept-deferrals. An unsubstantiated
+                        'deferred' (missing reason/CIR) is a hard miss (cannot dodge the gate).
 FAIL (cell counts as missing) otherwise. status:NA on a code-applicable cell is a
 hard fabrication FAIL. Also: extra_cell (claim for a non-applicable cell),
 false_NA (class marked N/A where it has >=1 applicable cell), surface_undercount
 (web recon host not covered by the surface inventory).
 
-Writes <root>/reports/coverage-matrix.json. Exit 0 iff coverage_ratio==1.0 and no
-extra/false_NA/surface_undercount; 1 otherwise; 2 fail-closed (unreadable catalog/cells).
+coverage_ratio is passed / (applicable - deferred) — the fraction of RESOLVABLE cells
+covered — so the complete=>ratio==1.0 invariant holds. An all-deferred scope reports
+ratio 0.0 and stays incomplete regardless of --accept-deferrals (never a hollow 'complete').
+
+Writes <root>/reports/coverage-matrix.json. Exit 0 iff complete (coverage_ratio==1.0, no
+extra/false_NA/surface_undercount, and deferrals either absent or acknowledged); 1 otherwise;
+2 fail-closed (unreadable catalog/cells).
 """
 from __future__ import annotations
 
@@ -50,6 +62,11 @@ _TOOL_EXP_RE = re.compile(r"Experiment:\s*(E-\d+|SWEEP-[\w.\-]+)")
 # Bounds "one representative collapses an unbounded group": at most this many
 # siblings per (asset_tag, class_id, equiv_group) may ride a single representative.
 EQUIV_GROUP_MAX = 8
+
+# The closed set of per-cell ledger statuses accepted by eval_cell (mirrors the
+# coverage_catalog.py SCOPES/NEGATIVE_KINDS constant pattern). 'deferred' is an
+# MFA/OTP/allowlist-blocked cell's honest resting state — see the module docstring.
+LEDGER_STATUSES = ("covered", "covered_negative", "deferred")
 
 
 # --- evidence loaders (all scoped to a single asset directory) ---------------
@@ -174,7 +191,10 @@ def _equiv_representative(cell, ctx):
 
 
 def eval_cell(cell, ctx):
-    """Return (passed: bool, reason: str, mode: covered|covered_negative|None)."""
+    """Return (passed: bool, reason: str, mode: covered|covered_negative|deferred|None).
+
+    A 'deferred' verdict is never passed=True; the loop pulls it into its own bucket
+    (via ctx['deferral']) so it is neither a pass nor a silent miss."""
     cid = cell["class_id"]
     key = cell["scope_key"]
     row = ctx["rows"].get(cid) or {}
@@ -186,6 +206,18 @@ def eval_cell(cell, ctx):
 
     if status == "NA":
         return False, "na_fabrication", None
+    if status == "deferred":
+        # Substantiation guard: a deferred cell must name a reason AND a client-input
+        # request that resolves to a real on-disk file (like _is_corroborated). Two
+        # agent-authored strings alone can never exempt a cell from the 100% gate.
+        cir = entry.get("client_input_request")
+        if not (entry.get("deferral_reason") and cir
+                and os.path.isfile(os.path.join(ctx["asset_dir"], cir))):
+            return False, "deferred_unsubstantiated", None
+        ctx["deferral"] = {"deferral_reason": entry["deferral_reason"],
+                           "client_input_request": cir,
+                           "blocked_on": entry.get("blocked_on")}
+        return False, "deferred", "deferred"
     if status not in ("covered", "covered_negative"):
         return False, f"bad_status:{status}", None
     if e_id not in ctx["e_set"]:
@@ -223,7 +255,7 @@ def eval_cell(cell, ctx):
 
 
 # --- gate over the whole cell set --------------------------------------------
-def run_gate(root: str, single: bool) -> dict:
+def run_gate(root: str, single: bool, accept_deferrals: bool = False) -> dict:
     cells_path = os.path.join(root, "applicability", "cells.json")
     if os.path.isfile(cells_path):
         cellsdoc = json.load(open(cells_path, encoding="utf-8"))
@@ -238,7 +270,7 @@ def run_gate(root: str, single: bool) -> dict:
         cells_by_asset[c["asset_tag"]].append(c)
 
     results = []
-    per_class = defaultdict(lambda: {"applicable": 0, "passed": 0, "modes": []})
+    per_class = defaultdict(lambda: {"applicable": 0, "passed": 0, "deferred": 0, "modes": []})
     per_asset = defaultdict(lambda: {"applicable": 0, "passed": 0})
     extra_cells, false_na, surface_undercount = [], [], []
 
@@ -276,9 +308,13 @@ def run_gate(root: str, single: bool) -> dict:
                    "equiv_group": c.get("equiv_group")}
             if mode == "covered_equiv":
                 rec["representative"] = ctx.get("chosen_rep")
+            if mode == "deferred":
+                rec.update(ctx.pop("deferral"))
             results.append(rec)
             per_class[c["class_id"]]["applicable"] += 1
             per_asset[asset_tag]["applicable"] += 1
+            if reason == "deferred":
+                per_class[c["class_id"]]["deferred"] += 1
             if passed:
                 per_class[c["class_id"]]["passed"] += 1
                 per_asset[asset_tag]["passed"] += 1
@@ -302,8 +338,15 @@ def run_gate(root: str, single: bool) -> dict:
 
     applicable = len(results)
     passed = sum(1 for r in results if r["passed"])
-    ratio = round(passed / applicable, 4) if applicable else 1.0
-    missing_cells = [r for r in results if not r["passed"]]
+    deferred_cells = [r for r in results if r.get("reason") == "deferred"]
+    missing_cells = [r for r in results if not r["passed"] and r.get("reason") != "deferred"]
+    resolvable = applicable - len(deferred_cells)  # non-deferred cells the tester CAN close
+    if applicable == 0:
+        ratio = 1.0
+    elif resolvable <= 0:
+        ratio = 0.0  # all cells deferred -> never report 1.0 (also guards ZeroDivisionError)
+    else:
+        ratio = round(passed / resolvable, 4)
     covered_equiv = [r for r in results if "representative" in r]  # siblings collapsed onto a rep
 
     per_class_out = {}
@@ -311,19 +354,31 @@ def run_gate(root: str, single: bool) -> dict:
         cls = catalog.get(cid, {})
         if pc["applicable"] == pc["passed"] and pc["applicable"] > 0:
             status = "covered_negative" if "covered_negative" in pc["modes"] and "covered" not in pc["modes"] else "covered"
+        elif pc.get("deferred") and pc["applicable"] == pc["passed"] + pc["deferred"]:
+            status = "deferred"  # every open cell in this class is client-input-blocked
         else:
             status = "pending"
         per_class_out[cid] = {"taxonomy": cls.get("taxonomy"), "title": cls.get("title"),
-                              "applicable": pc["applicable"], "passed": pc["passed"], "status": status}
+                              "applicable": pc["applicable"], "passed": pc["passed"],
+                              "deferred": pc.get("deferred", 0), "status": status}
 
-    complete = (not missing_cells) and (not extra_cells) and (not false_na) and (not surface_undercount)
+    # complete requires: no real misses/extras/false-NA/undercount; deferrals absent or
+    # acknowledged; AND at least one resolvable cell actually tested (an all-deferred scope
+    # never completes, regardless of --accept-deferrals — the complete=>ratio==1.0 invariant).
+    complete = ((not missing_cells) and (not extra_cells) and (not false_na)
+                and (not surface_undercount)
+                and (not deferred_cells or accept_deferrals)
+                and (resolvable > 0 or applicable == 0))
     return {
         "generated_by": "coverage_gate.py",
         "applicable": applicable,
         "passed": passed,
         "coverage_ratio": ratio,
         "complete": complete,
+        "deferred": len(deferred_cells),
+        "deferred_acknowledged": accept_deferrals,
         "missing_cells": sorted(missing_cells, key=lambda r: (r["asset_tag"], r["class_id"], r["scope_key"])),
+        "deferred_cells": sorted(deferred_cells, key=lambda r: (r["asset_tag"], r["class_id"], r["scope_key"])),
         "covered_equiv": sorted(covered_equiv, key=lambda r: (r["asset_tag"], r["class_id"], r["scope_key"])),
         "extra_cells": sorted(extra_cells, key=lambda r: (r["asset_tag"], r["class_id"], str(r["scope_key"]))),
         "false_NA": sorted(false_na, key=lambda r: (r["asset_tag"], r["class_id"])),
@@ -340,12 +395,16 @@ def main() -> int:
     g.add_argument("--engagement-dir")
     ap.add_argument("-o", "--out")
     ap.add_argument("--emit-open", action="store_true", help="print the open-cell backlog and exit")
+    ap.add_argument("--accept-deferrals", action="store_true",
+                    help="allow COMPLETE while SUBSTANTIATED deferrals exist (a parent-orchestrator "
+                         "act, after the client-input request is filed). An all-deferred scope still "
+                         "never completes.")
     args = ap.parse_args()
 
     root = os.path.abspath(args.asset_dir or args.engagement_dir)
     single = bool(args.asset_dir)
     try:
-        result = run_gate(root, single)
+        result = run_gate(root, single, accept_deferrals=args.accept_deferrals)
     except CatalogError as e:
         print(f"coverage_gate: {e}", file=sys.stderr)
         return 2
@@ -360,22 +419,29 @@ def main() -> int:
         json.dump(result, f, ensure_ascii=False, indent=2, sort_keys=True)
 
     print(f"coverage_gate: ratio={result['coverage_ratio']} applicable={result['applicable']} "
-          f"passed={result['passed']} missing={len(result['missing_cells'])} extra={len(result['extra_cells'])} "
+          f"passed={result['passed']} missing={len(result['missing_cells'])} deferred={result['deferred']} "
+          f"extra={len(result['extra_cells'])} "
           f"false_NA={len(result['false_NA'])} undercount={len(result['surface_undercount'])} -> {out}")
     for r in result["missing_cells"][:25]:
         print(f"  MISSING {r['class_id']} @ {r['scope_key']} ({r['asset_tag']}) — {r['reason']}")
     if len(result["missing_cells"]) > 25:
         print(f"  ... and {len(result['missing_cells']) - 25} more missing")
+    for r in result["deferred_cells"][:25]:
+        print(f"  DEFERRED {r['class_id']} @ {r['scope_key']} ({r['asset_tag']}) — "
+              f"{r.get('deferral_reason', '')} [{r.get('client_input_request', '')}]")
     return 0 if result["complete"] else 1
 
 
 def _emit_open(result: dict) -> None:
     """Compact open-cell backlog for injection into a THINK prompt."""
     openc = result["missing_cells"]
+    deferred = result.get("deferred_cells", [])
     if not openc:
-        print("OPEN_CELLS: none — coverage complete")
-        return
-    if len(openc) <= 60:
+        if deferred:
+            print(f"OPEN_CELLS: none open — {len(deferred)} deferred pending client input")
+        else:
+            print("OPEN_CELLS: none — coverage complete")
+    elif len(openc) <= 60:
         for r in openc:
             eq = f" [equiv:{r['equiv_group']}]" if r.get("equiv_group") else ""
             print(f"OPEN {r['class_id']} @ {r['scope_key']} ({r['asset_tag']}){eq} — {r['reason']}")
@@ -386,6 +452,9 @@ def _emit_open(result: dict) -> None:
         print(f"OPEN_CELLS: {len(openc)} open (summarized per class):")
         for cid, n in sorted(by_class.items(), key=lambda kv: -kv[1]):
             print(f"  {cid}: {n} open")
+    # deferred cells are NOT open work — surface them distinctly so THINK doesn't chase them
+    for r in deferred:
+        print(f"DEFERRED {r['class_id']} @ {r['scope_key']} ({r['asset_tag']}) — {r.get('deferral_reason', '')}")
 
 
 if __name__ == "__main__":

@@ -33,6 +33,21 @@ ENUM = os.path.join(HERE, "enumerate_cells.py")
 GATE = os.path.join(HERE, "coverage_gate.py")
 HAVE_NMAP = bool(shutil.which("nmap"))
 
+# Import the probe module directly so the block-page/soft-404 guards can be unit-
+# tested and driven against loopback servers without spawning a subprocess.
+sys.path.insert(0, HERE)
+import passive_web_probe as probe  # noqa: E402
+
+# The canonical F5 BIG-IP ASM / F5 Distributed Cloud reject page (~269 bytes). A
+# rejected request comes back with HTTP 200 and THIS body — never a real file.
+F5_REJECT_PAGE = (
+    "<html><head><title>Request Rejected</title></head><body>"
+    "The requested URL was rejected. Please consult with your administrator.<br><br>"
+    "Your support ID is: 7799990120182737622<br><br>"
+    "<a href='javascript:history.back();'>[Go Back]</a></body></html>"
+)
+_FAKE_AWS_KEY = "AKIAIOSFODNN7EXAMPLE"  # matches _SECRET_RE; forces a would-be positive
+
 # Long-lived self-signed cert (CN=127.0.0.1, SAN IP:127.0.0.1) embedded so the
 # test needs no openssl at runtime and never touches the network.
 _CERT_PEM = """-----BEGIN CERTIFICATE-----
@@ -140,6 +155,35 @@ def start_server(omit_csp=False, tls=False, certfile=None):
     port = httpd.server_address[1]
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
     t.start()
+    return httpd, port
+
+
+def start_scripted_server(respond):
+    """Loopback server whose every response is decided by respond(path) ->
+    (status, headers_dict, body_bytes). Lets a test simulate a WAF reject page, an
+    SPA soft-404 catch-all, or a server hosting one genuinely-distinct file."""
+    class Handler(BaseHTTPRequestHandler):
+        def _emit(self):
+            status, headers, body = respond(urlparse(self.path).path)
+            self.send_response(status)
+            for k, v in headers.items():
+                self.send_header(k, v)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            return body
+
+        def do_GET(self):
+            self.wfile.write(self._emit())
+
+        def do_HEAD(self):
+            self._emit()
+
+        def log_message(self, *a):
+            pass
+
+    httpd = _QuietServer(("127.0.0.1", 0), Handler)
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd, port
 
 
@@ -317,6 +361,149 @@ def test_no_mechanical_cells_is_graceful():
         summary = run_probe(asset_dir)
         assert summary["covered_negative"] == [] and summary["findings"] == [], \
             f"empty surface must be a graceful no-op: {summary}"
+
+
+# --- Addition #1: WAF/CDN block-page classifier -----------------------------
+def test_classify_block_vendor_signatures():
+    cb = probe.classify_block
+    # F5 XC ASM reject page (body markers, usually HTTP 200).
+    r = cb(200, {}, F5_REJECT_PAGE)
+    assert r == {"is_block": True, "vendor": "f5"}, r
+    # Vercel — platform error header, and the NOT_FOUND shell with an x-vercel-* header.
+    assert cb(404, {"x-vercel-error": "NOT_FOUND"}, "")["vendor"] == "vercel"
+    assert cb(404, {"x-vercel-id": "abc"}, "This page could not be found")["vendor"] == "vercel"
+    # AppTrana / Indusface — HTTP 406 with a vendor marker.
+    assert cb(406, {"content-type": "text/html"}, "Blocked by AppTrana WAF")["vendor"] == "apptrana"
+    # Akamai — Ghost reject markers / Reference # hex.
+    assert cb(403, {"server": "AkamaiGHost"}, "Access Denied")["vendor"] == "akamai"
+    assert cb(200, {}, "Reference #18.abcd1234.1700000000.deadbeef")["vendor"] == "akamai"
+    # Cloudflare — cf-ray header + a challenge/block body.
+    assert cb(403, {"cf-ray": "8a1b2c3d"}, "Attention Required! | Cloudflare")["vendor"] == "cloudflare"
+    assert cb(429, {"cf-ray": "8a1b2c3d"}, "error 1015 rate limited")["vendor"] == "cloudflare"
+    # Sucuri — block body / x-sucuri-block header.
+    assert cb(403, {"x-sucuri-id": "1"}, "Sucuri WebSite Firewall - Access Denied")["vendor"] == "sucuri"
+    # Imperva / Incapsula — deny body / cookie markers.
+    assert cb(403, {}, "Powered by _Incapsula_Resource")["vendor"] == "imperva"
+    assert cb(403, {"set-cookie": "incap_ses_123=abc; path=/"}, "denied")["vendor"] == "imperva"
+    assert cb(403, {"x-iinfo": "9-12345-0"}, "Request unsuccessful. Incapsula incident ID: 1")["vendor"] == "imperva"
+
+    # NEGATIVES — a plain page and, crucially, a real 200 asset merely fronted by a
+    # CDN (bare vendor header, no deny status/body) must NOT be classified as a block.
+    assert cb(200, {"server": "nginx"}, "<html><body>hello</body></html>")["is_block"] is False
+    assert cb(200, {"x-akamai-transformed": "9 1234 0"}, "console.log(1)")["is_block"] is False
+    assert cb(200, {"x-sucuri-id": "1"}, "legit body")["is_block"] is False
+    assert cb(200, {"x-vercel-id": "abc"}, "real served asset")["is_block"] is False
+    assert cb(200, {"x-iinfo": "9-12345-0"}, "real served asset")["is_block"] is False
+
+
+# --- Addition #2: soft-404 detector -----------------------------------------
+def test_is_soft_404_true_and_false():
+    shell = "<html><body id='app'>loading…</body></html>"
+    baseline = probe.baseline_fingerprint({"ok": True, "status": 200, "body": shell})
+    # identical body-hash -> soft-404
+    assert probe.is_soft_404({"ok": True, "status": 200, "body": shell}, baseline) is True
+    # same status, different body but size within tolerance -> soft-404
+    near = shell.replace("app", "App")  # same length, different content
+    assert probe.is_soft_404({"ok": True, "status": 200, "body": near}, baseline) is True
+    # different status -> NOT soft-404 (a real 200 file vs a 404 baseline)
+    assert probe.is_soft_404({"ok": True, "status": 404, "body": shell}, baseline) is False
+    # same status but a genuinely distinct, much larger body -> NOT soft-404
+    assert probe.is_soft_404({"ok": True, "status": 200, "body": "X" * 5000}, baseline) is False
+    # missing baseline / unreachable candidate -> NOT soft-404
+    assert probe.is_soft_404({"ok": True, "status": 200, "body": shell}, None) is False
+    assert probe.is_soft_404({"ok": False, "error": "refused"}, baseline) is False
+
+
+# --- wiring: a WAF reject page is a block observation, never a secret exposure --
+def test_f5_reject_page_not_reported_as_secret():
+    # /.env returns the F5 reject page WITH an embedded fake key: without the block
+    # guard the secret regex would match; the guard must win and suppress it.
+    body = (F5_REJECT_PAGE + f"<!-- api_key: {_FAKE_AWS_KEY} -->").encode()
+
+    def respond(path):
+        if path == "/.env":
+            return 200, {"Content-Type": "text/html"}, body
+        return 404, {"Content-Type": "text/plain"}, b"Not Found"
+
+    httpd, port = start_scripted_server(respond)
+    base = f"http://127.0.0.1:{port}"
+    try:
+        verdict, one_line, raw, obs = probe.check_secret_exposure([f"{base}/.env"], [base], timeout=8)
+    finally:
+        httpd.shutdown()
+
+    assert verdict == "clean", f"F5 reject page must not be a secret finding: {verdict} / {one_line}"
+    assert "[SECRET]" not in raw, raw
+    assert any(o["kind"] == "waf_block" and o["vendor"] == "f5" for o in obs), \
+        f"the /.env reject page must be recorded as an F5 block: {obs}"
+
+
+# --- wiring: an SPA/Blazor catch-all shell is a soft-404, never a hit ----------
+def test_soft404_shell_not_reported_as_secret():
+    # Every path (incl. the nonsense baseline AND /.git/config) returns the SAME 200
+    # shell that happens to contain a secret-looking token.
+    shell = (f"<html><body><script>window.cfg={{api_key:'{_FAKE_AWS_KEY}'}}</script>"
+             "<div id='app'>loading</div></body></html>").encode()
+
+    def respond(path):
+        return 200, {"Content-Type": "text/html"}, shell  # true catch-all
+
+    httpd, port = start_scripted_server(respond)
+    base = f"http://127.0.0.1:{port}"
+    try:
+        verdict, one_line, raw, obs = probe.check_secret_exposure(
+            [f"{base}/.git/config", f"{base}/app.js"], [base], timeout=8)
+    finally:
+        httpd.shutdown()
+
+    assert verdict == "clean", f"catch-all shell must not be a secret finding: {verdict} / {one_line}"
+    assert "[SECRET]" not in raw, raw
+    assert any(o["kind"] == "soft_404" and o["url"].endswith("/.git/config") for o in obs), \
+        f"/.git/config must be recorded as a soft-404, not an exposure: {obs}"
+
+
+# --- no regression: a genuinely distinct file IS still reported ----------------
+def test_distinct_file_still_reported():
+    # /app.js is a real, distinct 200 body with a secret; the nonsense baseline is a
+    # short 404 -> differs in status+body -> NOT soft-404 -> must still be reported.
+    real = (f"'use strict';const AWS_KEY='{_FAKE_AWS_KEY}';export default AWS_KEY;").encode()
+
+    def respond(path):
+        if path == "/app.js":
+            return 200, {"Content-Type": "application/javascript"}, real
+        return 404, {"Content-Type": "text/plain"}, b"Not Found"
+
+    httpd, port = start_scripted_server(respond)
+    base = f"http://127.0.0.1:{port}"
+    try:
+        verdict, one_line, raw, obs = probe.check_secret_exposure([f"{base}/app.js"], [base], timeout=8)
+    finally:
+        httpd.shutdown()
+
+    assert verdict == "positive", f"a real distinct secret must still be reported: {verdict} / {one_line}"
+    assert "[SECRET]" in raw and _FAKE_AWS_KEY[:12] in one_line, (raw, one_line)
+    assert not any(o["kind"] == "soft_404" for o in obs), f"a distinct file is not a soft-404: {obs}"
+
+
+# --- wiring: soft-404 also protects the API inventory check --------------------
+def test_soft404_shell_not_reported_as_openapi():
+    # Every path returns an identical 200 shell that echoes 'openapi' — without the
+    # soft-404 guard /openapi.json would be a false "exposed inventory" hit.
+    shell = b'<html><body>{"openapi":"3.0.0"} single-page app shell</body></html>'
+
+    def respond(path):
+        return 200, {"Content-Type": "text/html"}, shell  # true catch-all
+
+    httpd, port = start_scripted_server(respond)
+    base = f"http://127.0.0.1:{port}"
+    try:
+        verdict, one_line, raw, obs = probe.check_api_inventory([base], timeout=8)
+    finally:
+        httpd.shutdown()
+
+    assert verdict == "clean", f"catch-all shell must not be exposed inventory: {verdict} / {one_line}"
+    assert "[OPENAPI]" not in raw, raw
+    assert any(o["kind"] == "soft_404" for o in obs), f"swagger paths must be recorded as soft-404: {obs}"
 
 
 def main():

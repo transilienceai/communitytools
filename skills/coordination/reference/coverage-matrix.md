@@ -54,7 +54,8 @@ Owned by the INTEGRATE agent (sole writer, mirroring the `experiments.md` owners
   "status": "pending",                  // advisory per-class rollup; the CELLS are authoritative
   "units_tested": [
     { "key": "u-0007", "status": "covered", "e_id": "E-014", "finding_id": "F-003" },
-    { "key": "u-0012", "status": "covered_negative", "e_id": "E-018", "negative_kind": "active_probe", "corroborator": "tools/031_ssrf-probe.md" }
+    { "key": "u-0012", "status": "covered_negative", "e_id": "E-018", "negative_kind": "active_probe", "corroborator": "tools/031_ssrf-probe.md" },
+    { "key": "u-0021", "status": "deferred", "deferral_reason": "post-auth BOLA needs an MFA/OTP session; no client OTP seed", "client_input_request": "reports/client-input-requests/CIR-003.md", "blocked_on": "otp" }
   ]
 }
 ```
@@ -62,6 +63,7 @@ Owned by the INTEGRATE agent (sole writer, mirroring the `experiments.md` owners
 Per-cell rules enforced deterministically by `coverage_gate.py` (scoped to the cell's own asset dir — no cross-asset contamination):
 - **covered** requires an `e_id` present in `experiments.md` **and** a `VALID`/`REPAIRED` finding in `artifacts/validated/` whose `class_id` + `unit_refs` + `asset_tag` match the cell. A cell whose only candidates were REJECTED/DROPPED stays uncovered ("reject and keep searching").
 - **covered_negative** is a genuinely-clean probe. `active_probe` negatives need a non-agent corroborator (a `tools/NNN_*.md` whose `Experiment: E-NNN` header cites the raw tool output, or a `corroborator` file that exists). `reachability` negatives (only `XC-SUBDOMAIN-ORIGIN`) need ≥ `min_vantages` distinct **verified** regions from `logs/activity/source-ips.jsonl` (auto-`detected` `verified:false` rows are excluded).
+- **deferred** is the honest resting state for a cell the tester cannot reach through no fault of their own (MFA/OTP-gated post-auth, IP-allowlist). It requires **both** a `deferral_reason` and a `client_input_request` whose path resolves to a real on-disk CIR file (`blocked_on` ∈ `otp|mfa|test_account|allowlist` is optional). A `deferred` cell is never counted as passed and never a silent miss: the gate buckets it into `deferred_cells`, computes `coverage_ratio` over the *resolvable* (non-deferred) cells, and keeps `complete` false until the parent orchestrator passes `--accept-deferrals` (an all-deferred scope never completes). An **unsubstantiated** `deferred` (missing reason or a CIR that does not resolve) is a hard miss — it cannot dodge the gate. See the `authenticated-session-acquisition` skill and the preflight cred-reach probe.
 - **NA** on a code-applicable cell is a hard fabrication FAIL — the code, not the agent, decides applicability.
 
 ## How the loop uses it

@@ -136,7 +136,10 @@ On a DENSE internal range (dozens+ of live hosts) fall back to a bounded set to 
 ## Common pitfalls
 
 - **SYN scan needs root/sudo** — falls back to `-sT` connect scan unprivileged.
-- **UDP "open|filtered"** is the most common state — UDP services don't reply to empty probes; only version detection (`-sV`) can confirm.
+- **`--host-timeout` on a full-range connect scan truncates high ports** — a per-host timeout can fire before high ports enumerate, so an all-zero-open result is a *truncation artifact*, not "dead." Never conclude "0 open / zero exposure" from such a run: validate the XML with `python3 tools/netscan_guard.py --xml <scan.xml>` (exit 20 = UNSOUND) and re-scan every 0-open up-host (no `--host-timeout`, or `-sS` as root) before calling it dead.
+- **Unprivileged `-sT` needs a `--max-rate` cap** — a connect scan at a high `--min-rate` exhausts the local socket table → false `filtered`. Also set `--initial-rtt-timeout/--max-rtt-timeout ≥` the observed `srtt` (from a prior scan's `<times>`), or slow-but-live services drop as filtered. `netscan_guard.py --capability-check --prior-xml <p>` computes the RTT floor and flags when to route full-range/`-sU`/`-sS` onto a root cloud vantage.
+- **Banner artifacts spawn phantom CVEs** — e.g. MariaDB prepends `5.5.5-` to its version for MySQL-client compatibility, so a naive CPE match mislabels it MySQL 5.5.5 and pulls ~200 irrelevant MySQL CVEs. Run `netscan_guard.py --suppress-cves` before `nvd-lookup.py` enrichment to drop these.
+- **UDP "open|filtered"** is the most common state — UDP services don't reply to empty probes; only version detection (`-sV`) can confirm. `open|filtered ≠ open`: a timeout is not an open port. `netscan_guard.py` reads the XML `state` literally and reports `ambiguous_open_filtered` distinctly from `true_open`.
 - **`--min-rate`** values too high cause packet loss → false negatives. Tune per network.
 - **Firewall path TTL changes** can split a host into "two hosts" in nmap output — always inspect raw nmap XML.
 - **Top-ports lists vary** between nmap versions — record `--top-ports` value in the report.

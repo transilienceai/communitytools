@@ -1,0 +1,204 @@
+{
+  "_meta": {
+    "source": "hidden sheets 7/8 + Manpower headers",
+    "template_version": "2.3 July 2026",
+    "tlp": "AMBER"
+  },
+  "attributing_factor": [
+    "Coding Error",
+    "Configuration Error",
+    "Deployment Error",
+    "Design Error",
+    "Operation Error",
+    "Vulnerable Software Versions"
+  ],
+  "audit_type": [
+    "Any other(Pls specify in adjacent column)",
+    "API Security Audit",
+    "Application Audit",
+    "Artificial Intelligence (AI) System Audit",
+    "Blockchain Security Audit",
+    "Cloud Security Audit",
+    "Compliance to Standard/Framework/Policies Related Audit",
+    "Digital Forensic Readiness Assessment",
+    "Industrial Control Systems (ICS) / SCADA Audit",
+    "IoT Security Assessment",
+    "Mobile Application Audit",
+    "Network Infrastructure Audit",
+    "Process Audit",
+    "Red Team Assessment",
+    "SBOM/ QBOM/AIBOM Audit",
+    "Source Code Review",
+    "Thick Client Audit",
+    "Vendor Risk Management / Third-party security Audits",
+    "Website /Web Application Audit",
+    "Wireless security audit"
+  ],
+  "category": [
+    "Central Ministry/ Department",
+    "Organization under Government Department",
+    "Private Sector",
+    "Public sector organisations",
+    "State Government Department",
+    "Trust / NGOs"
+  ],
+  "certifications": [
+    "CISSP",
+    "CISA",
+    "CISM",
+    "ISO",
+    "DISA",
+    "OSCP",
+    "CEH"
+  ],
+  "count_specials": [
+    "More than 100",
+    "Not Known",
+    "Follow up audit not performed",
+    "NA",
+    "More than 200"
+  ],
+  "first_final": [
+    "First Audit",
+    "Final Audit"
+  ],
+  "reason": [
+    "Certificate of compliance like ISO 27001",
+    "Certificate of safe hosting",
+    "Change in process or infrastructure",
+    "Government directions",
+    "Incident/ Breach in Organisation",
+    "Incident/ Breach in Sector",
+    "New application/ Infrastructure",
+    "Not Known",
+    "Periodic Audit as per  Policy of organisation.",
+    "Regulatory directions",
+    "Third Party Initiated"
+  ],
+  "sector": {
+    "Agriculture": [
+      "Agriculture"
+    ],
+    "Defence": [
+      "Defence"
+    ],
+    "Education": [
+      "Education"
+    ],
+    "Energy": [
+      "Nuclear Energy",
+      "Oil and Gas",
+      "Power",
+      "Renewable Energy"
+    ],
+    "Finance": [
+      "Banking",
+      "Financial Services and Tax",
+      "Fintech",
+      "Insurance",
+      "Market Infrastructure Institutions",
+      "NHB",
+      "PFRDA"
+    ],
+    "Healthcare": [
+      "Healthcare services",
+      "Medical devices",
+      "Pharmaceuticals"
+    ],
+    "Information and Broadcasting": [
+      "Information and Broadcasting"
+    ],
+    "Information and Communication Technology": [
+      "Information and Communication Technology",
+      "Telecommunication"
+    ],
+    "Law Enforcement and Security": [
+      "Law Enforcement and Security"
+    ],
+    "Public Essential Services and Utilities": [
+      "Building and Construction",
+      "Emergency Services",
+      "Food, Textiles and Consumer Goods",
+      "Heavy industries",
+      "Postal Services",
+      "Public administration",
+      "Retail services",
+      "Sports, cultural activities, Trade Fairs and Entertainment",
+      "Tourism & Hospitality",
+      "Water and Sewage Utilities"
+    ],
+    "Space": [
+      "Space"
+    ],
+    "Transportation": [
+      "Air Transportation",
+      "Land Transportation",
+      "Water Transportation"
+    ]
+  },
+  "severity": [
+    "Critical",
+    "High",
+    "Medium",
+    "Low",
+    "Informational"
+  ],
+  "standards": [
+    "GDPR/HIPPA/ENISA",
+    "ISACA Guidelines / CIS Benchmarks",
+    "ISO 27001, IEC, NERC, COBIT Standards",
+    "MITRE ATT&CK framework",
+    "Mobile Application Security Verification Standard (MASVS)",
+    "National Institute of Standards and Technology (NIST)",
+    "Open Web Application Security Project (OWASP)",
+    "OSSTMM or PTES",
+    "Other (Pls specify in adjacent column)",
+    "OWASP Mobile Top 10",
+    "OWASP Top 10",
+    "PCI DSS",
+    "Regulatory Bodies Guidelines like RBI, IRDAI, SEBI, NPCI, IDBRT etc",
+    "Regulatory Bodies Guidelines like UIDAI, CERT-In, CCA , TRAI etc",
+    "SANS 25",
+    "UIDAI - AUA and KUA Audits",
+    "Web Application Security Consortium (WASC)"
+  ],
+  "state_ut": [
+    "Andaman and Nicobar",
+    "Andhra Pradesh",
+    "Arunachal Pradesh",
+    "Assam",
+    "Bihar",
+    "Chandigarh",
+    "Chhattisgarh",
+    "Dadra and Nagar Haveli and Daman and Diu",
+    "Delhi",
+    "Goa",
+    "Gujarat",
+    "Haryana",
+    "Himachal Pradesh",
+    "Jammu and Kashmir",
+    "Jharkhand",
+    "Karnataka",
+    "Kerala",
+    "Ladakh",
+    "Lakshadweep",
+    "Madhya Pradesh",
+    "Maharashtra",
+    "Manipur",
+    "Meghalaya",
+    "Mizoram",
+    "Nagaland",
+    "Odisha",
+    "Outside India",
+    "Puducherry",
+    "Punjab",
+    "Rajasthan",
+    "Sikkim",
+    "Tamil Nadu",
+    "Telangana",
+    "Tripura",
+    "Uttar Pradesh",
+    "Uttarakhand",
+    "West Bengal"
+  ]
+}

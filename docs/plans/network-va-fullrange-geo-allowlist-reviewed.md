@@ -1,6 +1,6 @@
 # Refined Plan — Full-range TCP + message-bus/odd-TLS hunting as the network-VA default, and source-IP/geo-allowlist auto-probe from a second geography
 
-> Lead-reviewer refinement of the network-VA gap-closure plan. Fills every goal gap, keeps the change set minimal (extend existing tools/helpers, never re-implement), bakes in the security/performance findings, and gives a concrete test for every goal. All target paths are repo-root-relative to `/Users/alexander/dev/transilience-ai/communitytools`.
+> Lead-reviewer refinement of the network-VA gap-closure plan. Fills every goal gap, keeps the change set minimal (extend existing tools/helpers, never re-implement), bakes in the security/performance findings, and gives a concrete test for every goal. All target paths are repo-root-relative.
 
 ## Objective
 

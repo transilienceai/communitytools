@@ -68,7 +68,7 @@ The HackerOne PoC contract is a superset of the standard finding contract (`skil
 
 Build each report from a validated finding only. Required sections per HackerOne standard:
 1. Summary (2-3 sentences).
-2. Severity (CVSS v3.1 + business impact) — use the score `validate-findings` recomputed from the vector and the risk bucket it assigned, not a hand-typed number.
+2. Severity (CVSS + business impact; v4.0 primary, v3.1 → v3.0 → v2.0 fallback) — use the score `validate-findings` recomputed from the vector and the risk bucket it assigned, not a hand-typed number.
 3. Steps to Reproduce (numbered, clear) — mirror the validated `verification-script.py`.
 4. Visual Evidence (from `evidence/validation/`).
 5. Impact (realistic attack scenario).
@@ -104,7 +104,7 @@ Standard `OUTPUT_DIR` (`skills/coordination/reference/output-discipline.md`) plu
 ## Submission checklist
 
 - [ ] **`validate-findings` verdict = `VALID` or `REPAIRED`** (`artifacts/validated/{id}.json` exists). Never submit a `REJECTED` finding.
-- [ ] CVSS v3.1 **recomputed from the vector** and matching NVD when a CVE applies (`evidence/validation/cve-verification.md`).
+- [ ] CVSS **recomputed from the vector** (v4.0 primary; v3.1 → v3.0 → v2.0 fallback) and matching NVD when a CVE applies (`evidence/validation/cve-verification.md`).
 - [ ] Working PoC with `poc_output.txt` (the validator re-ran/repaired it and confirmed the evidence token).
 - [ ] Step-by-step reproduction.
 - [ ] Visual evidence.

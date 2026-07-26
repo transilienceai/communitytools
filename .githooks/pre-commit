@@ -1,0 +1,4 @@
+#!/bin/sh
+# Block client/engagement data and credentials from entering this PUBLIC repo.
+# Enable once per clone:  git config core.hooksPath .githooks
+exec python3 "$(git rev-parse --show-toplevel)/scripts/check_client_data.py" --staged

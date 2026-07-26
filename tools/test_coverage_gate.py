@@ -22,11 +22,13 @@ CLS = {c["class_id"]: c for c in CATALOG["classes"]}
 
 
 # --- subprocess helpers ------------------------------------------------------
-def _run(script, root, single, emit_open=False):
+def _run(script, root, single, emit_open=False, accept_deferrals=False):
     flag = "--asset-dir" if single else "--engagement-dir"
     cmd = [sys.executable, script, flag, root]
     if emit_open:
         cmd.append("--emit-open")
+    if accept_deferrals:
+        cmd.append("--accept-deferrals")
     p = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True)
     return p.returncode, p.stdout + p.stderr
 
@@ -35,8 +37,8 @@ def enum(root, single=False):
     return _run(ENUM, root, single)
 
 
-def gate(root, single=False, emit_open=False):
-    rc, out = _run(GATE, root, single, emit_open)
+def gate(root, single=False, emit_open=False, accept_deferrals=False):
+    rc, out = _run(GATE, root, single, emit_open, accept_deferrals)
     matrix = None
     mpath = os.path.join(root, "reports", "coverage-matrix.json")
     if os.path.isfile(mpath):
@@ -134,6 +136,36 @@ def close_all(host_dir, cells, region_pool=("eu-west", "us-east")):
     for i, c in enumerate(cells, 1):
         e = close_negative(host_dir, c, f"E-{i:03d}", list(region_pool), n=i)
         by_class.setdefault(c["class_id"], []).append(e)
+    write_coverage(host_dir, by_class)
+
+
+def write_cir(asset_dir, rel="reports/client-input-requests/CIR-001.md"):
+    p = os.path.join(asset_dir, rel)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, "w") as f:
+        f.write("# Client Input Request\nNeeds OTP seed / test account for <realm>.\n")
+    return rel
+
+
+def close_all_but_defer(host_dir, cells, defer_cells, substantiated=True, cir=True,
+                        region_pool=("eu-west", "us-east")):
+    """Close every cell as a negative EXCEPT those in defer_cells, which get a
+    status:deferred entry. When substantiated+cir, an on-disk CIR is written and
+    referenced so the deferral is legitimate; otherwise it should be a hard miss."""
+    defer_keys = {(c["class_id"], c["scope_key"]) for c in defer_cells}
+    cir_rel = write_cir(host_dir) if (substantiated and cir) else None
+    by_class = {}
+    for i, c in enumerate(cells, 1):
+        if (c["class_id"], c["scope_key"]) in defer_keys:
+            entry = {"key": c["scope_key"], "status": "deferred"}
+            if substantiated:
+                entry["deferral_reason"] = "post-auth probe needs MFA/OTP session; no client OTP seed"
+                entry["blocked_on"] = "otp"
+                if cir_rel:
+                    entry["client_input_request"] = cir_rel
+        else:
+            entry = close_negative(host_dir, c, f"E-{i:03d}", list(region_pool), n=i)
+        by_class.setdefault(c["class_id"], []).append(entry)
     write_coverage(host_dir, by_class)
 
 
@@ -412,6 +444,76 @@ def test_equiv_group_bound():
     assert all(r["representative"] == "u0" for r in credited), f"all credited siblings ride u0: {credited}"
     assert len(inj_missing) == n_sib - EQUIV_GROUP_MAX, f"excess siblings must remain missing: {inj_missing}"
     assert all(r["reason"] == "no_matching_finding" for r in inj_missing), f"excess reason: {inj_missing}"
+
+
+def test_deferred_substantiated_is_not_missing_and_holds_complete():
+    # A substantiated deferred cell (reason + on-disk CIR) is pulled out of missing_cells
+    # into deferred_cells; ratio is over RESOLVABLE cells (==1.0 here) but complete stays
+    # False until acknowledged.
+    tmp = tempfile.mkdtemp()
+    hd = net_host(tmp, "10.0.0.30", [{"port": 443, "state": "open", "service": "https", "product": "nginx", "version": "1.28.0"},
+                                     {"port": 22, "state": "open", "service": "ssh", "product": "OpenSSH", "version": "8.9"}])
+    cells = load_cells(tmp, hd)
+    defer = next(c for c in cells if c["class_id"] == "XC-SECURITY-HEADERS")  # host-scope active_probe cell
+    close_all_but_defer(hd, cells, [defer])
+    rc, out, m = gate(hd, single=True)
+    assert m["coverage_ratio"] == 1.0, f"all resolvable cells covered -> ratio 1.0: {out}"
+    assert m["deferred"] == 1 and not m["complete"] and rc == 1, f"deferred holds complete False: {out}"
+    dk = {(r["class_id"], r["scope_key"]) for r in m["deferred_cells"]}
+    assert (defer["class_id"], defer["scope_key"]) in dk, f"deferred cell must be bucketed: {m['deferred_cells']}"
+    d = m["deferred_cells"][0]
+    assert d.get("deferral_reason") and d.get("client_input_request"), f"deferral metadata carried: {d}"
+    mk = {(r["class_id"], r["scope_key"]) for r in m["missing_cells"]}
+    assert (defer["class_id"], defer["scope_key"]) not in mk, "deferred cell must NOT be in missing_cells"
+
+
+def test_deferred_acknowledged_completes():
+    tmp = tempfile.mkdtemp()
+    hd = net_host(tmp, "10.0.0.31", [{"port": 443, "state": "open", "service": "https", "product": "nginx", "version": "1.28.0"},
+                                     {"port": 22, "state": "open", "service": "ssh", "product": "OpenSSH", "version": "8.9"}])
+    cells = load_cells(tmp, hd)
+    defer = next(c for c in cells if c["class_id"] == "XC-SECURITY-HEADERS")
+    close_all_but_defer(hd, cells, [defer])
+    rc, out, m = gate(hd, single=True, accept_deferrals=True)
+    assert rc == 0 and m["complete"] and m["deferred_acknowledged"], f"--accept-deferrals completes: {out}"
+    assert m["deferred"] == 1 and m["deferred_cells"], "deferred cells stay disclosed even when acknowledged"
+
+
+def test_deferred_unsubstantiated_is_hard_miss():
+    # status:deferred WITHOUT reason/CIR (or with a CIR that does not resolve on disk)
+    # can never dodge the gate — it is a hard miss.
+    for substantiated, cir in ((False, False), (True, False)):
+        tmp = tempfile.mkdtemp()
+        hd = net_host(tmp, "10.0.0.32", [{"port": 443, "state": "open", "service": "https", "product": "nginx", "version": "1.28.0"}])
+        cells = load_cells(tmp, hd)
+        defer = next(c for c in cells if c["class_id"] == "XC-SECURITY-HEADERS")
+        # substantiated=True + cir=False => reason present but client_input_request path missing on disk
+        if substantiated and not cir:
+            close_all_but_defer(hd, cells, [defer], substantiated=True, cir=True)
+            # point the CIR at a non-existent file
+            rows = json.load(open(os.path.join(hd, "coverage.json")))
+            for row in rows:
+                for e in row.get("units_tested", []):
+                    if e.get("status") == "deferred":
+                        e["client_input_request"] = "reports/client-input-requests/DOES-NOT-EXIST.md"
+            wjson(os.path.join(hd, "coverage.json"), rows)
+        else:
+            close_all_but_defer(hd, cells, [defer], substantiated=False)
+        rc, out, m = gate(hd, single=True)
+        reasons = {r["reason"] for r in m["missing_cells"]}
+        assert "deferred_unsubstantiated" in reasons, f"(sub={substantiated},cir={cir}) must be a hard miss: {reasons}"
+        assert m["deferred"] == 0 and rc == 1 and not m["complete"], f"unsubstantiated is not a deferral: {out}"
+
+
+def test_all_deferred_never_completes():
+    # A scope where EVERY cell is deferred can never complete (ratio 0.0), even with
+    # --accept-deferrals — no resolvable cell was actually tested.
+    tmp = tempfile.mkdtemp()
+    hd = net_host(tmp, "10.0.0.33", [{"port": 22, "state": "open", "service": "ssh", "product": "OpenSSH", "version": "8.9"}])
+    cells = load_cells(tmp, hd)
+    close_all_but_defer(hd, cells, cells)  # defer ALL cells
+    rc, out, m = gate(hd, single=True, accept_deferrals=True)
+    assert m["coverage_ratio"] == 0.0 and not m["complete"] and rc == 1, f"all-deferred must hard-block: {out}"
 
 
 def main():

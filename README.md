@@ -33,7 +33,7 @@ We built an autonomous pentesting agent that scores **100% (104/104)** on a publ
 
 - **AI-Powered Automation** — Claude coordinates intelligent security testing workflows
 - **Complete OWASP Coverage** — 100% OWASP Top 10 + OWASP LLM Top 10
-- **Professional Reporting** — CVSS 3.1, CWE, MITRE ATT&CK, Transilience-branded PDF reports
+- **Professional Reporting** — CVSS 4.0 (primary; v3.1/v3.0/v2.0 fallback), CWE, MITRE ATT&CK, Transilience-branded PDF reports
 - **Playwright Integration** — Browser automation for client-side vulnerability testing
 - **Payload-Enriched References** — 160+ reference files with inline PayloadsAllTheThings techniques
 - **Open Source** — MIT licensed for commercial and personal use

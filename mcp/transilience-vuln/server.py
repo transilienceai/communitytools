@@ -236,7 +236,13 @@ def summarize_cve(payload: dict) -> dict:
 
     # Top-level scoring fields (names follow the documented Transilience schema;
     # we use .get() everywhere so missing fields don't crash the summary).
+    # CVSS v4.0 is the primary version, so its fields are surfaced first; the v3
+    # fields remain for the fallback ladder. Each is emitted only when the
+    # upstream payload actually provides it (the `if k in payload` guard below).
     for k in (
+        "cvss_v4_score",
+        "cvss_v4_severity",
+        "cvss_v4_vector",
         "cvss_v3_score",
         "cvss_v3_severity",
         "cvss_v3_vector",

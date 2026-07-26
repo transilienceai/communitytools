@@ -20,7 +20,12 @@ class ReportValidator:
         "## Remediation"
     ]
 
-    CVSS_PATTERN = r"CVSS:3\.\d+/AV:[NALP]/AC:[LH]/PR:[NLH]/UI:[NR]/S:[UC]/C:[NLH]/I:[NLH]/A:[NLH]"
+    # CVSS v4.0 is the primary/canonical version; v3.x vectors are still accepted
+    # (fallback ladder). Either shape satisfies the vector-format check.
+    _CVSS_V4 = (r"CVSS:4\.0/AV:[NALP]/AC:[LH]/AT:[NP]/PR:[NLH]/UI:[NPA]/"
+                r"VC:[HLN]/VI:[HLN]/VA:[HLN]/SC:[HLN]/SI:[HLN]/SA:[HLN]")
+    _CVSS_V3 = r"CVSS:3\.\d+/AV:[NALP]/AC:[LH]/PR:[NLH]/UI:[NR]/S:[UC]/C:[NLH]/I:[NLH]/A:[NLH]"
+    CVSS_PATTERN = rf"(?:{_CVSS_V4}|{_CVSS_V3})"
 
     def __init__(self, report_path: str):
         """Initialize validator with report path."""

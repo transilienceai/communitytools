@@ -1,0 +1,77 @@
+name: Content guards
+
+# Client-data containment for a PUBLIC repository.
+#
+# Deliberately has NO `paths:` filter and NO `paths-ignore:` — every tree must be
+# checked on every change, not just the ones a path filter happens to name.
+#
+# Mark this workflow as a REQUIRED status check on main.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Client data, credentials, and public IPs
+        env:
+          CLIENT_DENYLIST_B64: ${{ secrets.CLIENT_DENYLIST_B64 }}
+        run: |
+          # The term list is not committed. Materialise it from a repo secret when
+          # one is configured; otherwise the credential, address and path checks
+          # still run (term matching is skipped).
+          if [ -n "$CLIENT_DENYLIST_B64" ]; then
+            printf '%s' "$CLIENT_DENYLIST_B64" | base64 -d > "$RUNNER_TEMP/denylist.sha256"
+            export CLIENT_DENYLIST="$RUNNER_TEMP/denylist.sha256"
+          fi
+          python3 scripts/check_client_data.py
+
+      - name: Reusable-tree IP neutrality
+        run: python3 scripts/check_neutrality.py
+
+      - name: No forked report generators
+        run: python3 scripts/check_no_forks.py
+
+      # skill_linter.py is owned by skill-lint.yml and is not duplicated here.
+
+      - name: No per-machine or credential files tracked
+        run: |
+          set -e
+          bad=$(git ls-files | grep -E \
+            '(\.claude/settings\.local\.json|scheduled_tasks\.lock|\.DS_Store|\.ccache$|\.kirbi$|\.keytab$|\.pem$|\.p12$|\.pfx$|-scope\.md$)' \
+            || true)
+          if [ -n "$bad" ]; then
+            echo "::error::per-machine state or credential material is tracked:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "OK - no per-machine or credential files tracked"
+
+      # Warn-only until the existing links are regenerated relative
+      # (link-pentest-assets.sh already emits relative links). Flip to `exit 1` then.
+      - name: Tracked symlinks should be relative (warn)
+        run: |
+          bad=$(git ls-files -s | awk '$1=="120000"{print $4}' | while read -r l; do
+                  t=$(git cat-file -p ":$l"); case "$t" in /*) echo "$l -> $t";; esac
+                done)
+          if [ -n "$bad" ]; then
+            echo "::warning::$(echo "$bad" | wc -l) tracked symlinks are absolute and should be relative"
+            echo "$bad" | head -20
+          else
+            echo "OK - no absolute tracked symlinks"
+          fi

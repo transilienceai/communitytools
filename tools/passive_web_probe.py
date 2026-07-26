@@ -40,6 +40,7 @@ Prints a JSON summary and exits 0 (a partial run is fine; the gate is authoritat
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -65,6 +66,15 @@ MECHANICAL = HOST_ACTIVE | ASSET_NONE
 REQUIRED_SEC_HEADERS = ["content-security-policy", "x-content-type-options"]  # plus a frame guard, see check
 _EVIL_ORIGIN = "https://evil.passive-probe.example"
 _ERROR_PATH = "/passive-probe-nonexistent-zzz-42"
+
+# Soft-404 tolerance (Addition #2): an SPA/Blazor catch-all that serves the same
+# 200 body for every path makes any probed file/endpoint look like it "exists".
+_SOFT404_SIZE_TOL = 64  # bytes of slack around the baseline body size
+
+# WAF/CDN reject-page statuses (Addition #1): a bare vendor-presence header (a CDN
+# merely fronting the origin) only implies a block on a deny-ish status; on a 200
+# the vendor is serving a real asset, so it must not suppress an exposure.
+_BLOCK_DENY_STATUS = {403, 406, 429, 503}
 
 # Verbose-error signatures (framework / stack-trace disclosure).
 _ERR_SIGNATURES = [
@@ -366,51 +376,160 @@ def check_components(host: str, port: str, timeout: int, cache_dir: str, use_nma
     return "clean", f"component observed ({fp}); no known-vulnerable mapping", raw
 
 
+# --- WAF/CDN block-page + soft-404 guards (kill file/secret false positives) ---
+def classify_block(status, headers, body) -> dict:
+    """Identify a WAF/CDN reject/deny page. A rejected request returned as 200/403/
+    406 must never be mistaken for a served file or a leaked secret, so this is
+    consulted before any file/secret/inventory "exists" is reported. Returns
+    {"is_block": bool, "vendor": str|None}. Case-insensitive; matches body markers
+    plus response headers. A bare vendor-presence header (a CDN simply fronting the
+    origin, e.g. x-akamai-* / x-sucuri-id / x-iinfo / x-vercel-id on a 200) only
+    counts as a block on a deny-ish status — otherwise a real 200 asset served
+    through the CDN would be wrongly suppressed (a false negative)."""
+    h = {str(k).lower(): str(v or "") for k, v in (headers or {}).items()}
+    bl = (body or "").lower()
+    cookies = h.get("set-cookie", "").lower()
+    deny = status in _BLOCK_DENY_STATUS
+
+    def hdr_prefix(p):
+        return any(k.startswith(p) for k in h)
+
+    # F5 BIG-IP ASM / F5 Distributed Cloud reject page (the ~269-byte body).
+    if "request rejected" in bl and "support id" in bl:
+        return {"is_block": True, "vendor": "f5"}
+    # Cloudflare — cf-ray present AND a block/challenge body.
+    if "cf-ray" in h and any(s in bl for s in (
+            "attention required", "cf-error", "error 1020", "error 1010",
+            "error 1015", "sorry, you have been blocked")):
+        return {"is_block": True, "vendor": "cloudflare"}
+    # Akamai — Ghost reject markers, or x-akamai-* / Server: AkamaiGHost on a deny.
+    if ("akamaighost" in bl or re.search(r"reference\s*#\s*[0-9a-f.]", bl)
+            or ((hdr_prefix("x-akamai-") or "akamaighost" in h.get("server", "").lower()) and deny)):
+        return {"is_block": True, "vendor": "akamai"}
+    # Sucuri — explicit block header/body, or x-sucuri-id on a deny response.
+    if ("x-sucuri-block" in h or "sucuri" in bl
+            or ("x-sucuri-id" in h and deny)):
+        return {"is_block": True, "vendor": "sucuri"}
+    # Imperva / Incapsula — deny body/cookie markers, or x-iinfo on a deny response.
+    if ("_incapsula_" in bl or "incapsula incident" in bl
+            or "incap_ses" in cookies or "visid_incap" in cookies
+            or ("x-iinfo" in h and deny)):
+        return {"is_block": True, "vendor": "imperva"}
+    # AppTrana / Indusface — typically HTTP 406 with a vendor marker.
+    if status == 406 and ("apptrana" in bl or "indusface" in bl):
+        return {"is_block": True, "vendor": "apptrana"}
+    # Vercel — platform error header, or x-vercel-* on a deny / NOT_FOUND shell.
+    if ("x-vercel-error" in h
+            or (hdr_prefix("x-vercel-")
+                and (deny or "not_found" in bl or "this page could not be found" in bl))):
+        return {"is_block": True, "vendor": "vercel"}
+    return {"is_block": False, "vendor": None}
+
+
+def baseline_fingerprint(resp) -> dict | None:
+    """Fingerprint the random-nonsense-path (_ERROR_PATH) response so a real hit can
+    be told apart from an SPA/Blazor catch-all that returns one body for every path.
+    Returns {status, size, body_hash} or None when the baseline wasn't fetchable."""
+    if not resp or not resp.get("ok"):
+        return None
+    body = resp.get("body", "") or ""
+    return {"status": resp.get("status"), "size": len(body),
+            "body_hash": hashlib.sha256(body.encode("utf-8", "replace")).hexdigest()}
+
+
+def is_soft_404(candidate_resp, baseline) -> bool:
+    """True when candidate_resp is indistinguishable from the not-found baseline
+    (same status AND (identical body-hash OR size within tolerance)) — i.e. the path
+    does not really "exist", the server just echoes its catch-all body."""
+    if not baseline or not candidate_resp or not candidate_resp.get("ok"):
+        return False
+    if candidate_resp.get("status") != baseline.get("status"):
+        return False
+    body = candidate_resp.get("body", "") or ""
+    if hashlib.sha256(body.encode("utf-8", "replace")).hexdigest() == baseline.get("body_hash"):
+        return True
+    return abs(len(body) - baseline.get("size", -1)) <= _SOFT404_SIZE_TOL
+
+
 def check_api_inventory(bases: list, timeout: int) -> tuple:
     if not bases:
-        return "limitation", "no in-scope listener to probe for API docs", ""
+        return "limitation", "no in-scope listener to probe for API docs", "", []
     lines = []
     exposed = []
+    observations = []
     for base in bases:
+        baseline = baseline_fingerprint(http_fetch(base + _ERROR_PATH, timeout=timeout))
         for path in _SWAGGER_PATHS:
             r = http_fetch(base + path, timeout=timeout)
             if not r.get("ok"):
                 continue
-            hit = r["status"] == 200 and _SWAGGER_RE.search(r.get("body", "") or "")
-            lines.append(f"GET {base}{path} -> {r['status']}{' [OPENAPI]' if hit else ''}")
-            if hit:
-                exposed.append(base + path)
+            looks_openapi = r["status"] == 200 and bool(_SWAGGER_RE.search(r.get("body", "") or ""))
+            tag = ""
+            if looks_openapi:
+                blk = classify_block(r.get("status"), r.get("headers"), r.get("body", ""))
+                if blk["is_block"]:  # a reject page that echoes 'openapi' text is not real inventory
+                    tag = f" [WAF/{blk['vendor']}]"
+                    observations.append({"url": base + path, "status": r.get("status"),
+                                         "kind": "waf_block", "vendor": blk["vendor"]})
+                elif is_soft_404(r, baseline):  # SPA catch-all shell, endpoint doesn't exist
+                    tag = " [soft-404]"
+                    observations.append({"url": base + path, "status": r.get("status"),
+                                         "kind": "soft_404", "vendor": None})
+                else:
+                    tag = " [OPENAPI]"
+                    exposed.append(base + path)
+            lines.append(f"GET {base}{path} -> {r['status']}{tag}")
     if not lines:
-        return "limitation", "no listener reachable for inventory probe", ""
+        return "limitation", "no listener reachable for inventory probe", "", observations
     raw = "\n".join(lines)
     if exposed:
-        return "positive", "exposed API documentation: " + ", ".join(exposed), raw
-    return "clean", "no exposed swagger/openapi endpoints found", raw
+        return "positive", "exposed API documentation: " + ", ".join(exposed), raw, observations
+    return "clean", "no exposed swagger/openapi endpoints found", raw, observations
 
 
 def check_secret_exposure(js_urls: list, bases: list, timeout: int) -> tuple:
     targets = list(js_urls) or [b + "/" for b in bases]
     if not targets:
-        return "limitation", "no in-scope JS/static target to scan", ""
+        return "limitation", "no in-scope JS/static target to scan", "", []
     lines = []
     hits = []
+    observations = []
     reached = False
+    baselines: dict = {}
+
+    def baseline_for(url):
+        p = urlparse(url)
+        origin = f"{p.scheme}://{p.netloc}"
+        if origin not in baselines:
+            baselines[origin] = baseline_fingerprint(http_fetch(origin + _ERROR_PATH, timeout=timeout))
+        return baselines[origin]
+
     for url in targets:
         r = http_fetch(url, timeout=timeout)
         if not r.get("ok"):
             lines.append(f"GET {url} -> unreachable ({r.get('error')})")
             continue
         reached = True
-        m = _SECRET_RE.search(r.get("body", "") or "")
-        lines.append(f"GET {url} -> {r['status']} ({len(r.get('body','') or '')} bytes){' [SECRET]' if m else ''}")
+        blk = classify_block(r.get("status"), r.get("headers"), r.get("body", ""))
+        if blk["is_block"]:  # a WAF/CDN reject page is never a secret exposure
+            lines.append(f"GET {url} -> {r['status']} [WAF/{blk['vendor']}] reject page — not an exposure")
+            observations.append({"url": url, "status": r.get("status"), "kind": "waf_block", "vendor": blk["vendor"]})
+            continue
+        body = r.get("body", "") or ""
+        m = _SECRET_RE.search(body)
+        if m and is_soft_404(r, baseline_for(url)):  # catch-all shell, path doesn't really exist
+            lines.append(f"GET {url} -> {r['status']} [soft-404] matches not-found baseline — not an exposure")
+            observations.append({"url": url, "status": r.get("status"), "kind": "soft_404", "vendor": None})
+            continue
+        lines.append(f"GET {url} -> {r['status']} ({len(body)} bytes){' [SECRET]' if m else ''}")
         if m:
             hits.append(f"{url}: {m.group(0)[:24]}...")
     if not reached:
-        return "limitation", "no scannable asset reachable for secret scan", ""
+        return "limitation", "no scannable asset reachable for secret scan", "", observations
     raw = "\n".join(lines)
     if hits:
-        return "positive", "secret material in static bundle: " + "; ".join(hits), raw
-    return "clean", "no secrets detected in static/JS assets", raw
+        return "positive", "secret material in static bundle: " + "; ".join(hits), raw, observations
+    return "clean", "no secrets detected in static/JS assets", raw, observations
 
 
 def _dump_headers(resp: dict) -> str:
@@ -516,7 +635,7 @@ def run(asset_dir: str, allow: list, timeout: int, use_nmap: bool) -> dict:
     doc = run_enumerate(asset_dir)
     cells = [c for c in doc.get("cells", []) if c["class_id"] in MECHANICAL]
     summary = {"asset_dir": asset_dir, "covered_negative": [], "findings": [],
-               "limitations": [], "skipped_out_of_scope": []}
+               "limitations": [], "skipped_out_of_scope": [], "block_observations": []}
     if not cells:
         return summary  # nothing mechanical to do
 
@@ -592,10 +711,13 @@ def run(asset_dir: str, allow: list, timeout: int, use_nmap: bool) -> dict:
                 summary["skipped_out_of_scope"].append({"class_id": cid, "scope_key": cell["scope_key"], "host": l.rpartition(":")[0]})
             bases = [f"{schemes.get(l, 'http')}://{l}" for l in in_scope]
             if cid == "API9-INVENTORY":
-                verdict, one_line, raw = check_api_inventory(bases, timeout)
+                verdict, one_line, raw, obs = check_api_inventory(bases, timeout)
             else:  # XC-SECRET-EXPOSURE
                 in_hosts = {l.rpartition(":")[0] for l in in_scope}
-                verdict, one_line, raw = check_secret_exposure(js_urls_for_hosts(surface, in_hosts), bases, timeout)
+                verdict, one_line, raw, obs = check_secret_exposure(js_urls_for_hosts(surface, in_hosts), bases, timeout)
+            for o in obs:
+                o["class_id"] = cid
+                summary["block_observations"].append(o)
             nk = "none"
 
         if verdict == "clean":

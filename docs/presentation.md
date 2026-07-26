@@ -171,7 +171,7 @@ Three roles with strict separation of concerns:
 
 | Check | What it validates |
 |-------|------------------|
-| **CVSS consistency** | Severity label matches CVSS v3.1 range; NVD cross-check if CVE present |
+| **CVSS consistency** | Severity label matches the CVSS band (CVSS v4.0 primary; v4.0/v3.1 share bands); NVD cross-check if CVE present |
 | **Evidence exists** | description.md, poc.py, poc_output.txt, raw-source.txt all present |
 | **PoC valid** | Valid Python, references target, output matches proof |
 | **Claims vs evidence** | Every factual claim verifiable from raw scan files |
@@ -462,7 +462,7 @@ Professional deliverables enforced by format specifications in `formats/`.
 - **ReportLab-based PDF generation** — dark theme (`#07040B`), custom typography (Poppins headlines, Carlito body)
 - **Brand color palette** — purple primary (`#6941C6`), severity-coded finding cards
 - **12-section blueprint**: Executive Summary → Threat Landscape → Radar Chart → Severity Cards → Attack Surface Analysis → Asset Inventory → Tech Stack → Security Posture → Recommendations → Methodology
-- Every finding includes: CVSS v3.1 vector, CWE, OWASP mapping, MITRE ATT&CK, verified PoC, visual evidence, before/after remediation code
+- Every finding includes: CVSS vector (v4.0 primary; v3.1 → v3.0 → v2.0 fallback), CWE, OWASP mapping, MITRE ATT&CK, verified PoC, visual evidence, before/after remediation code
 
 ### Structured Output Directory
 

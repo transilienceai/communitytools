@@ -19,6 +19,12 @@ Reference material for `skills/reconnaissance/`. Start with `reconnaissance-prin
 ## Focused Technique Files
 
 - [anti-bot-bypass.md](anti-bot-bypass.md) - Cloudflare/Turnstile bypass during authorised testing.
+- [waf-edge-bypass.md](waf-edge-bypass.md) - WAF/CDN edge triage (Akamai/Sucuri/Imperva/F5-XC/Vercel/CloudFront), direct-origin discovery (access + High finding), real-browser gentle-serial fallback, and the block-page / soft-404 false-positive traps.
+
+## Deterministic tools
+
+- [`../../../tools/dns_email_posture.py`](../../../tools/dns_email_posture.py) - ingest an apex list → enumerate SPF/DKIM/DMARC(+sp)/MTA-STS/TLS-RPT/BIMI/CAA/DNSSEC/MX/security.txt, run positive+negative controls, and emit pre-scored report_data findings. The email/DNS/TLS posture finding-class assembled consistently instead of per-apex `dig` one-liners.
+- [`../../../tools/passive_web_probe.py`](../../../tools/passive_web_probe.py) - allow-list-gated passive probe; also the deterministic WAF/CDN block-page classifier + soft-404 content-diff behind [waf-edge-bypass.md](waf-edge-bypass.md).
 
 ## Related Skills
 

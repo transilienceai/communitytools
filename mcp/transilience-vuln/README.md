@@ -7,7 +7,8 @@ directly — no more "let me give you a script to run" ceremony.
 
 ## Tools
 
-- **`enrich_cve(cve_id, force_refresh=False)`** — full CVE payload: CVSS v3,
+- **`enrich_cve(cve_id, force_refresh=False)`** — full CVE payload: CVSS
+  (v4.0 primary, v3 fallback — surfaced as provided by the upstream schema),
   EPSS, KEV status, the 75-attribute impact taxonomy, and per-vendor advisory
   and remediation data.
 - **`bulk_enrich_cves(cve_ids, force_refresh=False)`** — enrich many CVEs at

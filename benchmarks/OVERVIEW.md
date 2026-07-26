@@ -14,7 +14,7 @@ A complete benchmarking infrastructure for evaluating Claude agents with:
 
 ```bash
 # 1. Navigate to benchmarks
-cd /Users/alexander/dev/benchmarks
+cd ~/dev/benchmarks
 
 # 2. Create a test suite
 mkdir my_tests

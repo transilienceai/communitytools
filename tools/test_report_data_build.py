@@ -258,6 +258,30 @@ def test_attack_pattern_coverage_derived_from_matrix():
         assert "50%" in apc["note"] and "1 cell" in apc["note"]
 
 
+def test_attack_pattern_coverage_surfaces_deferred():
+    with tempfile.TemporaryDirectory() as d:
+        build_engagement(d, lambda i, fid: f"{fid}.json")
+        _write_matrix(d, {
+            "coverage_ratio": 1.0,
+            "missing_cells": [],
+            "deferred": 2,
+            "deferred_cells": [
+                {"class_id": "API1-BOLA", "scope_key": "u1", "asset_tag": "a", "deferral_reason": "MFA/OTP", "client_input_request": "reports/client-input-requests/CIR-001.md"},
+                {"class_id": "API5-BFLA", "scope_key": "u2", "asset_tag": "a", "deferral_reason": "MFA/OTP", "client_input_request": "reports/client-input-requests/CIR-001.md"},
+            ],
+            "per_class": {
+                "API1-BOLA": {"taxonomy": "API-2023", "title": "BOLA", "applicable": 1, "passed": 0, "deferred": 1, "status": "deferred"},
+                "API8-MISCONFIG": {"taxonomy": "API-2023", "title": "Security misconfiguration", "applicable": 1, "passed": 1, "status": "covered_negative"},
+            },
+        })
+        run_build(d)
+        apc = _load_report(d)["attack_pattern_coverage"]
+        assert "2 cell(s) are deferred" in apc["note"], f"deferred count must be disclosed: {apc['note']}"
+        assert "client-input request" in apc["note"], "deferral must reference the client-input request"
+        # a class whose only open cell is deferred renders with the 'deferred' status verbatim
+        assert any(r[4] == "deferred" for r in apc["rows"]), f"deferred status must reach the table: {apc['rows']}"
+
+
 def test_attack_pattern_coverage_absent_when_no_matrix():
     with tempfile.TemporaryDirectory() as d:
         build_engagement(d, lambda i, fid: f"{fid}.json")

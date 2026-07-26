@@ -30,8 +30,9 @@ The coordinator passes `role:` in the spawn prompt. Behavior differs by variant.
    4. Cheat-sheet payloads (full technique catalog from skill reference).
    5. PATT (fetch PATT_URL if provided — comprehensive payload library).
 6. **Confirm** — reproduce 3× with the working payload, capture PoC, capture evidence.
-7. Update your `experiments.md` row (the EXPERIMENT_ID passed in your prompt) with result + notes. On `fail`, increment `Goal_attempts` (see `bookkeeping.md`).
-8. Tool-invocation logging is AUTOMATIC — the harness-run PostToolUse hook appends every Bash call to `{OUTPUT_DIR}/logs/activity/tool-invocations.jsonl`, so you need not hand-write `tools/{NNN}_{tool}.md`. Route any attack-VM provisioning through `provision_vantage.sh` so its egress IP is registered.
+7. **CVSS self-check before filing** — if the finding carries a `cvss_vector`, run `python3 tools/cvss_lint.py <finding.json>` and fix any `score_mismatch`/`band_mismatch` so the score, vector, and severity band agree (delegates to `cvss_calc.py`; see `VALIDATION.md` Check 1). A self-inconsistent finding must not be filed.
+8. Update your `experiments.md` row (the EXPERIMENT_ID passed in your prompt) with result + notes. On `fail`, increment `Goal_attempts` (see `bookkeeping.md`).
+9. Tool-invocation logging is AUTOMATIC — the harness-run PostToolUse hook appends every Bash call to `{OUTPUT_DIR}/logs/activity/tool-invocations.jsonl`, so you need not hand-write `tools/{NNN}_{tool}.md`. Route any attack-VM provisioning through `provision_vantage.sh` so its egress IP is registered.
 
 ## Tools
 

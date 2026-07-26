@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transilience.ai/schemas/certin-audit-metadata.json",
+  "title": "CERT-In Audit Metadata (v2.3) intermediate export",
+  "description": "Structure of reports/certin-audit-metadata.json produced by tools/certin_metadata_build.py. STRUCTURE ONLY: vocabulary fields are plain strings whose legal values are validated by the builder against formats/certin-audit-metadata/enums.json (the single source of truth) — enum arrays are deliberately NOT duplicated here. A field the builder could not resolve to a legal value is emitted as the literal placeholder \"<FILL: field>\" and listed in the build summary's needs_manual[].",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["auditor_details", "audits_completed", "security_issues_technical", "issues_compliance", "manpower", "meta"],
+  "properties": {
+    "auditor_details": {
+      "type": "object",
+      "description": "Sheet 1 — Auditor Details (responses C3:C7).",
+      "additionalProperties": false,
+      "required": ["org", "validated_by", "designation", "email", "mobile"],
+      "properties": {
+        "org": {"type": "string"},
+        "validated_by": {"type": "string"},
+        "designation": {"type": "string"},
+        "email": {"type": "string"},
+        "mobile": {"type": "string"}
+      }
+    },
+    "audits_completed": {
+      "type": "array",
+      "description": "Sheet 2 — one row per completed audit.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sno", "ambak_no", "auditee_org", "category", "sector", "subsector", "audit_type", "audit_type_other", "infra_details", "ai_assisted", "reason", "standards", "challenges", "report_type", "vulns_first_audit", "patch_days", "followup_gap_days", "open_issues", "state_ut", "completion_date", "last_audit_date"],
+        "properties": {
+          "sno": {"type": "integer"},
+          "ambak_no": {"type": "string"},
+          "auditee_org": {"type": "string"},
+          "category": {"type": "string", "description": "validated against enums.category"},
+          "sector": {"type": "string", "description": "validated against enums.sector keys (spaced display form)"},
+          "subsector": {"type": "string", "description": "validated against enums.sector[sector]"},
+          "audit_type": {"type": "string", "description": "validated against enums.audit_type"},
+          "audit_type_other": {"type": "string"},
+          "infra_details": {"type": "string"},
+          "ai_assisted": {"type": "string"},
+          "reason": {"type": "string", "description": "validated against enums.reason"},
+          "standards": {"type": "string", "description": "one or more enums.standards values, joined; each validated"},
+          "challenges": {"type": "string"},
+          "report_type": {"type": "string", "description": "validated against enums.first_final"},
+          "vulns_first_audit": {"type": ["integer", "string"]},
+          "patch_days": {"type": ["integer", "string"]},
+          "followup_gap_days": {"type": ["integer", "string"]},
+          "open_issues": {"type": ["integer", "string"]},
+          "state_ut": {"type": "string", "description": "validated against enums.state_ut"},
+          "completion_date": {"type": "string", "description": "dd.mm.yyyy"},
+          "last_audit_date": {"type": "string"}
+        }
+      }
+    },
+    "security_issues_technical": {
+      "type": "array",
+      "description": "Sheet 3 — one row per technical (CVE/CWE) finding.",
+      "items": {"$ref": "#/$defs/issue_row"}
+    },
+    "issues_compliance": {
+      "type": "array",
+      "description": "Sheet 4 — one row per compliance (control-ID/clause) finding. Empty for pure pentests.",
+      "items": {"$ref": "#/$defs/issue_row"}
+    },
+    "manpower": {
+      "type": "array",
+      "description": "Sheet 5 — one row per auditor (AI operator + named humans).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sno", "ambak_no", "name", "email", "certifications", "years"],
+        "properties": {
+          "sno": {"type": "integer"},
+          "ambak_no": {"type": "string"},
+          "name": {"type": "string"},
+          "email": {"type": "string"},
+          "certifications": {
+            "type": "object",
+            "description": "keys are enums.certifications; values \"Yes\"/\"No\"",
+            "additionalProperties": {"type": "string"}
+          },
+          "years": {"type": ["integer", "string"]}
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "source", "template_version", "tlp", "generated_from"],
+      "properties": {
+        "sha256": {"type": "string"},
+        "source": {"type": "string"},
+        "template_version": {"type": "string"},
+        "tlp": {"type": "string"},
+        "generated_from": {"type": "string"}
+      }
+    }
+  },
+  "$defs": {
+    "issue_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sno", "ambak_no", "auditee_org", "infra_details", "audit_type", "audit_type_other", "report_type", "issue_name", "reference", "severity", "occurrence_count", "attributing_factor"],
+      "properties": {
+        "sno": {"type": "integer"},
+        "ambak_no": {"type": "string"},
+        "auditee_org": {"type": "string"},
+        "infra_details": {"type": "string"},
+        "audit_type": {"type": "string", "description": "validated against enums.audit_type"},
+        "audit_type_other": {"type": "string"},
+        "report_type": {"type": "string", "description": "validated against enums.first_final"},
+        "issue_name": {"type": "string", "description": "technical: vuln name per CVE/CWE; compliance: non-compliance name per control ID"},
+        "reference": {"type": "string", "description": "technical: CVE/CWE ref; compliance: clause/control-ID + framework"},
+        "severity": {"type": "string", "description": "validated against enums.severity"},
+        "occurrence_count": {"type": "integer"},
+        "attributing_factor": {"type": "string", "description": "validated against enums.attributing_factor"}
+      }
+    }
+  }
+}

@@ -21,7 +21,9 @@ and DEMOTED under dropped/; neither is read here):
       "finding_id": "F1",
       "verdict": "VALID" | "REPAIRED",
       "severity": "High",                       # optional; derived from cvss if absent
-      "cvss_score": 8.1, "cvss_vector": "CVSS:3.1/...",
+      # cvss_vector should be the PRIMARY per the v4.0-first ladder (v4.0 -> v3.1
+      # -> v3.0 -> v2.0); its prefix records which version the score came from.
+      "cvss_score": 9.3, "cvss_vector": "CVSS:4.0/...",
       "cwe": "CWE-89", "owasp": "A03:2021",
       "cves": [{"id": "CVE-2024-1234", "score": 8.1, "severity": "High"}],
       "on_kev": false,
@@ -171,6 +173,11 @@ def build_attack_coverage(eng_dir):
             f"covered — {untested} cell(s) untested. Every applicable cell is enumerated by code from the "
             f"discovered surface and requires cross-checked on-disk evidence; the engagement cannot be marked "
             f"COMPLETE while any applicable cell is untested.")
+    deferred = m.get("deferred", 0) or len(m.get("deferred_cells") or [])
+    if deferred:
+        note += (f" {deferred} cell(s) are deferred pending client input (MFA/OTP session or test account); "
+                 f"each is traceable to a filed client-input request and is disclosed here rather than "
+                 f"silently omitted.")
     return {
         "header": ["Attack class", "Taxonomy", "Description", "Cells", "Status"],
         "rows": rows,
