@@ -41,6 +41,15 @@ BINARY_EXT = {".png", ".jpg", ".jpeg", ".gif", ".pdf", ".zip", ".7z", ".apk", ".
               ".docx", ".pptx", ".so", ".dylib", ".dll", ".jar", ".db", ".sqlite",
               ".pack", ".idx", ".ccache", ".kirbi", ".keytab", ".DS_Store"}
 
+# Credential/key material identified by EXTENSION rather than content. These are
+# caught by filename because the content checks cannot see them: a binary .p12 or
+# .key is skipped by files_to_scan's BINARY_EXT filter, and a DER blob has no PEM
+# banner for SECRET_PATTERNS to match. .gitignore already excludes these, so a hit
+# here means the pattern was bypassed (git add -f, a pre-existing tracked file, or
+# a new extension) — exactly the case a guard is for.
+CREDENTIAL_EXT = {".ovpn", ".crt", ".cer", ".der", ".key", ".jks", ".p12", ".pfx",
+                  ".pem", ".keytab", ".kirbi", ".ccache"}
+
 # Trees exempt from the *denylist* check only (they legitimately discuss public
 # incidents and public benchmark suites). Credentials/IPs are still checked.
 NAME_EXEMPT_PREFIXES = ("benchmarks/", "papers/", "threat_intel_case_studies/")
@@ -161,7 +170,8 @@ def looks_like_oid_or_version(line: str, ip: str) -> bool:
                                   "gecko", "edg/", "user-agent"))
 
 
-def files_to_scan(staged: bool) -> list[str]:
+def _git_file_list(staged: bool) -> list[str]:
+    """Every path the next commit would publish, unfiltered."""
     if staged:
         cmds = [["git", "-C", REPO, "diff", "--cached", "--name-only", "--diff-filter=ACMR"]]
     else:
@@ -171,9 +181,20 @@ def files_to_scan(staged: bool) -> list[str]:
         cmds = [["git", "-C", REPO, "ls-files"],
                 ["git", "-C", REPO, "ls-files", "--others", "--exclude-standard"]]
     out = "".join(subprocess.run(c, capture_output=True, text=True).stdout for c in cmds)
-    return [f for f in out.splitlines()
-            if f and os.path.splitext(f)[1].lower() not in BINARY_EXT
+    return [f for f in out.splitlines() if f]
+
+
+def files_to_scan(staged: bool) -> list[str]:
+    return [f for f in _git_file_list(staged)
+            if os.path.splitext(f)[1].lower() not in BINARY_EXT
             and not f.endswith(".DS_Store")]
+
+
+def credential_material_files(staged: bool) -> list[str]:
+    """Paths whose EXTENSION is credential/key material. Content-blind on purpose:
+    these never reach the line scanners (binary, or no PEM banner to match)."""
+    return [f for f in _git_file_list(staged)
+            if os.path.splitext(f)[1].lower() in CREDENTIAL_EXT]
 
 
 def read_content(rel: str, staged: bool) -> str | None:
@@ -202,6 +223,11 @@ def main() -> int:
 
     denylist = load_denylist()
     leaks: list[str] = []
+
+    # Filename-level check first: credential material the content scanners cannot see.
+    for rel in credential_material_files(args.staged):
+        leaks.append(f"{rel}:0: SECRET [credential-file] -> "
+                     f"{os.path.splitext(rel)[1]} key/cert material must never be committed")
 
     for rel in files_to_scan(args.staged):
         content = read_content(rel, args.staged)

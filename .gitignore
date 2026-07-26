@@ -148,6 +148,16 @@ Desktop.ini
 *.pem
 *.p12
 *.pfx
+# VPN profiles (often carry an inline <key> block) and cert/key material an
+# engagement or a capture proxy produces. Extension rules only — a directory rule
+# on projects/pentest/ would untrack real content. scripts/check_client_data.py
+# fails the build if one of these is tracked or staged anyway.
+*.ovpn
+*.crt
+*.cer
+*.der
+*.key
+*.jks
 # Dated engagement output dirs must never sit outside an ignored engagement tree
 [0-9][0-9][0-9][0-9][0-9][0-9]_*/
 [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_*/
