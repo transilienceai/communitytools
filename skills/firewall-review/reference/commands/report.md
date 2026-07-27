@@ -37,6 +37,8 @@ These write:
 
 When the customer requests all rule-review detail in one Excel file or supplies a network-team comment template, apply [`../reporting/network-team-review-workbook.md`](../reporting/network-team-review-workbook.md). The `.xlsx` becomes the primary handoff and the PDF is optional. Keep all supporting data as worksheets in the same workbook, place `Network Team Review` first, and preserve the base tracker content where it adds traceability.
 
+If the customer asks for one observation and severity to span multiple affected rules, use the grouped presentation profile: merge only the first two data columns across proven contiguous groups, preserve every rule-level detail/response row, remove any table overlapping the merged view, and keep `Rule Findings` plus `All Rules` filterable. Do not describe the grouped sheet itself as safely sortable or fully filterable.
+
 Do not advertise a non-existent renderer flag. If the reference implementation does not yet produce this profile, build the profile from `findings.final.jsonl`, normalized rules, benchmark output, discarded items, and the manifest as a separate engagement reporting step; disclose that implementation gap in the handoff.
 
 ### Step 3 — Trigger learning loop

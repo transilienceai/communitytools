@@ -1,6 +1,6 @@
 ---
 name: network-team-review-workbook
-description: Customer-collaboration Excel profile for firewall rule audits. Produces one consolidated workbook with a filterable Network Team Review sheet, complete rule inventory, technical evidence, response fields, and an explicit evidence-gap ledger.
+description: Customer-collaboration Excel profiles for firewall rule audits. Produces one consolidated workbook with row-grain or grouped Network Team Review presentation, filterable detail sheets, complete rule inventory, technical evidence, response fields, and an explicit evidence-gap ledger.
 ---
 
 # Network-Team Review Workbook
@@ -11,7 +11,7 @@ This is a reporting profile layered over the current six-sheet renderer. Do not 
 
 ## Sheet order
 
-1. **Network Team Review** — primary collaboration sheet; first visible tab.
+1. **Network Team Review** — primary collaboration sheet; first visible tab; use the row-grain or grouped presentation selected below.
 2. **Executive Summary** — scope, counts, severity, coverage, top actions.
 3. **Assessment Guide** — evidence states, severity definitions, response instructions, limitations.
 4. **All Rules** — one row for every parsed rule, including rules with no observation.
@@ -23,11 +23,27 @@ This is a reporting profile layered over the current six-sheet renderer. Do not 
 
 Omit a conditional sheet only when it is not applicable, and state that in Assessment Guide. Never omit Evidence Gaps.
 
-## Network Team Review row grain
+## Network Team Review grain and presentation
 
-One row equals one observation against one rule. A rule with three distinct observations has three rows. A multi-rule relationship has one primary rule per row plus `Related Rule`; create reciprocal rows only when each rule needs a separate owner response.
+The logical grain is always one observation against one rule. A rule with three distinct observations has three rows. A multi-rule relationship has one primary rule per row plus `Related Rule`; create reciprocal rows only when each rule needs a separate owner response. Presentation must never collapse, concatenate, or discard rule-specific evidence or response fields.
 
-Do not merge cells in the data region. Repeat `Vulnerability / Observation` and `Severity` on every row so filters, sorting, exports, and comments remain reliable.
+### Row-grain presentation
+
+Use this presentation when unrestricted filtering, sorting, export, or programmatic ingestion is the priority. Repeat `Vulnerability / Observation` and `Severity` on every row and keep the region as a filterable table. Do not merge data cells.
+
+### Grouped presentation
+
+Use this presentation when the customer explicitly asks to show one observation and severity against multiple affected rules.
+
+1. Sort by approved severity rank, then observation, then native rule order so each `(Severity, Observation)` group is contiguous.
+2. Prove that no group key appears in multiple non-contiguous segments; fail instead of merging an ambiguous order.
+3. Vertically merge only `Vulnerability / Observation` and `Severity` across each multi-row group. Leave a one-rule group unmerged.
+4. Preserve one physical row per rule observation for `Rule Number` onward, including every customer-response field.
+5. Draw a visible boundary between groups and keep the two grouped labels readable with wrapping and vertical alignment.
+6. Do not place an Excel table across merged data cells. State on the sheet that it must not be sorted; keep `Rule Findings` and `All Rules` as the filterable, sortable detail sources.
+7. Update Assessment Guide to explain the grouped presentation and its interaction limitation.
+
+The grouped view is presentational only. Counts, exports, and reconciliations must continue to use the unmerged row-grain data or the detail sheets—not blank-looking continuation cells in a rendered grouped view.
 
 ### Required analysis and rule fields
 
@@ -103,10 +119,12 @@ At minimum consider traffic/hit data, runtime policy evaluation, environment cla
 
 - Orange or brand-primary header row; high-contrast severity cells.
 - Yellow or other clearly distinct fill for customer-editable response fields.
-- Freeze the header and identifier columns; enable filters over the full used range.
+- Freeze the header and identifier columns.
+- In row-grain presentation, enable filters over the full used range.
+- In grouped presentation, omit the table/filter from the merged view and retain filters on `Rule Findings` and `All Rules`.
 - Wrap long evidence/recommendation cells; cap widths and enable row auto-height where supported.
 - No hidden findings, hidden evidence gaps, or hidden customer-response columns.
-- Avoid merged data cells, macros, external links, and volatile formulas.
+- Except for the first two columns in the grouped presentation, avoid merged data cells. Avoid macros, external links, and volatile formulas in every presentation.
 - Keep formulas for summaries/counts; keep evidence and conclusions as values.
 
 ## Workbook QA gate
@@ -118,5 +136,6 @@ Before release:
 3. Reconcile counts: parsed rules ↔ All Rules; observation rows ↔ summary and severity totals; enabled rules ↔ assessment statuses.
 4. Verify every rule observation has rule ID, source citation, evidence state, rationale, recommendation, and validation requirement when applicable.
 5. Verify every static quote exists in the supplied input and every input hash matches the manifest.
-6. Verify formulas contain no error values after recalculation, validations cover all intended response rows, and filters/freeze panes are present.
-7. Scan for customer data copied from another engagement and for unsupported claims listed in the evidence-state contract.
+6. Verify formulas contain no error values after recalculation, validations cover all intended response rows, and the presentation-appropriate filters/freeze panes are present.
+7. For grouped presentation, verify every merge maps to exactly one contiguous `(Severity, Observation)` group, only columns A/B are merged, one-rule groups remain unmerged, rule-detail values match the ungrouped source, and no table overlaps a merged range.
+8. Scan for customer data copied from another engagement and for unsupported claims listed in the evidence-state contract.

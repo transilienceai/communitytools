@@ -15,7 +15,7 @@ description: Renders the 6-sheet audit-grade remediation tracker XLSX deliverabl
 ## Role in the pipeline
 Reads `findings.final.jsonl` (enriched with Confidence + Validation Status by `fwrr.validation.post_process.enrich`) and `Pre-requisites/scoping-questionnaire.yaml`, then emits one `.xlsx` to the engagement's `Deliverables/` directory.
 
-This document describes the current base renderer. For a customer-facing, single-file network-team comment workflow, layer [`network-team-review-workbook.md`](network-team-review-workbook.md) over this output. Do not describe that profile as native runtime behaviour until the renderer implements it.
+This document describes the current base renderer. For a customer-facing, single-file network-team comment workflow—including the customer-requested grouped observation/severity presentation—layer [`network-team-review-workbook.md`](network-team-review-workbook.md) over this output. Do not describe that profile as native runtime behaviour until the renderer implements it.
 
 ## Sheet layout (in creation order — `render_excel()`, lines 100-113)
 

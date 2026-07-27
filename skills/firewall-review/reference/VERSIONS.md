@@ -4,7 +4,7 @@ Every artefact this tool emits carries `chain_of_custody.detector_version` and `
 
 If the running detector emits a version not listed here, the build is drifting; reconcile here first.
 
-Last updated: 2026-07-26 — added 5 FortiGate-specific detectors, the semantic-check catalogue (v1.0.0), the CIS Fortinet FortiGate Benchmark, the evidence-state contract, and the consolidated network-team workbook profile.
+Last updated: 2026-07-27 — added 5 FortiGate-specific detectors, the semantic-check catalogue (v1.0.0), the CIS Fortinet FortiGate Benchmark, the evidence-state contract, and the consolidated network-team workbook profiles including grouped observation/severity presentation.
 The inherited skill metadata records detector/parser pins as last verified on 2026-04-25 from `examples/demo-acme-pharmaceuticals_2026-04-24/findings.draft.jsonl`. This contribution could not independently re-verify that statement because the cited runtime repository was inaccessible; see [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md).
 
 ---

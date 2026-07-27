@@ -1,6 +1,6 @@
 ---
 name: firewall-review
-description: Evidence-safe firewall ruleset audit reference specification — 22 documented detector patterns (17 vendor-agnostic plus 5 FortiGate-specific), a 15-check semantic catalogue, CIS Fortinet FortiGate Benchmark guidance, a custom customer-policy benchmark, and a consolidated network-team Excel review profile. Separates configuration-proven findings from runtime, business-context, and external-evidence gaps; every static claim requires source-file + line/offset + quoted-rule evidence.
+description: Evidence-safe firewall ruleset audit reference specification — 22 documented detector patterns (17 vendor-agnostic plus 5 FortiGate-specific), a 15-check semantic catalogue, CIS Fortinet FortiGate Benchmark guidance, a custom customer-policy benchmark, and consolidated network-team Excel profiles including grouped observation/severity presentation. Separates configuration-proven findings from runtime, business-context, and external-evidence gaps; every static claim requires source-file + line/offset + quoted-rule evidence.
 ---
 
 # firewall-review
@@ -29,7 +29,7 @@ Forks may rename the persona via `brand.yaml` (`persona_name` key). Default ship
 2. **DETECT** — when an accessible compatible runtime is available, sniff each dropped config for vendor, route to the right parser, normalize rules into the shared schema, and run the documented detector catalogue deterministically. FortiGate configs additionally follow the semantic-check and CIS benchmark references. Canonical command spec: [`reference/commands/launch.md`](reference/commands/launch.md).
 3. **VALIDATE** — citation-verifier (deterministic quote check) → [`evidence-state contract`](reference/validation/evidence-state-contract.md) → CTO (technical truth) → CISO (business-impact severity) → QA (editorial). Same `launch.md` spec dispatches the chain.
 4. **REVIEW** — surface findings to the operator for triage (approve / edit / skip). Canonical command spec: [`reference/commands/review.md`](reference/commands/review.md).
-5. **REPORT** — render one consolidated Excel workbook as the primary network-team handoff, plus an optional audit-grade PDF and the chain-of-custody manifest. When customer collaboration is in scope, the workbook opens on the filterable `Network Team Review` sheet and carries all supporting detail in the same file. Canonical specs: [`reference/commands/report.md`](reference/commands/report.md) and [`reference/reporting/network-team-review-workbook.md`](reference/reporting/network-team-review-workbook.md).
+5. **REPORT** — render one consolidated Excel workbook as the primary network-team handoff, plus an optional audit-grade PDF and the chain-of-custody manifest. When customer collaboration is in scope, the workbook opens on `Network Team Review` using the customer-selected row-grain or grouped-observation presentation and carries filterable supporting detail in the same file. Canonical specs: [`reference/commands/report.md`](reference/commands/report.md) and [`reference/reporting/network-team-review-workbook.md`](reference/reporting/network-team-review-workbook.md).
 
 ## When to invoke a sub-skill
 
@@ -41,7 +41,7 @@ Skills are reference material for transferable knowledge — read them when you 
 | Operator asks "why is this severity Medium not Critical?" | [`reference/validation/precedence-awareness.md`](reference/validation/precedence-awareness.md) + [`reference/validation/post-process-enrich.md`](reference/validation/post-process-enrich.md) |
 | Authoring a new detector | `reference/detectors/<closest-existing>.md` as template + [`reference/core/schema.md`](reference/core/schema.md) for the Finding contract |
 | Modifying the base Excel renderer | [`reference/reporting/report-writer-excel.md`](reference/reporting/report-writer-excel.md) (current 6-tab + 28-column implementation) |
-| Customer asks for one Excel file in a network-team comment format | [`reference/reporting/network-team-review-workbook.md`](reference/reporting/network-team-review-workbook.md) |
+| Customer asks for one Excel file, network-team comments, or one observation/severity spanning multiple rules | [`reference/reporting/network-team-review-workbook.md`](reference/reporting/network-team-review-workbook.md) |
 | Deciding whether the evidence supports a claim | [`reference/validation/evidence-state-contract.md`](reference/validation/evidence-state-contract.md) |
 | Adding a framework citation | `reference/compliance/<framework>.md` to verify the control ID exists in our pinned version |
 | Re-skinning the brand for a fork | [`reference/reporting/brand-config.md`](reference/reporting/brand-config.md) |
