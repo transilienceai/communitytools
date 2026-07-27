@@ -70,7 +70,28 @@ description: What it does AND when to use. Include trigger phrases.
 - <when negative framing is genuinely needed, put it here>
 ```
 
-## When to update an existing skill
+## Run it
+
+The procedure is a workflow — every step is code-enforced, so none can be skipped.
+
+```
+Workflow('skill-update', { output_dir: 'projects/<engagement>' })   // harvest an engagement
+Workflow('skill-update', { learnings: [{ text, technique_type }] }) // judge a known set
+Workflow('skill-update', { mode: 'audit' })                         // read-only, writes nothing
+```
+
+Add `dryRun: true` to see the write plan without writing. Parent-orchestrator only.
+
+**Phases.** Intake (baseline `skill_linter.py --json`) → Harvest (reframe learnings) →
+Judge (four gates + blind refuters) → Route (author the block) → Write (persist verbatim) →
+Sweep (confidentiality guard) → Verify (linter **delta**, not an absolute clean tree — the
+base carries pre-existing violations).
+
+Every promote/reject/write decision is pure JS in `.claude/workflows/lib/wf-helpers.mjs`
+(`promotionGate`, `capBudget`, `writeGate`, `lintDelta`, `skillUpdateGate`). No agent decides
+whether a learning is promoted or a write is allowed.
+
+## The four-gate promotion test
 
 Process the techniques and failure modes from completed engagements. Promote a learning to the skill base only if **all four** hold:
 
@@ -83,26 +104,17 @@ Process the techniques and failure modes from completed engagements. Promote a l
 
 Always frame as a reusable pattern: *"when encountering X condition, try Y approach"* — never *"on box-N, Y worked"*. Use `<TARGET_IP>`, `<DC_FQDN>`, `<DOMAIN>` placeholders in tool examples.
 
-## Pre-write check
-
-Before writing, run `python3 scripts/skill_linter.py`. Reject any change that:
-- Re-introduces challenge-specific lore.
-- Pushes a `SKILL.md` past 150 or a reference past its cap.
-- Duplicates a single-owner rule (brute-force, output discipline, env-reader).
-- Adds `DO NOT` / `MUST NOT` / `NEVER` outside an Anti-Patterns block.
-
 ## Output
 
-Concise change report:
-- **Updated.** File + one-line summary of edit.
-- **Skipped.** Notable findings intentionally not added, with brief reasoning.
-- **No changes.** State explicitly when nothing warranted an update.
+Three buckets, built in code so a run cannot claim an edit it did not make:
+**Updated.** / **Skipped.** (with the gate that failed) / **No changes.**
 
 ## Reference
 
 - [STRUCTURE.md](reference/STRUCTURE.md) — directory layout requirements.
 - [FRONTMATTER.md](reference/FRONTMATTER.md) — YAML rules.
 - [CONTENT.md](reference/CONTENT.md) — writing guidelines.
+- [ROUTING.md](reference/ROUTING.md) — technique type → target file.
 
 ## Anti-Patterns
 

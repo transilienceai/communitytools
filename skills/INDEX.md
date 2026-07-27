@@ -9,7 +9,8 @@ Single navigation surface. Coordinator reads this once at engagement start to pi
 | [`coordination`](coordination/SKILL.md) | Orchestrate executor / validator / skeptic agents | Every engagement — entry point |
 | [`pentest-engagement`](pentest-engagement/SKILL.md) | Scoped pentest from a scope. WEB: surface expansion → OWASP coverage → validate. NETWORK: batched tool-first nmap sweep of an IP/CIDR list (host discovery + common+less-common ports + CVE) → bounded deep-dives → validate. Auto-detected mode → Transilience PDF | A real (non-CTF) pentest **or a network/IP-range vulnerability scan** defined by a scope |
 | [`hackthebox`](hackthebox/SKILL.md) | Solve HackTheBox challenges/machines/fortresses (flag-shaped) | CTF / HTB target |
-| [`skill-update`](skill-update/SKILL.md) | Add or refine skill content from engagement learnings | Post-engagement (parent orchestrator only) |
+| [`skill-update`](skill-update/SKILL.md) | Add or refine skill content from engagement learnings — four-gate promotion, cap-aware writes, confidentiality sweep, linter-delta gated (workflow `skill-update`) | Post-engagement (parent orchestrator only) |
+| [`skill-prune`](skill-prune/SKILL.md) | Remove negative-ROI skill content — orphans, duplicates, reintroduced lore (the inverse of skill-update) | Quarterly maintenance, or after the linter flags orphans |
 | [`patt-fetcher`](patt-fetcher/SKILL.md) | Fetch PayloadAllTheThings payloads on demand | Executor needs a comprehensive payload list |
 | [`script-generator`](script-generator/SKILL.md) | Generate validated, syntax-checked scripts | Need a tool but no PoC exists yet |
 | [`transilience-report-style`](transilience-report-style/SKILL.md) | Generate the branded Transilience PDF deliverable from a findings JSON (data-driven ReportLab generator) | Engagement finished + validated → produce the report PDF |

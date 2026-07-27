@@ -287,7 +287,7 @@ NOTE: the techniques/lessons/skills_to_update fields above may be empty — the 
 Steps:
 1) STATS. Ensure ${t.output_dir}/stats.json has experiment/finding/agent counts + duration. If empty, recount from logs/experiments.md (the stats fallback greps in formats/htb-completion-report.md).
 2) COMPLETION REPORT. Verify ${t.output_dir}/reports/completion-report.md exists and has all 8 sections (formats/htb-completion-report.md). If missing, generate it from challenge-meta.json, start_time.txt, stats.json, findings/, and logs/.
-3) SKILL-UPDATE (skill-improvement loop — skills/hackthebox/reference/skill-improvement.md). Review challenge-log/findings, then GENERALIZE every learning — strip ALL platform/challenge-specific names and CTF-only file paths. Route each: injection bypass -> skills/injection/reference/*-quickstart.md|*-cheat-sheet.md; auth -> skills/authentication/reference/*; traversal -> skills/server-side/reference/scenarios/path-traversal/; attack-chain combo -> skills/coordination/reference/spawning-recipes.md; recon -> skills/reconnaissance/*. Enforce the gates: no platform/challenge names, technique generic beyond this scenario, no duplication, quickstart/cheat-sheet < 200 lines, no CTF-specific bias. If nothing generalizes, skip and say so. (You may invoke the skill-update skill if available; otherwise make the edits directly.) Summarize which skills changed and why.
+3) SKILL-UPDATE — ALREADY PERFORMED by the skill-update workflow before this step. Report its result verbatim as skill_update_summary. Do NOT edit any skill file yourself: the workflow gates every write on the four promotion gates, the line caps, a confidentiality sweep and a linter delta, and a hand edit bypasses all of it.
 4) SLACK — COMPLETED notification, GATED. Send ONLY if BOTH: (a) Slack creds are set (python3 tools/env-reader.py SLACK_BOT_TOKEN HTB_SLACK_CHANNEL_ID — both set), AND (b) FULL SUCCESS: coordinator status==SUCCESS AND ALL_FLAGS_SUBMITTED==true. Partial/BLOCKED/FAILED -> NO post (set slack_skipped_reason). Build the message in the verbatim COMPLETED format from skills/hackthebox/reference/slack-notifications.md (header ":trophy: PWNED — <name>"; Difficulty/OS/Time line; Flags line with one :white_check_mark: per owned flag; "Experiments: N | Findings: M | Agents: K" from stats.json; a 3-6 sentence "How It Was Hacked" narrative; "Key Techniques" bullets; "Skills Updated" from step 3). Send via stdin form: printf '...' | python3 tools/slack-send.py --token "$SLACK_BOT_TOKEN" --channel "$HTB_SLACK_CHANNEL_ID" -. Slack failure is non-blocking — log and continue.
 
 Return POST_SCHEMA: tag, skill_update_summary, report_ok, slack_sent, slack_skipped_reason.`
@@ -341,12 +341,23 @@ for (const grp of groups) {
         .then(submit => ({ ...carry, submit }))
         .catch(() => ({ ...carry, submit: null }))
     },
-    // Stage 4 — Post-solve (stats, skill-update, gated Slack)
+    // Stage 4 — Post-solve. skill-update runs as a WORKFLOW first, not as prose in
+    // the post prompt: every write is then gated by the four promotion gates, the
+    // line caps, a confidentiality sweep and a linter delta. The post agent only
+    // reports what it did. A failure here never blocks the report or Slack.
     (carry, t) => {
       const summary = carry ? carry.summary : null
       const submit = carry ? carry.submit : null
       const validation = carry ? carry.validation : null
-      return agent(postPrompt(t, summary, submit, validation), { schema: POST_SCHEMA, agentType: 'general-purpose', label: `post:${t.tag}`, phase: 'Post-solve' })
+      return workflow('skill-update', {
+        mode: 'harvest', output_dir: t.output_dir, engagement: t.tag,
+        invoked_by: 'orchestrator', agent_budget: 120,
+      }).catch((err) => ({ status: 'ERROR', report_markdown: `skill-update failed: ${String(err)}` }))
+        .then((su) => agent(
+          postPrompt(t, summary, submit, validation) +
+          `\n\nSKILL-UPDATE RESULT (already applied by the workflow — report it verbatim as skill_update_summary):\n` +
+          `status=${(su && su.status) || 'UNKNOWN'}\n${(su && su.report_markdown) || '(no report)'}`,
+          { schema: POST_SCHEMA, agentType: 'general-purpose', label: `post:${t.tag}`, phase: 'Post-solve' }))
         .then(post => ({ tag: t.tag, status: summary ? summary.status : 'UNKNOWN', summary, submit, validation, post }))
         .catch(() => ({ tag: t.tag, status: summary ? summary.status : 'UNKNOWN', summary, submit, validation, post: null }))
     },
