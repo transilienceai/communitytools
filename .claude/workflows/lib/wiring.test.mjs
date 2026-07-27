@@ -12,6 +12,7 @@ const pe = read('pentest-engagement.js');
 const cl = read('coordinator-loop.js');
 const vf = read('validate-findings.js');
 const mr = read('merge-reports.js');
+const su = read('skill-update.js');
 const pv = readFileSync(join(wfDir, '..', '..', 'tools', 'provision_vantage.sh'), 'utf8');
 const ciYml = readFileSync(join(wfDir, '..', '..', '.github', 'workflows', 'pentest-workflow-tests.yml'), 'utf8');
 
@@ -199,6 +200,42 @@ ok(/deliverable_password: \{ type/.test(pe) && /protected_zip: \{ type/.test(pe)
 ok(/NEVER write the password VALUE into summary\.md/.test(pe), 'the runner is told to keep the password value out of the zipped summary');
 ok(/DELIVERABLE-PASSWORD\.txt/.test(pe), 'the password is surfaced via a root file excluded from the deliverable');
 ok(/python3 tools\/test_protect_deliverable\.py/.test(ciYml), 'CI runs the protect_deliverable test');
+
+// --- skill-update: the determinism contract -------------------------------
+// The whole point of converting the skill to a workflow is that no step can be
+// skipped and no LLM can decide the outcome. These assert exactly that.
+ok(/phase\('Intake'\)/.test(su) && /phase\('Verify'\)/.test(su), 'skill-update runs Intake and Verify');
+ok(su.indexOf("phase('Sweep')") > 0 && su.indexOf("phase('Sweep')") < su.indexOf("phase('Verify')"),
+   'the confidentiality Sweep runs BEFORE Verify');
+ok(su.indexOf("phase('Write')") < su.indexOf("phase('Sweep')"), 'Write precedes Sweep');
+ok(su.indexOf("phase('Judge')") < su.indexOf("phase('Route')"), 'Judge precedes Route');
+// The lint gate must be a DELTA gate: the tree carries pre-existing violations,
+// so an absolute clean-tree gate would block every run forever.
+ok(/lintDelta\(baseline, afterPayload\)/.test(su), 'skill-update gates on the lint DELTA, not an absolute clean tree');
+ok(/refusing to write without a delta baseline/.test(su), 'a missing baseline fails closed rather than writing blind');
+// Every decision is code, not an agent.
+ok(/promotionGate\(c, carry\.j, carry\.votes\)/.test(su), 'the promote/reject decision is made by promotionGate in pure JS');
+ok(/writeGate\(\{ \.\.\.a, target_path: target \}/.test(su), 'every authored block passes through writeGate before any write');
+ok(/skillUpdateGate\(\{/.test(su), 'the final COMPLETE/BLOCKED call is skillUpdateGate');
+ok(/buildChangeReport\(/.test(su) && !/report_markdown: *`/.test(su),
+   'the three-bucket report is built in code, never authored by an agent');
+// The confidentiality sweep is an independent veto that no agent can talk past.
+ok(/python3 scripts\/check_client_data\.py/.test(su), 'the Sweep phase runs the confidentiality guard');
+ok(/gate\.ok && !sweepClean/.test(su), 'a failed confidentiality sweep vetoes an otherwise-passing gate');
+ok(/Do NOT edit any file to make it pass/.test(su), 'the sweep runner is forbidden from fixing its own failure');
+// Role boundary + fail-closed agent calls.
+ok(/INVOKED_BY === 'coordinator'/.test(su), 'a coordinator invocation is blocked (orchestrator-only)');
+ok(!/verdict === 'clean'/.test(su), 'no code path lets an agent verdict clear a deterministic finding');
+ok((su.match(/\.catch\(\(\) =>/g) || []).length >= 5, 'every agent call fails closed via .catch');
+// Reverting must never destroy the operator's uncommitted work.
+ok(/!dirtyPaths\.has\(p\)/.test(su), 'revert skips paths that were already dirty at Intake');
+// Budget overflow is deferred and reported, never silently dropped.
+ok(/budget:deferred/.test(su), 'over-budget candidates are deferred with a stated reason, not dropped');
+// CI must actually run the new gates.
+ok(/syntax\.test\.mjs/.test(ciYml), 'CI runs the workflow syntax checker');
+ok(/test_skill_linter\.py/.test(readFileSync(join(wfDir, '..', '..', '.github', 'workflows', 'skill-lint.yml'), 'utf8')),
+   'CI runs the skill_linter --json contract test');
+
 
 console.log(`\nwiring: ${pass} passed, ${fail} failed`);
 if (fail) { console.log('\n' + fails.join('\n')); process.exit(1); }

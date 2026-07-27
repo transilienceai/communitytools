@@ -13,6 +13,8 @@ import {
   backstopDecision, assessBudget, reduceCandidateVerdicts, summarizeLoopCounts,
   detectAllowlist, resolveGeoZones,
   convergenceDone, nextDryStreak, resumeSchedule, classifyEngagement,
+  scrubCheck, capFor, capBudget, promotionGate, writeGate, violationKey, lintDelta,
+  skillUpdateGate, skillAgentBudget, buildChangeReport,
 } from './wf-helpers.mjs';
 
 let pass = 0, fail = 0;
@@ -373,5 +375,77 @@ eq(resolveGeoZones({ geoVantages: [' z1 ', '', null] }), ['z1'], 'resolveGeoZone
 }
 
 // --- report ---------------------------------------------------------------
+
+// --- skill-update: scrub / caps -------------------------------------------
+ok(!scrubCheck('on 10.10.11.42 the exploit worked').clean, 'scrub catches a lab IP');
+ok(!scrubCheck('FLAG{abc123}').clean, 'scrub catches a preserved flag');
+ok(!scrubCheck('see /Users/someone/dev/x').clean, 'scrub catches an operator path');
+ok(!scrubCheck('projects/pentest/20260709_zorbix/report').clean, 'scrub catches an engagement path');
+ok(scrubCheck('When the response echoes the payload, try a filter bypass.').clean, 'scrub passes a reusable pattern');
+eq(capFor('skills/x/SKILL.md', { 'SKILL.md': 150 }), 150, 'capFor SKILL.md');
+eq(capFor('skills/x/reference/y.md', { reference: 200 }), 200, 'capFor reference');
+eq(capFor('skills/x/reference/scenarios/z.md', { scenario: 400 }), 400, 'capFor scenario');
+eq(capFor('skills/x/reference/a-principles.md', { principles: 150 }), 150, 'capFor principles');
+eq(capBudget('skills/x/SKILL.md', 100, 20, { 'SKILL.md': 150 }).action, 'append', 'capBudget fits');
+eq(capBudget('skills/x/SKILL.md', 140, 20, { 'SKILL.md': 150 }).action, 'split', 'capBudget over cap -> split not truncate');
+eq(capBudget('skills/x/SKILL.md', null, 20, { 'SKILL.md': 150 }).action, 'reject', 'capBudget refuses to write blind');
+
+// --- skill-update: promotionGate (four gates AND + quorum) -----------------
+const goodJ = { generalizable: true, material: true, not_already_captured: true,
+  minimal_footprint: true, duplicate_search: [{ query: 'x', hits: 0 }], footprint: 'extend' };
+const cand = { id: 'c1', text: 'When X condition appears, try Y approach.' };
+eq(promotionGate(cand, goodJ, []).decision, 'PROMOTE', 'promotionGate promotes when all four hold');
+for (const g of ['generalizable', 'material', 'not_already_captured', 'minimal_footprint']) {
+  eq(promotionGate(cand, { ...goodJ, [g]: false }, []).decision, 'SKIP', `promotionGate requires ${g}`);
+}
+eq(promotionGate(cand, { ...goodJ, duplicate_search: [] }, []).decision, 'SKIP', 'novelty claim without a search is unevidenced');
+eq(promotionGate(cand, { ...goodJ, footprint: 'new-file' }, []).decision, 'SKIP', 'new-file needs a no_host_reason');
+eq(promotionGate(cand, { ...goodJ, footprint: 'new-file', no_host_reason: 'no existing file covers it' }, []).decision, 'PROMOTE', 'new-file with a reason promotes');
+eq(promotionGate(cand, { ...goodJ, restates_cross_cutting: true }, []).decision, 'SKIP', 'restating a single-owner rule is rejected');
+eq(promotionGate({ id: 'c2', text: 'on 10.10.11.42 it worked' }, goodJ, []).decision, 'SKIP', 'scrub blocks lore even when the judge approves');
+eq(promotionGate(cand, goodJ, [{ refuted: true }, { refuted: true }, { refuted: false }]).decision, 'REJECT', 'majority refutation rejects');
+eq(promotionGate(cand, goodJ, [{ refuted: true }, { refuted: false }, { refuted: false }]).decision, 'PROMOTE', 'minority refutation does not');
+eq(promotionGate(cand, null, []).decision, 'SKIP', 'a missing judgment fails closed');
+
+// --- skill-update: writeGate ----------------------------------------------
+const info = { lines: 100 };
+const caps = { 'SKILL.md': 150, reference: 200 };
+const base = { target_path: 'skills/x/reference/y.md', content: 'When A, try B.\n' };
+eq(writeGate(base, info, caps).ok, true, 'writeGate accepts a clean block');
+eq(writeGate({ ...base, content: 'You MUST NOT do this.' }, info, caps).ok, false, 'writeGate blocks a negative outside Anti-Patterns');
+eq(writeGate({ ...base, content: '## Anti-Patterns\n- MUST NOT do this.' }, info, caps).ok, true, 'writeGate allows a negative inside Anti-Patterns');
+eq(writeGate({ ...base, target_path: 'skills/x/CHANGELOG.md' }, info, caps).ok, false, 'writeGate blocks auxiliary files');
+eq(writeGate({ ...base, content: 'try 10.10.11.42' }, info, caps).ok, false, 'writeGate scrubs lore');
+eq(writeGate({ ...base, links_verified: [{ url: 'a.md', exists: false }] }, info, caps).ok, false, 'writeGate blocks an unresolved link');
+eq(writeGate({ ...base, creates_file: true }, info, caps).ok, false, 'writeGate blocks an unlinked new file (orphan)');
+eq(writeGate({ ...base, creates_file: true, linked_from: 'skills/x/SKILL.md' }, info, caps).action, 'create', 'writeGate allows a linked new file');
+eq(writeGate(base, { lines: 199 }, caps).action, 'split', 'writeGate routes an over-cap write to a split');
+eq(writeGate({ target_path: 'a.md', content: '  ' }, info, caps).ok, false, 'writeGate rejects empty content');
+
+// --- skill-update: lintDelta + skillUpdateGate -----------------------------
+const V = (code, file, line) => ({ code, file, line, detail: 'd' });
+const before = { violations: [V('CAP', 'a.md', 1), V('NEGATIVE', 'b.md', 2)] };
+const same = { violations: [V('CAP', 'a.md', 1), V('NEGATIVE', 'b.md', 2)] };
+const worse = { violations: [...same.violations, V('LINK', 'c.md', 3)] };
+const better = { violations: [V('CAP', 'a.md', 1)] };
+eq(lintDelta(before, same).regressed, false, 'lintDelta: pre-existing violations do not block');
+eq(lintDelta(before, worse).regressed, true, 'lintDelta: a new violation blocks');
+eq(lintDelta(before, worse).introduced.length, 1, 'lintDelta counts only the new one');
+eq(lintDelta(before, better).resolved.length, 1, 'lintDelta reports resolved violations');
+eq(skillUpdateGate({ baselineOk: true, afterOk: true, writeOk: true, delta: lintDelta(before, same) }).status, 'COMPLETE', 'gate passes with no regression');
+eq(skillUpdateGate({ baselineOk: true, afterOk: true, writeOk: true, delta: lintDelta(before, worse) }).status, 'BLOCKED', 'gate blocks on regression');
+eq(skillUpdateGate({ baselineOk: false, afterOk: true, writeOk: true, delta: lintDelta(before, same) }).status, 'BLOCKED', 'gate fails closed without a baseline');
+eq(skillUpdateGate({ baselineOk: true, afterOk: true, writeOk: false, delta: lintDelta(before, same) }).status, 'BLOCKED', 'gate blocks when the writer drifted');
+eq(skillUpdateGate({ baselineOk: true, afterOk: true, writeOk: true, delta: null }).status, 'BLOCKED', 'gate fails closed with no delta');
+
+// --- skill-update: budget + report ----------------------------------------
+eq(skillAgentBudget(24, 3, 200).take, 24, 'budget fits 24 candidates at 200');
+ok(skillAgentBudget(24, 3, 40).deferred > 0, 'budget defers overflow rather than dropping it');
+eq(skillAgentBudget(24, 3, 40).take + skillAgentBudget(24, 3, 40).deferred, 24, 'budget never loses a candidate');
+ok(buildChangeReport([], [], { ok: true }).startsWith('**No changes.**'), 'report: no changes');
+ok(buildChangeReport([{ id: 'c1', decision: 'SKIP', reason: 'already captured' }], [], { ok: true }).includes('**Skipped.**'), 'report: skipped bucket');
+ok(buildChangeReport([], [{ path: 'skills/x/SKILL.md', summary: 'added a pattern' }], { ok: true }).includes('**Updated.**'), 'report: updated bucket');
+ok(buildChangeReport([], [], { ok: false, blocked_reason: 'regressed' }).includes('BLOCKED'), 'report surfaces a blocked gate');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) { console.log('\n' + fails.join('\n')); process.exit(1); }

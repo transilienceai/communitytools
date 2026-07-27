@@ -26,8 +26,17 @@ function extractFn(src, name) {
     bodyStart = src.indexOf('{', k);
   } else {
     start = src.indexOf(`const ${name} = {`);
-    if (start < 0) return null;
-    bodyStart = src.indexOf('{', start);
+    if (start >= 0) {
+      bodyStart = src.indexOf('{', start);
+    } else {
+      // Array literal (e.g. a pattern table). Bracket-matching would trip over the
+      // character classes inside regex literals, so terminate on the closing line,
+      // which this file's formatting always puts at column 0.
+      start = src.indexOf(`const ${name} = [`);
+      if (start < 0) return null;
+      const end = src.indexOf('\n];', start);
+      return end < 0 ? null : src.slice(start, end + 3);
+    }
   }
   if (bodyStart < 0) return null;
   let depth = 0;
@@ -48,6 +57,8 @@ const EXPECT = {
   'validate-findings.js': ['severityBand', 'riskBucket', 'riskScore', 'exposureFor', 'normVector', 'cveReconcile', 'EVIDENCE_MANIFEST', 'evidenceComplete', 'computeVerdict', 'finalPoc', 'round4', ...LANE],
   // coordinator-loop embeds the WHOLE interleaved validation lane (verdict + governor + prompts).
   'coordinator-loop.js': [...VERDICT, ...GOVERNOR, ...LANE],
+  // skill-update embeds the whole promote/write/gate lane — every decision it makes.
+  'skill-update.js': ['SCRUB_PATTERNS', 'scrubCheck', 'capFor', 'capBudget', 'promotionGate', 'writeGate', 'violationKey', 'lintDelta', 'skillUpdateGate', 'skillAgentBudget', 'buildChangeReport'],
   'pentest-engagement.js': ['severityBand', 'normalizeAssess', 'reconcileAssessed', 'finalizeGate', 'bumpVersion', 'scopeDiff', 'resolveEngagementMeta', 'detectAllowlist', 'resolveGeoZones', 'resumeSchedule', 'classifyEngagement'],
 };
 

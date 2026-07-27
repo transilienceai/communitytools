@@ -62,14 +62,16 @@ CREDENTIAL_EXT = {".ovpn", ".crt", ".cer", ".der", ".key", ".jks", ".p12", ".pfx
 # incidents and public benchmark suites). Credentials/IPs are still checked.
 NAME_EXEMPT_PREFIXES = ("benchmarks/", "papers/", "threat_intel_case_studies/")
 
-# These two files necessarily contain the patterns and fixtures themselves: the
-# guard holds the SECRET/ENGAGEMENT regexes, and its test suite holds a synthetic
-# leak per rule. Both are exempt from the pattern checks ONLY — never from the
-# denylist check. The denylist is hashed, so neither file has any legitimate
-# reason to contain a plaintext customer identifier, and a fixture must be
-# invented rather than borrowed from a real engagement.
+# These files necessarily contain the patterns and fixtures themselves: the guard
+# holds the SECRET/ENGAGEMENT regexes, and the two test suites hold a synthetic
+# leak per rule (wf-helpers' scrubCheck enforces the same classes workflow-side).
+# All are exempt from the pattern checks ONLY — never from the denylist check.
+# The denylist is hashed, so none has any legitimate reason to contain a plaintext
+# customer identifier, and a fixture must be invented, never borrowed from a real
+# engagement.
 SECRET_SELF_EXEMPT = {"scripts/check_client_data.py",
-                      "scripts/test_check_client_data.py"}
+                      "scripts/test_check_client_data.py",
+                      ".claude/workflows/lib/helpers.test.mjs"}
 
 # Narrow, reviewed exceptions: (path, finding-label). Each needs a justification.
 # Keep this list SHORT — every entry is a place the guard is deliberately blind.

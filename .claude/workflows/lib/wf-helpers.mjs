@@ -651,6 +651,209 @@ export function finalizeGate({ report_data_ok, report_data_lint_ok, renderGateOk
 }
 
 // ---------------------------------------------------------------------------
+// skill-update: the deterministic half. Every promote/reject/write decision below
+// is pure — no LLM decides anything. Agents harvest, judge and author; this code
+// gates. Mirrors the computeVerdict/finalizeGate split used by the pentest lane.
+// ---------------------------------------------------------------------------
+
+// Challenge- and target-specific identifiers a reusable skill must never carry.
+// A learning that needs one of these to make sense is lore, not a pattern.
+export const SCRUB_PATTERNS = [
+  [/\b(HackTheBox|hackthebox|HTB)\b/, 'platform name'],
+  [/\bVulnlab\b/, 'lab platform'],
+  [/\bXBEN-\d+-\d+\b/, 'challenge id'],
+  [/\b10\.(?:10|129)\.\d+\.\d+\b/, 'lab IP'],
+  [/\b(?:FLAG|flag)\{[^}]{2,}\}/, 'preserved flag'],
+  [/\bprojects\/(?:pentest|compliance|offsec|webinars)\/\d{6,8}[_-]/, 'engagement path'],
+  [/\/(?:Users|home)\/[A-Za-z][A-Za-z0-9._-]{2,}\//, 'operator path'],
+];
+
+// scrubCheck — machine half of the "generalizable" gate. The judge rules on
+// meaning; this rules on identifiers, which needs no judgement and must not be
+// left to one.
+export function scrubCheck(text) {
+  const hits = [];
+  for (const [re, label] of SCRUB_PATTERNS) if (re.test(String(text || ''))) hits.push(label);
+  return { clean: hits.length === 0, hits };
+}
+
+// capFor — which cap applies to a path. Single source: the linter's published caps.
+export function capFor(path, caps = {}) {
+  const p = String(path || '');
+  if (p.endsWith('/SKILL.md') || p === 'SKILL.md') return caps['SKILL.md'] || 150;
+  if (p.endsWith('/README.md') || p === 'README.md') return caps['README.md'] || 100;
+  if (/\/reference\/scenarios\//.test(p)) return caps.scenario || 400;
+  if (/-principles\.md$/.test(p)) return caps.principles || 150;
+  if (/\/reference\//.test(p)) return caps.reference || 200;
+  return caps.reference || 200;
+}
+
+// capBudget — refuse a write that would breach a cap, and say what to do instead.
+// Truncating the block would silently corrupt content, so an over-cap write is
+// routed to a split rather than trimmed.
+export function capBudget(path, linesBefore, addedLines, caps = {}) {
+  const cap = capFor(path, caps);
+  // null/undefined mean "unknown", not zero — Number(null) is 0, which would read
+  // a missing line count as an empty file and let a blind write through.
+  const before = linesBefore == null ? NaN : Number(linesBefore);
+  const added = addedLines == null ? NaN : Number(addedLines);
+  if (!Number.isFinite(before) || !Number.isFinite(added)) {
+    return { ok: false, action: 'reject', cap, after: null,
+             reason: 'line counts unavailable; refusing to write blind' };
+  }
+  const after = before + added;
+  if (after <= cap) return { ok: true, action: 'append', cap, after, headroom: cap - after };
+  return { ok: false, action: 'split', cap, after,
+           reason: `${path} would reach ${after} lines (cap ${cap}); split into reference/ instead` };
+}
+
+// promotionGate — the four-gate promotion test as a pure boolean AND, plus a
+// blind adversarial quorum and the machine scrub. Mirrors computeVerdict.
+// Gate 3 is EVIDENCE-BOUND: "not already captured" is only believed when the
+// judge actually searched, so an unevidenced novelty claim rejects.
+export function promotionGate(candidate, judgment, votes, opts = {}) {
+  const id = (candidate && candidate.id) || (judgment && judgment.id) || 'unknown';
+  const scrub = scrubCheck((candidate && candidate.text) || '');
+  if (!judgment) {
+    return { id, decision: 'SKIP', reason: 'judge returned no result', failed_gates: ['judge_error'] };
+  }
+  const failed = [];
+  if (!judgment.generalizable) failed.push('generalizable');
+  if (!judgment.material) failed.push('material');
+  if (!judgment.not_already_captured) failed.push('not_already_captured');
+  if (!judgment.minimal_footprint) failed.push('minimal_footprint');
+  // An unsearched novelty claim is not evidence of novelty.
+  const searched = Array.isArray(judgment.duplicate_search) && judgment.duplicate_search.length > 0;
+  if (judgment.not_already_captured && !searched) failed.push('not_already_captured:unevidenced');
+  // A new file must name the existing files that could not host the learning.
+  if (judgment.footprint === 'new-file' && !String(judgment.no_host_reason || '').trim()) {
+    failed.push('minimal_footprint:no_host_reason');
+  }
+  if (judgment.restates_cross_cutting) failed.push('single_canonical_home');
+  if (!scrub.clean) failed.push(`generalizable:scrub(${scrub.hits.join(',')})`);
+
+  const votesTotal = opts.votesTotal != null ? opts.votesTotal : (votes || []).length;
+  const refuteCount = (votes || []).filter((v) => v && v.refuted).length;
+  const majority = Math.floor(votesTotal / 2) + 1;
+  const refuted = votesTotal > 0 && refuteCount >= majority;
+
+  if (refuted) {
+    const g = (votes || []).find((v) => v && v.refuted && v.gate);
+    return { id, decision: 'REJECT', reason: `refuted ${refuteCount}/${votesTotal}` +
+             (g && g.gate ? ` on ${g.gate}` : ''), failed_gates: failed, refuteCount };
+  }
+  if (failed.length) {
+    return { id, decision: 'SKIP', reason: `failed: ${failed.join(', ')}`,
+             failed_gates: failed, refuteCount };
+  }
+  return { id, decision: 'PROMOTE', reason: 'all four gates hold', failed_gates: [], refuteCount };
+}
+
+// writeGate — the composite pre-write check. Every rule the skill declares is
+// enforced here BEFORE anything is written, so a rejected block costs nothing.
+export function writeGate(block, fileInfo, caps = {}) {
+  const reasons = [];
+  if (!block || !String(block.content || '').trim()) {
+    return { ok: false, action: 'reject', reasons: ['author produced no content'] };
+  }
+  const path = String(block.target_path || '');
+  const content = String(block.content);
+
+  // Auxiliary/meta files the skill explicitly forbids.
+  if (/\/(CHANGELOG|SUMMARY|VERIFICATION|NOTES|TODO)\.md$/i.test(path)) {
+    reasons.push('forbidden auxiliary file (CHANGELOG/SUMMARY/VERIFICATION)');
+  }
+  // Negative rules belong in an Anti-Patterns section, wherever they land.
+  if (/\b(DO NOT|MUST NOT|NEVER)\b/.test(content)) {
+    const underAnti = /^#{2,3}\s.*anti-pattern/im.test(content) || block.anchor_is_anti_patterns === true;
+    if (!underAnti) reasons.push('DO NOT/MUST NOT/NEVER outside an ## Anti-Patterns section');
+  }
+  // Cross-cutting rules have one canonical home; elsewhere they must be linked.
+  if (block.restates_cross_cutting) reasons.push('restates a single-owner cross-cutting rule; link instead');
+  // Challenge/target identifiers.
+  const scrub = scrubCheck(content);
+  if (!scrub.clean) reasons.push(`challenge-specific identifiers: ${scrub.hits.join(', ')}`);
+  // Links must resolve — the author is required to have checked each one.
+  const unresolved = (block.links_verified || []).filter((l) => l && l.exists === false);
+  if (unresolved.length) reasons.push(`unresolved link(s): ${unresolved.map((l) => l.url).join(', ')}`);
+  // A new reference file that nothing links to is born an orphan.
+  if (block.creates_file && !block.linked_from) reasons.push('new reference file is not linked from anywhere (orphan)');
+
+  if (reasons.length) return { ok: false, action: 'reject', reasons };
+
+  const added = content.split('\n').length;
+  const budget = capBudget(path, (fileInfo && fileInfo.lines) || 0, added, caps);
+  if (!budget.ok) return { ok: false, action: budget.action, reasons: [budget.reason], budget };
+  return { ok: true, action: block.creates_file ? 'create' : 'append', reasons: [], budget };
+}
+
+// violationKey — the stable identity of a linter violation across two runs.
+export function violationKey(v) {
+  return [v && v.code, v && v.file, (v && v.line) || 0, String((v && v.detail) || '').slice(0, 60)].join('|');
+}
+
+// lintDelta — NEW violations only. The tree carries pre-existing violations, so
+// an absolute clean-tree gate would block every run forever; the question is
+// whether THIS run made things worse.
+export function lintDelta(baseline, after) {
+  const before = new Set(((baseline && baseline.violations) || []).map(violationKey));
+  const introduced = ((after && after.violations) || []).filter((v) => !before.has(violationKey(v)));
+  const resolved = ((baseline && baseline.violations) || []).filter(
+    (v) => !new Set(((after && after.violations) || []).map(violationKey)).has(violationKey(v)));
+  return { introduced, resolved, regressed: introduced.length > 0,
+           baseline_count: before.size, after_count: ((after && after.violations) || []).length };
+}
+
+// skillUpdateGate — the COMPLETE/BLOCKED decision over the run's reported facts.
+// Fails closed: a missing lint payload blocks, because without it the delta is
+// unknowable and "unknown" must never read as "clean".
+export function skillUpdateGate({ baselineOk, afterOk, delta, writeOk, writeMismatch }) {
+  const ok = !!(baselineOk && afterOk && writeOk && delta && !delta.regressed);
+  const blocked_reason = ok ? null
+    : !baselineOk ? 'baseline skill_linter --json did not parse; refusing to write without a delta baseline'
+    : !writeOk ? `writer did not persist the plan faithfully (${writeMismatch || 'mismatch'})`
+    : !afterOk ? 'post-write skill_linter --json did not parse; cannot prove no regression'
+    : !delta ? 'no lint delta computed'
+    : `introduced ${delta.introduced.length} new linter violation(s): ` +
+      delta.introduced.slice(0, 5).map((v) => `${v.code} ${v.file}`).join('; ');
+  return { ok, status: ok ? 'COMPLETE' : 'BLOCKED', blocked_reason };
+}
+
+// skillAgentBudget — decide how many candidates fit the agent budget BEFORE the
+// judge phase. Overflow is deferred and reported, never silently dropped.
+export function skillAgentBudget(candidateCount, votes, budget, overhead = 9) {
+  const perCandidate = 2 + Math.max(0, Number(votes) || 0); // judge + author + refuters
+  const usable = Math.max(0, (Number(budget) || 0) - overhead);
+  const fit = perCandidate > 0 ? Math.floor(usable / perCandidate) : 0;
+  const take = Math.max(0, Math.min(Number(candidateCount) || 0, fit));
+  return { take, deferred: Math.max(0, (Number(candidateCount) || 0) - take), perCandidate };
+}
+
+// buildChangeReport — the three-bucket output, built in code. An agent writing
+// this could claim an update that never happened.
+export function buildChangeReport(decisions, written, gate) {
+  const updated = (written || []).filter((w) => w && w.path);
+  const skipped = (decisions || []).filter((d) => d && d.decision !== 'PROMOTE');
+  const lines = [];
+  if (gate && gate.ok === false) {
+    lines.push(`⚠️ **BLOCKED.** ${gate.blocked_reason}`, '');
+  }
+  if (updated.length) {
+    lines.push('**Updated.**');
+    for (const w of updated) lines.push(`- \`${w.path}\` — ${w.summary || 'content added'}`);
+    lines.push('');
+  }
+  if (skipped.length) {
+    lines.push('**Skipped.**');
+    for (const s of skipped) lines.push(`- ${s.id} — ${s.reason}`);
+    lines.push('');
+  }
+  if (!updated.length && !skipped.length) lines.push('**No changes.** Nothing warranted an update.');
+  else if (!updated.length) lines.push('**No changes.** No candidate passed all four promotion gates.');
+  return lines.join('\n').trim();
+}
+
+// ---------------------------------------------------------------------------
 // Engagement metadata + version resolution (req 10). Prompt > prior > default.
 // Prior SCOPE is metadata-only: we compute a display-only diff, never a work list.
 // ---------------------------------------------------------------------------
