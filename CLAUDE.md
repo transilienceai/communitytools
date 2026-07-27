@@ -44,6 +44,7 @@ Boundaries and context contracts: [`skills/coordination/reference/role-matrix.md
 | Git conventions | [`skills/coordination/reference/GIT_CONVENTIONS.md`](skills/coordination/reference/GIT_CONVENTIONS.md) |
 | Output formats (reports, schemas) | [`formats/INDEX.md`](formats/INDEX.md) |
 | Activity & source-IP logging | [`formats/logs.md`](formats/logs.md) |
+| Public-repo confidentiality (what may never be committed) | [`docs/CONFIDENTIALITY.md`](docs/CONFIDENTIALITY.md) |
 
 ## CVE risk lookup
 
