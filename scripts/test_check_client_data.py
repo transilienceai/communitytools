@@ -165,6 +165,73 @@ def test_guard_still_catches_a_planted_leak():
     assert engagement_hits(line), "guard no longer detects a planted engagement path"
 
 
+# --------------------------------------------------------------------------
+# Coverage manifest — "file by file, folder by folder" as a checked property
+# --------------------------------------------------------------------------
+
+def _manifest() -> dict:
+    import json
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        out = os.path.join(td, "m.json")   # outside the repo -> git ignores it
+        r = subprocess.run([sys.executable, GUARD, "--manifest", out],
+                           capture_output=True, text=True, cwd=REPO)
+        assert os.path.exists(out), f"no manifest written: {r.stdout}{r.stderr}"
+        with open(out, encoding="utf-8") as fh:
+            return json.load(fh)
+
+
+def test_manifest_covers_the_git_universe_exactly():
+    """Set equality in BOTH directions against git itself. This is the property
+    that turns 'we scanned everything' from an assertion into a proof."""
+    def g(*a):
+        out = subprocess.run(["git", "-C", REPO, *a], capture_output=True, text=True).stdout
+        return {x for x in out.splitlines() if x}
+    universe = g("ls-files") | g("ls-files", "--others", "--exclude-standard")
+    man = {f["path"] for f in _manifest()["files"]}
+    assert not (universe - man), f"unscanned: {sorted(universe - man)[:5]}"
+    assert not (man - universe), f"phantom: {sorted(man - universe)[:5]}"
+
+
+def test_manifest_counts_are_self_consistent():
+    d = _manifest()
+    assert d["counts"]["total"] == len(d["files"])
+    assert len({f["path"] for f in d["files"]}) == len(d["files"]), "duplicate path"
+    assert sum(v["files"] for v in d["dirs"].values()) == d["counts"]["total"]
+
+
+def test_every_entry_is_scanned_or_states_why_not():
+    """Silence about a file is indistinguishable from a clean verdict. Binaries,
+    oversized files and unreadable ones must each carry an explicit reason."""
+    for f in _manifest()["files"]:
+        assert f["scanned"] or f["skip_reason"], f"{f['path']} skipped with no reason"
+
+
+def test_manifest_includes_binaries_and_symlinks():
+    """The universe is every publishable path, not just the ones with line
+    scanners — a binary that no lane reads must still be accounted for."""
+    d = _manifest()
+    assert d["counts"]["symlink"] > 50, d["counts"]
+    assert d["counts"]["binary"] > 0, d["counts"]
+    assert d["counts"]["unreadable"] == 0, "an unreadable file cannot be certified clean"
+
+
+def test_manifest_refuses_a_non_gitignored_path():
+    """The manifest lists every path in the repo; publishing it would be a map of
+    the tree. It must refuse to write anywhere git would publish, and create
+    nothing when it refuses."""
+    target = os.path.join(REPO, "docs", "_probe_manifest.md")
+    assert not os.path.exists(target), "stale probe file"
+    r = subprocess.run([sys.executable, GUARD, "--manifest", "docs/_probe_manifest.md"],
+                       capture_output=True, text=True, cwd=REPO)
+    try:
+        assert "refusing" in (r.stdout + r.stderr), r.stdout + r.stderr
+        assert not os.path.exists(target), "refused but wrote the file anyway"
+    finally:
+        if os.path.exists(target):
+            os.unlink(target)
+
+
 def main() -> int:
     tests = [v for k, v in sorted(globals().items())
              if k.startswith("test_") and callable(v)]

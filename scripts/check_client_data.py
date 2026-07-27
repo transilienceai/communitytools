@@ -14,9 +14,14 @@ Checks, over every tracked + staged text file outside the ignored engagement tre
   5. symlink targets   — read from the git blob, never followed (see symlink_targets)
   6. engagement ids    — engagement directory names, and finding ids minted inside one
 
+Coverage is a checked property, not a claim: --manifest records one entry per
+publishable path, each either scanned or carrying an explicit reason it was not,
+so "every file, every folder" can be verified rather than asserted.
+
 Usage:
   python3 scripts/check_client_data.py            # scan the whole tracked tree
   python3 scripts/check_client_data.py --staged   # pre-commit: scan staged content only
+  python3 scripts/check_client_data.py --manifest # + write the coverage manifest
 
 Exit 0 = clean, 1 = leak(s) found.
 """
@@ -25,6 +30,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import ipaddress
+import json
 import os
 import re
 import subprocess
@@ -292,6 +298,113 @@ def credential_material_files(staged: bool) -> list[str]:
             if os.path.splitext(f)[1].lower() in CREDENTIAL_EXT]
 
 
+MAX_TEXT_BYTES = 4_000_000
+MANIFEST_DEFAULT = ".claude/state/confidentiality/manifest.json"
+
+
+def file_bytes(rel: str, staged: bool) -> bytes | None:
+    """The raw bytes this path would publish. For a symlink that is the TARGET
+    STRING — git's own blob — never the destination file's content."""
+    if staged:
+        r = subprocess.run(["git", "-C", REPO, "show", f":{rel}"], capture_output=True)
+        return r.stdout if r.returncode == 0 else None
+    p = os.path.join(REPO, rel)
+    if os.path.islink(p):
+        return os.readlink(p).encode("utf-8", "replace")
+    if not os.path.isfile(p):
+        return None
+    try:
+        with open(p, "rb") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+def classify(rel: str, raw: bytes | None, is_symlink: bool) -> tuple[str, str | None]:
+    """(kind, skip_reason). A skip_reason is mandatory whenever the line scanners
+    do not run: silence about a file is indistinguishable from a clean verdict,
+    and that ambiguity is the whole reason this manifest exists."""
+    if is_symlink:
+        return "symlink", None
+    if os.path.splitext(rel)[1].lower() in BINARY_EXT or rel.endswith(".DS_Store"):
+        return "binary", "binary extension — content not read"
+    if raw is None:
+        return "unreadable", "could not be read"
+    if b"\x00" in raw[:4096]:
+        return "binary", "NUL byte within the first 4096 bytes"
+    if len(raw) > MAX_TEXT_BYTES:
+        return "text", f"larger than {MAX_TEXT_BYTES} bytes"
+    return "text", None
+
+
+def _would_be_published(abspath: str) -> bool:
+    """True when this path is inside the worktree AND git does not ignore it.
+
+    A path outside the worktree is not publishable BY THIS REPO, so it is safe —
+    `git check-ignore` reports "not ignored" for it, which is the opposite of the
+    question being asked.
+    """
+    real, root = os.path.realpath(abspath), os.path.realpath(REPO)
+    if not (real == root or real.startswith(root + os.sep)):
+        return False
+    r = subprocess.run(["git", "-C", REPO, "check-ignore", "-q", "--no-index", real],
+                       capture_output=True)
+    return r.returncode != 0
+
+
+def write_manifest(path: str, staged: bool, entries: dict[str, dict]) -> None:
+    """Prove the scan was exhaustive: one entry per publishable path, each either
+    scanned or carrying an explicit reason it was not.
+
+    Refuses to write anywhere git would publish — the manifest lists every path in
+    the repo and would be a map of the tree.
+    """
+    abspath = path if os.path.isabs(path) else os.path.join(REPO, path)
+    if _would_be_published(abspath):
+        raise SystemExit(f"check_client_data: refusing to write the manifest to a "
+                         f"path this repo would publish: {path}")
+
+    dirs: dict[str, dict] = {}
+    for rel, e in entries.items():
+        top = rel.split("/")[0] if "/" in rel else "(root)"
+        d = dirs.setdefault(top, {"files": 0, "scanned": 0, "hits": 0})
+        d["files"] += 1
+        d["scanned"] += 1 if e["scanned"] else 0
+        d["hits"] += e["hits"]
+
+    kinds = {"text": 0, "binary": 0, "symlink": 0, "unreadable": 0}
+    for e in entries.values():
+        kinds[e["kind"]] += 1
+
+    head = subprocess.run(["git", "-C", REPO, "rev-parse", "HEAD"],
+                          capture_output=True, text=True).stdout.strip()
+    payload = {
+        "schema": "content-guard-manifest/v1",
+        "head": head,
+        "mode": "staged" if staged else "full",
+        "universe_source": (["git diff --cached --name-only --diff-filter=ACMR"] if staged
+                            else ["git ls-files", "git ls-files --others --exclude-standard"]),
+        "counts": {"total": len(entries), **kinds,
+                   "skipped": sum(1 for e in entries.values() if not e["scanned"]),
+                   "hits": sum(e["hits"] for e in entries.values())},
+        "dirs": dict(sorted(dirs.items())),
+        "files": [entries[k] for k in sorted(entries)],
+    }
+    # Invariants — the manifest is worthless if it cannot be trusted to be total.
+    assert len(payload["files"]) == payload["counts"]["total"]
+    assert len({f["path"] for f in payload["files"]}) == len(payload["files"]), "duplicate path"
+    for f in payload["files"]:
+        assert f["scanned"] or f["skip_reason"], f"{f['path']}: skipped with no reason"
+
+    os.makedirs(os.path.dirname(abspath), exist_ok=True)
+    with open(abspath, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, indent=2, sort_keys=False)
+        fh.write("\n")
+    print(f"check_client_data: manifest — {payload['counts']['total']} paths "
+          f"({kinds['text']} text, {kinds['binary']} binary, {kinds['symlink']} symlink) "
+          f"-> {path}")
+
+
 def read_content(rel: str, staged: bool) -> str | None:
     if staged:
         r = subprocess.run(["git", "-C", REPO, "show", f":{rel}"],
@@ -314,10 +427,17 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--staged", action="store_true",
                     help="scan staged content only (pre-commit mode)")
+    ap.add_argument("--manifest", nargs="?", const=MANIFEST_DEFAULT, default=None,
+                    metavar="PATH",
+                    help="write a per-file coverage manifest proving every publishable "
+                         f"path was examined (default {MANIFEST_DEFAULT}; must be gitignored)")
     args = ap.parse_args()
 
     denylist = load_denylist()
     leaks: list[str] = []
+    # One entry per publishable path. Built even when --manifest is absent so the
+    # unreadable-file check below is always enforced.
+    entries: dict[str, dict] = {}
 
     # Filename-level check first: credential material the content scanners cannot see.
     for rel in credential_material_files(args.staged):
@@ -328,6 +448,24 @@ def main() -> int:
     # ordinary line scanners (an absolute target is an operator path by definition).
     symlinks = symlink_targets(args.staged)
     leaks.extend(symlink_leaks(symlinks))
+
+    # Enumerate the whole publishable universe first, so that every path has a
+    # recorded disposition — scanned, or skipped for a stated reason.
+    for rel in sorted(set(_git_file_list(args.staged))):
+        raw = file_bytes(rel, args.staged)
+        kind, skip = classify(rel, raw, rel in symlinks)
+        entries[rel] = {"path": rel, "kind": kind,
+                        "bytes": len(raw) if raw is not None else None,
+                        "sha256": hashlib.sha256(raw).hexdigest() if raw is not None else None,
+                        "scanned": skip is None, "skip_reason": skip, "hits": 0}
+    for rel, tgt in symlinks.items():
+        # A symlink IS scanned: symlink_leaks ran, and its target string goes
+        # through the line scanners below.
+        entries[rel]["hits"] = sum(1 for lk in leaks if lk.startswith(f"{rel}:"))
+
+    def record(rel: str) -> None:
+        if rel in entries:
+            entries[rel]["hits"] = sum(1 for lk in leaks if lk.startswith(f"{rel}:"))
 
     for rel in files_to_scan(args.staged, frozenset(symlinks)):
         content = read_content(rel, args.staged)
@@ -388,6 +526,18 @@ def main() -> int:
                     continue
                 if not is_doc_ip(ip):
                     leaks.append(f"{rel}:{n}: PUBLIC IP -> {s}")
+
+        record(rel)
+
+    # A file that could not be read was never checked. Reporting OK for it would
+    # be a silent pass on exactly the case a guard exists for.
+    unreadable = sorted(r for r, e in entries.items() if e["kind"] == "unreadable")
+    for rel in unreadable:
+        leaks.append(f"{rel}:0: UNREADABLE -> publishable but could not be read; "
+                     f"cannot certify it is clean")
+
+    if args.manifest:
+        write_manifest(args.manifest, args.staged, entries)
 
     if not leaks:
         scope = "staged content" if args.staged else "the tracked tree"
