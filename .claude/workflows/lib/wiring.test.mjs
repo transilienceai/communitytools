@@ -211,7 +211,11 @@ ok(su.indexOf("phase('Write')") < su.indexOf("phase('Sweep')"), 'Write precedes 
 ok(su.indexOf("phase('Judge')") < su.indexOf("phase('Route')"), 'Judge precedes Route');
 // The lint gate must be a DELTA gate: the tree carries pre-existing violations,
 // so an absolute clean-tree gate would block every run forever.
-ok(/lintDelta\(baseline, afterPayload\)/.test(su), 'skill-update gates on the lint DELTA, not an absolute clean tree');
+ok(/skill_linter\.py --delta/.test(su) && /afterPayload\.regressed/.test(su),
+   'skill-update gates on the lint DELTA, not an absolute clean tree');
+ok(/--write-baseline/.test(su) && /stores the violation key set/.test(su),
+   'Intake stores a baseline key set rather than relaying the ~280 KB payload through an agent');
+ok(/baseline_ok/.test(su), 'a delta computed against a MISSING baseline fails closed');
 ok(/refusing to write without a delta baseline/.test(su), 'a missing baseline fails closed rather than writing blind');
 // Every decision is code, not an agent.
 ok(/promotionGate\(c, carry\.j, carry\.votes\)/.test(su), 'the promote/reject decision is made by promotionGate in pure JS');

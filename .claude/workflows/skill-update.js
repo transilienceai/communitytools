@@ -1,15 +1,15 @@
 export const meta = {
   name: 'skill-update',
-  description: 'Deterministically add, refine, or create skill content from engagement learnings. Snapshots a BASELINE `scripts/skill_linter.py --json` run (caps + per-file inventory + violations), harvests candidate learnings from an engagement tree (or takes them directly), reframes each as a reusable "when X condition, try Y approach" pattern using <TARGET_IP>/<DC_FQDN>/<DOMAIN> placeholders, then per candidate: a judge proposes the four-gate promotion verdict with a CITED duplicate-search, N blind adversarial refuters attack every PROMOTE, and the pure-JS promotionGate applies the kill rules (all four gates AND no majority refutation AND a clean machine scrub for challenge-specific identifiers). Promoted candidates are routed to a target file, an author agent emits the exact insertion block, and pure-JS gates refuse it when it would breach a line cap (routing to a split instead), add DO NOT/MUST NOT/NEVER outside an Anti-Patterns section, restate a single-owner cross-cutting rule, create a forbidden auxiliary file, orphan a new reference file, or carry a link that does not resolve. JS then builds a byte-exact write plan, one writer persists it verbatim, an independent verifier recomputes the line counts, the confidentiality guard sweeps the result, and a post-write linter DELTA gate — not an absolute clean-tree gate, since the tree carries pre-existing violations — blocks on any newly introduced violation. The three-bucket Updated. / Skipped. / No changes. report is built in code, never authored by an agent.',
+  description: 'Deterministically add, refine, or create skill content from engagement learnings. Stores a BASELINE violation key set via `scripts/skill_linter.py --write-baseline` (the tool computes the later delta, so no large payload crosses an agent), harvests candidate learnings from an engagement tree (or takes them directly), reframes each as a reusable "when X condition, try Y approach" pattern using <TARGET_IP>/<DC_FQDN>/<DOMAIN> placeholders, then per candidate: a judge proposes the four-gate promotion verdict with a CITED duplicate-search, N blind adversarial refuters attack every PROMOTE, and the pure-JS promotionGate applies the kill rules (all four gates AND no majority refutation AND a clean machine scrub for challenge-specific identifiers). Promoted candidates are routed to a target file, an author agent emits the exact insertion block, and pure-JS gates refuse it when it would breach a line cap (routing to a split instead), add DO NOT/MUST NOT/NEVER outside an Anti-Patterns section, restate a single-owner cross-cutting rule, create a forbidden auxiliary file, orphan a new reference file, or carry a link that does not resolve. JS then builds a byte-exact write plan, one writer persists it verbatim, an independent verifier recomputes the line counts, the confidentiality guard sweeps the result, and a post-write linter DELTA gate — not an absolute clean-tree gate, since the tree carries pre-existing violations — blocks on any newly introduced violation. The three-bucket Updated. / Skipped. / No changes. report is built in code, never authored by an agent.',
   whenToUse: 'Post-engagement skill-base maintenance. Parent-ORCHESTRATOR only — a coordinator must never invoke it. mode:"harvest" {output_dir} -> mine one engagement tree for learnings; mode:"learnings" {learnings:[{text,technique_type}]} -> judge and write an already-extracted set (also the resume path); mode:"create" {create:{name,description}} -> scaffold a new skill; mode:"audit" -> read-only conformance report over skills/, writes nothing. Options: votes(3), max_candidates(24), agent_budget(200), dryRun, invoked_by.',
   phases: [
-    { title: 'Intake', detail: 'date tag + base commit, BASELINE skill_linter --json (caps, per-file inventory, violations), dirty-path snapshot, mode preconditions' },
+    { title: 'Intake', detail: 'date tag + base commit, BASELINE skill_linter key set, dirty-path snapshot, mode preconditions' },
     { title: 'Harvest', detail: 'one Explore agent per engagement artifact -> reframed "when X, try Y" candidates; pure-JS dedupe, stable ids, machine scrub' },
     { title: 'Judge', detail: 'per candidate: four-gate judge with a CITED duplicate-search -> N blind adversarial refuters -> pure-JS promotionGate' },
     { title: 'Route', detail: 'author agent emits the exact block; pure-JS writeGate accepts, routes to a split, or rejects it' },
     { title: 'Write', detail: 'JS builds the byte-exact write plan; a writer persists it verbatim; an independent verifier recomputes the line counts' },
     { title: 'Sweep', detail: 'confidentiality guard over the written tree — no client/engagement data may enter the public skill base' },
-    { title: 'Verify', detail: 'post-write skill_linter --json; pure-JS lintDelta blocks on any NEW violation; skillUpdateGate + the three-bucket report' },
+    { title: 'Verify', detail: 'skill_linter --delta against the stored baseline; skillUpdateGate blocks on any NEW violation; the three-bucket report' },
   ],
 }
 
@@ -53,6 +53,8 @@ const MAX_CAND = Number(input.max_candidates) > 0 ? Math.floor(Number(input.max_
 const AGENT_BUDGET = Number(input.agent_budget) > 0 ? Math.floor(Number(input.agent_budget)) : 200
 const dryRun = !!input.dryRun
 const INVOKED_BY = String(input.invoked_by || '').toLowerCase()
+
+const BASELINE = '.claude/state/skill-update/baseline.json'
 
 const EMPTY = { counts: { candidates: 0, promoted: 0, skipped: 0, written: 0, deferred: 0 }, updated_files: [], skipped: [], report_markdown: '**No changes.**' }
 
@@ -190,23 +192,6 @@ function writeGate(block, fileInfo, caps = {}) {
   const budget = capBudget(path, (fileInfo && fileInfo.lines) || 0, added, caps);
   if (!budget.ok) return { ok: false, action: budget.action, reasons: [budget.reason], budget };
   return { ok: true, action: block.creates_file ? 'create' : 'append', reasons: [], budget };
-}
-
-// violationKey — the stable identity of a linter violation across two runs.
-function violationKey(v) {
-  return [v && v.code, v && v.file, (v && v.line) || 0, String((v && v.detail) || '').slice(0, 60)].join('|');
-}
-
-// lintDelta — NEW violations only. The tree carries pre-existing violations, so
-// an absolute clean-tree gate would block every run forever; the question is
-// whether THIS run made things worse.
-function lintDelta(baseline, after) {
-  const before = new Set(((baseline && baseline.violations) || []).map(violationKey));
-  const introduced = ((after && after.violations) || []).filter((v) => !before.has(violationKey(v)));
-  const resolved = ((baseline && baseline.violations) || []).filter(
-    (v) => !new Set(((after && after.violations) || []).map(violationKey)).has(violationKey(v)));
-  return { introduced, resolved, regressed: introduced.length > 0,
-           baseline_count: before.size, after_count: ((after && after.violations) || []).length };
 }
 
 // skillUpdateGate — the COMPLETE/BLOCKED decision over the run's reported facts.
@@ -398,32 +383,46 @@ const intake = await agent(
   `1. \`date -u +%Y%m%d\` -> date_tag\n` +
   `2. \`git rev-parse HEAD\` -> base_commit\n` +
   `3. \`git status --porcelain skills/\` -> dirty_paths (the path field of every row; [] when clean)\n` +
-  `4. \`python3 scripts/skill_linter.py --json\`\n` +
-  `   Parse its stdout as JSON and return it under lint.payload VERBATIM: do NOT add, drop, reorder, summarise, round or edit any field or array element. Set lint.ok=true only if it parsed. It always exits 0 — the JSON is the result, so do not treat any exit code as failure.\n` +
+  `4. \`python3 scripts/skill_linter.py --write-baseline ${BASELINE}\`\n` +
+  `   It stores the violation key set for a later delta and prints a SMALL JSON summary. Parse that summary and return it under lint.payload VERBATIM. Set lint.ok=true only if it parsed. It always exits 0 — the JSON is the result, so do not treat any exit code as failure.\n` +
   (SOURCES.length ? `5. For each of these paths run \`test -f <p> && echo <p>\`; return the ones that exist as sources_present: ${SOURCES.join(' ')}\n` : '') +
   `Return INTAKE_SCHEMA. Do not interpret the linter output — relaying it IS the job.`,
   { schema: INTAKE_SCHEMA, label: 'intake', phase: 'Intake', agentType: 'general-purpose' },
 ).catch(() => null)
 
 const baseline = (intake && intake.lint && intake.lint.ok && intake.lint.payload) || null
-if (!baseline) {
+if (!baseline || !baseline.baseline_path) {
   return { status: 'BLOCKED', mode, blocked_reason: 'baseline skill_linter --json did not parse; refusing to write without a delta baseline', ...EMPTY }
 }
 const CAPS = baseline.caps || {}
-const fileIndex = new Map((baseline.files || []).map((f) => [f.path, f]))
+// No file inventory is relayed any more — the author agent reports lines_before
+// from its own `wc -l`, which is the same number without a 200 KB round trip.
+const fileIndex = new Map()
 const dirtyPaths = new Set((intake && intake.dirty_paths) || [])
 const baseCommit = (intake && intake.base_commit) || ''
-log(`Baseline: ${(baseline.violations || []).length} pre-existing linter violation(s) across ${(baseline.files || []).length} files. Gating on the DELTA.`)
+log(`Baseline: ${baseline.count} pre-existing linter violation(s) stored. Gating on the DELTA.`)
 
 if (mode === 'audit') {
-  const byCode = (baseline.counts && baseline.counts.by_code) || {}
-  const overCap = (baseline.files || []).filter((f) => f.cap && f.lines > f.cap)
+  // Audit is the one mode that wants the detail, so it asks for a SUMMARY of the
+  // full payload rather than the payload itself — the agent counts, JS reports.
+  const a = await agent(
+    `ROLE: SKILL AUDIT RUNNER (deterministic tool-runner; run the command, relay the counts — do NOT author, judge or edit). cwd is repo root.\n` +
+    `Run EXACTLY: \`python3 scripts/skill_linter.py --json\`\n` +
+    `From its JSON return ONLY: counts.by_code verbatim, counts.violations, counts.files, and over_cap = every files[] entry where cap is non-null and lines > cap, as "<path> <lines>/<cap>" strings.\n` +
+    `Do NOT return the full violations or files arrays.`,
+    { schema: { type: 'object', additionalProperties: true, required: ['by_code'],
+        properties: { by_code: { type: 'object', additionalProperties: true }, violations: { type: 'number' },
+                      files: { type: 'number' }, over_cap: { type: 'array', items: { type: 'string' } } } },
+      label: 'audit', phase: 'Intake', agentType: 'general-purpose' },
+  ).catch(() => null)
+  const byCode = (a && a.by_code) || {}
+  const overCap = (a && a.over_cap) || []
   const lines = ['**Audit.** Read-only; nothing was written.', '',
-    `- Files: ${(baseline.files || []).length}`,
-    `- Violations: ${(baseline.violations || []).length} — ${Object.entries(byCode).map(([k, v]) => `${k} ${v}`).join(', ') || 'none'}`,
-    `- Over cap: ${overCap.length}${overCap.length ? ` (${overCap.slice(0, 5).map((f) => `${f.path} ${f.lines}/${f.cap}`).join(', ')})` : ''}`]
-  return { status: 'AUDIT', mode, counts_by_code: byCode, over_cap: overCap.map((f) => f.path),
-           report_markdown: lines.join('\n'), ...EMPTY, report_markdown_override: true }
+    `- Files: ${(a && a.files) || 'unknown'}`,
+    `- Violations: ${(a && a.violations) != null ? a.violations : baseline.count} — ${Object.entries(byCode).map(([k, v]) => `${k} ${v}`).join(', ') || 'none'}`,
+    `- Over cap: ${overCap.length}${overCap.length ? ` (${overCap.slice(0, 5).join(', ')})` : ''}`]
+  return { status: 'AUDIT', mode, counts_by_code: byCode, over_cap: overCap,
+           report_markdown: lines.join('\n'), ...EMPTY }
 }
 
 // ---- Harvest --------------------------------------------------------------
@@ -629,14 +628,22 @@ if (!sweepClean) log(`Confidentiality sweep FAILED: ${((sweep && sweep.findings)
 phase('Verify')
 const after = await agent(
   `ROLE: SKILL-UPDATE VERIFY RUNNER (deterministic tool-runner; run the command, relay the JSON — do NOT author, judge or edit). cwd is repo root.\n` +
-  `Run EXACTLY: \`python3 scripts/skill_linter.py --json\`\n` +
-  `Parse its stdout as JSON and return it under payload VERBATIM — do NOT add, drop, reorder, summarise or edit any field. Set ok=true only if it parsed. It always exits 0.\n` +
+  `Run EXACTLY: \`python3 scripts/skill_linter.py --delta ${BASELINE}\`\n` +
+  `It compares against the baseline this run stored and prints ONLY what this run INTRODUCED — normally an empty list. Parse that JSON and return it under payload VERBATIM. Set ok=true only if it parsed. It always exits 0.\n` +
   `Return LINT_SCHEMA.`,
   { schema: LINT_SCHEMA, label: 'lint:after', phase: 'Verify', agentType: 'general-purpose' },
 ).catch(() => null)
 
+// The TOOL computes the delta (see --delta): relaying the full ~280 KB payload
+// through an agent is slow and lossy — a model asked to echo a quarter-megabyte
+// verbatim truncates, silently corrupting the baseline the gate depends on.
+// JS still owns the DECISION; it just no longer carries the haystack.
 const afterPayload = (after && after.ok && after.payload) || null
-const delta = afterPayload ? lintDelta(baseline, afterPayload) : null
+const delta = (afterPayload && afterPayload.baseline_ok)
+  ? { introduced: afterPayload.introduced || [], resolved: [],
+      regressed: !!afterPayload.regressed,
+      baseline_count: afterPayload.baseline_count, after_count: afterPayload.after_count }
+  : null
 const gate = skillUpdateGate({
   baselineOk: true,
   afterOk: !!afterPayload,

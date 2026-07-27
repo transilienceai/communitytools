@@ -58,7 +58,7 @@ const EXPECT = {
   // coordinator-loop embeds the WHOLE interleaved validation lane (verdict + governor + prompts).
   'coordinator-loop.js': [...VERDICT, ...GOVERNOR, ...LANE],
   // skill-update embeds the whole promote/write/gate lane — every decision it makes.
-  'skill-update.js': ['SCRUB_PATTERNS', 'scrubCheck', 'capFor', 'capBudget', 'promotionGate', 'writeGate', 'violationKey', 'lintDelta', 'skillUpdateGate', 'skillAgentBudget', 'buildChangeReport'],
+  'skill-update.js': ['SCRUB_PATTERNS', 'scrubCheck', 'capFor', 'capBudget', 'promotionGate', 'writeGate', 'skillUpdateGate', 'skillAgentBudget', 'buildChangeReport'],
   'pentest-engagement.js': ['severityBand', 'normalizeAssess', 'reconcileAssessed', 'finalizeGate', 'bumpVersion', 'scopeDiff', 'resolveEngagementMeta', 'detectAllowlist', 'resolveGeoZones', 'resumeSchedule', 'classifyEngagement'],
 };
 

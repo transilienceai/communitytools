@@ -277,6 +277,69 @@ def parse_violation(v: str) -> dict:
             "detail": detail.strip() or rest.strip()}
 
 
+def _arg_value(flag: str) -> str | None:
+    if flag in sys.argv:
+        i = sys.argv.index(flag)
+        if i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+    return None
+
+
+def violation_key(v: dict) -> str:
+    """Stable identity of a violation across two runs. Mirrors violationKey() in
+    .claude/workflows/lib/wf-helpers.mjs — same fields, same order, same truncation."""
+    return "|".join([v["code"], v["file"], str(v["line"] or 0), (v["detail"] or "")[:60]])
+
+
+def emit_delta(violations: list[str], baseline_path: str) -> int:
+    """Emit ONLY what this run introduced, relative to a stored baseline.
+
+    The full payload is ~280 KB — 571 violations across 808 files. Relaying that
+    through an agent is slow and, worse, lossy: a model asked to echo a quarter of
+    a megabyte of JSON verbatim will truncate or paraphrase, silently corrupting
+    the very baseline the gate depends on. So the DELTA is computed here, in the
+    tool, and the agent relays a payload that is normally empty.
+    """
+    parsed = sorted((parse_violation(v) for v in violations),
+                    key=lambda d: (d["code"], d["file"], d["line"] or 0, d["detail"]))
+    try:
+        with open(baseline_path, encoding="utf-8") as fh:
+            base = json.load(fh)
+        before = set(base.get("keys", []))
+        ok = True
+    except (OSError, ValueError):
+        before, ok = set(), False
+
+    now = {violation_key(v): v for v in parsed}
+    introduced = [v for k, v in now.items() if k not in before]
+    resolved = sorted(before - set(now))
+    print(json.dumps({
+        "tool": "skill_linter", "schema": 1, "mode": "delta",
+        "baseline_ok": ok, "baseline_path": baseline_path,
+        "baseline_count": len(before), "after_count": len(now),
+        "introduced": introduced,
+        "introduced_count": len(introduced), "resolved_count": len(resolved),
+        "regressed": len(introduced) > 0,
+    }, indent=2))
+    return 0
+
+
+def write_baseline(violations: list[str], path: str) -> int:
+    """Store the violation KEY SET for a later --delta run. Keys only: the workflow
+    needs identity to compute a delta, never the prose."""
+    parsed = [parse_violation(v) for v in violations]
+    keys = sorted(violation_key(v) for v in parsed)
+    directory = Path(path).parent
+    directory.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({"tool": "skill_linter", "schema": 1, "keys": keys}, fh, indent=2)
+    caps = {"SKILL.md": SKILL_MD_CAP, "reference": REFERENCE_CAP, "scenario": SCENARIO_CAP,
+            "README.md": README_CAP, "principles": PRINCIPLES_CAP}
+    print(json.dumps({"tool": "skill_linter", "schema": 1, "mode": "baseline",
+                      "baseline_path": path, "count": len(keys), "caps": caps}, indent=2))
+    return 0
+
+
 def emit_json(violations: list[str]) -> int:
     """Machine-readable payload for `.claude/workflows/skill-update.js`.
 
@@ -348,9 +411,16 @@ def main() -> int:
     #   --check-orphans
     # --json always includes it: the workflow gates on the delta, so pre-existing
     # orphans never block, while a NEWLY orphaned file does.
-    if "--check-orphans" in sys.argv or "--json" in sys.argv:
+    if "--check-orphans" in sys.argv or "--json" in sys.argv \
+            or "--write-baseline" in sys.argv or "--delta" in sys.argv:
         check_orphans(violations)
 
+    baseline_out = _arg_value("--write-baseline")
+    if baseline_out:
+        return write_baseline(violations, baseline_out)
+    delta_in = _arg_value("--delta")
+    if delta_in:
+        return emit_delta(violations, delta_in)
     if "--json" in sys.argv:
         return emit_json(violations)
 
