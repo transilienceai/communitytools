@@ -20,6 +20,7 @@ Exit 0 if clean. Exit 1 with a list of violations otherwise.
 """
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -31,6 +32,8 @@ SKILLS = REPO / "skills"
 SKILL_MD_CAP = 150
 REFERENCE_CAP = 200
 SCENARIO_CAP = 400
+README_CAP = 100
+PRINCIPLES_CAP = 150
 
 # Single-owner allowlist — each rule lives in exactly these files.
 SINGLE_OWNER = {
@@ -249,6 +252,89 @@ def check_orphans(violations: list[str]) -> None:
             violations.append(f"ORPHAN: {rel} not linked from any other file")
 
 
+VIOLATION_RE = re.compile(r"^(?P<code>[A-Z_]+)(?: \([^)]*\))?: (?P<rest>.*)$")
+
+
+def parse_violation(v: str) -> dict:
+    """Split a human violation line into {code, file, line, detail}.
+
+    The workflow gates on the DELTA between two runs, so every field here must be
+    stable across runs: an unstable detail string would read as a new violation.
+    """
+    m = VIOLATION_RE.match(v)
+    code, rest = (m.group("code"), m.group("rest")) if m else ("UNKNOWN", v)
+    # Every emitter puts the path first, optionally as `path:line`, then a space.
+    # CAP alone continues with ` = N lines`, so split on whitespace rather than
+    # on ": " — otherwise CAP's whole message lands in `file`.
+    token, _, detail = rest.partition(" ")
+    token = token.rstrip(":")
+    head, sep, tail = token.rpartition(":")
+    if sep and tail.isdigit():
+        path, lineno = head, int(tail)
+    else:
+        path, lineno = token, None
+    return {"code": code, "file": path.strip(), "line": lineno,
+            "detail": detail.strip() or rest.strip()}
+
+
+def emit_json(violations: list[str]) -> int:
+    """Machine-readable payload for `.claude/workflows/skill-update.js`.
+
+    Always exits 0: the JSON *is* the result, and the relay agent must not have to
+    reason about exit codes. The human mode keeps exit 1 so CI is unaffected.
+    Sorted throughout, so an unchanged tree produces byte-identical output.
+    """
+    files = []
+    for md in sorted(SKILLS.rglob("*.md")):
+        rel = str(md.relative_to(REPO))
+        text = md.read_text()
+        lines = text.splitlines()
+        if md.name == "SKILL.md":
+            cap = SKILL_MD_CAP
+        elif "/scenarios/" in str(md):
+            cap = SCENARIO_CAP
+        elif "/reference/" in str(md):
+            cap = REFERENCE_CAP
+        else:
+            cap = None
+        entry = {"path": rel, "lines": len(lines), "cap": cap,
+                 "kind": md.name if md.name in ("SKILL.md", "README.md") else "reference",
+                 "has_anti_patterns": any(
+                     l.startswith(("## ", "### ")) and "anti-pattern" in l.lower() for l in lines)}
+        if md.name == "SKILL.md" and text.startswith("---\n"):
+            end = text.find("\n---", 4)
+            if end > 0:
+                fm = {}
+                for fl in text[4:end].splitlines():
+                    k, s, v = fl.partition(":")
+                    if s and not k.startswith(" "):
+                        fm[k.strip()] = v.strip()
+                entry["frontmatter"] = {
+                    "name": fm.get("name", ""), "description": fm.get("description", ""),
+                    "name_len": len(fm.get("name", "")),
+                    "description_len": len(fm.get("description", ""))}
+        files.append(entry)
+
+    parsed = sorted((parse_violation(v) for v in violations),
+                    key=lambda d: (d["code"], d["file"], d["line"] or 0, d["detail"]))
+    by_code: dict[str, int] = {}
+    for p in parsed:
+        by_code[p["code"]] = by_code.get(p["code"], 0) + 1
+
+    print(json.dumps({
+        "tool": "skill_linter", "schema": 1, "root": "skills",
+        "exit_code_equivalent": 1 if violations else 0,
+        "caps": {"SKILL.md": SKILL_MD_CAP, "reference": REFERENCE_CAP,
+                 "scenario": SCENARIO_CAP, "README.md": README_CAP,
+                 "principles": PRINCIPLES_CAP},
+        "counts": {"files": len(files), "violations": len(parsed),
+                   "by_code": dict(sorted(by_code.items()))},
+        "violations": parsed,
+        "files": files,
+    }, indent=2))
+    return 0
+
+
 def main() -> int:
     violations: list[str] = []
     check_caps(violations)
@@ -260,8 +346,13 @@ def main() -> int:
     # Orphan check disabled by default — existing reference files predate the linter
     # and many resource lists are intentionally standalone. Enable when ready:
     #   --check-orphans
-    if "--check-orphans" in sys.argv:
+    # --json always includes it: the workflow gates on the delta, so pre-existing
+    # orphans never block, while a NEWLY orphaned file does.
+    if "--check-orphans" in sys.argv or "--json" in sys.argv:
         check_orphans(violations)
+
+    if "--json" in sys.argv:
+        return emit_json(violations)
 
     if violations:
         print(f"skill_linter: {len(violations)} violation(s)")

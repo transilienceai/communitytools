@@ -5,7 +5,10 @@ on:
     paths:
       - 'skills/**'
       - 'CLAUDE.md'
-      - 'scripts/skill_linter.py'
+      - 'scripts/**'
+      - 'docs/**'
+      - 'formats/**'
+      - '.claude/**'
       - '.github/workflows/skill-lint.yml'
   push:
     branches: [main]
@@ -24,3 +27,6 @@ jobs:
 
       - name: Run skill linter
         run: python3 scripts/skill_linter.py
+
+      - name: Linter --json contract (consumed by the skill-update workflow)
+        run: python3 scripts/test_skill_linter.py

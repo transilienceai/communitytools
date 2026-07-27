@@ -11,9 +11,9 @@
 ## Required Structure
 
 ```
-.claude/skills/[skill-name]/
+skills/<skill-name>/
 ├── SKILL.md              # YAML frontmatter + main instructions (REQUIRED)
-├── README.md             # User-facing documentation (REQUIRED)
+├── README.md             # User-facing documentation (optional, <=100 lines)
 ├── tools/__init__.py     # Python package marker (REQUIRED if tools/ exists)
 └── outputs/.gitkeep      # Keep outputs/ in git (REQUIRED if outputs/ exists)
 ```
@@ -21,7 +21,7 @@
 ## Full Structure
 
 ```
-.claude/skills/[skill-name]/
+skills/<skill-name>/
 ├── SKILL.md
 ├── README.md
 ├── CLAUDE.md             # (Optional) auto-loaded context for this dir
@@ -36,7 +36,7 @@
 
 ### SKILL.md (required)
 
-Main file Claude reads. Must start with valid YAML frontmatter (see [FRONTMATTER.md](FRONTMATTER.md)). Keep under 500 lines; use progressive disclosure to push details into `reference/`.
+Main file Claude reads. Must start with valid YAML frontmatter (see [FRONTMATTER.md](FRONTMATTER.md)). Hard cap **150 lines**, enforced by `scripts/skill_linter.py` in CI. Split into `reference/` at ~130.
 
 ```markdown
 ---
@@ -92,7 +92,7 @@ Test outputs, reports, generated files. Keep with `.gitkeep` (`touch outputs/.gi
 
 ## Progressive Disclosure Pattern
 
-When SKILL.md exceeds ~400 lines, split details into `reference/` and link from SKILL.md.
+When SKILL.md approaches 130 lines, split details into `reference/` and link from SKILL.md.
 
 Before (800-line SKILL.md): all sections inline.
 
@@ -147,18 +147,18 @@ Keep references **one level deep** from SKILL.md. Nested references (`reference/
 
 ## File Size Guidelines
 
-- **SKILL.md**: target < 500 lines (hard limit). Split when approaching 400.
-- **Reference files**: include contents list when > 100 lines; split when > 500.
-- **README.md**: 100-300 lines, sectioned with clear headers.
+- **SKILL.md**: <=150 lines (hard, CI-enforced). Split when approaching 130.
+- **Reference files**: `reference/*.md` <=200; `reference/scenarios/*.md` <=400; `reference/*-principles.md` <=150. Include a contents list when > 100 lines.
+- **README.md**: optional; <=100 lines, sectioned with clear headers.
 
 ## Anti-Patterns
 
-Windows-style backslashes in paths; nested references (more than one hop from SKILL.md); `tools/` missing `__init__.py`; SKILL.md over 500 lines.
+Windows-style backslashes in paths; nested references (more than one hop from SKILL.md); `tools/` missing `__init__.py`; SKILL.md over 150 lines.
 
 ## Validation Checklist
 
-- [ ] SKILL.md exists with valid YAML frontmatter, under 500 lines
-- [ ] README.md exists
+- [ ] SKILL.md exists with valid YAML frontmatter, <=150 lines
+- [ ] README.md, if present, is <=100 lines
 - [ ] `tools/__init__.py` exists (if `tools/` exists)
 - [ ] `outputs/.gitkeep` exists (if `outputs/` exists)
 - [ ] Forward slashes in all paths
@@ -170,7 +170,7 @@ Windows-style backslashes in paths; nested references (more than one hop from SK
 
 ```bash
 SKILL_NAME="your-skill-name"
-BASE=".claude/skills/$SKILL_NAME"
+BASE="skills/$SKILL_NAME"
 
 mkdir -p "$BASE"/{agents,tools,templates,reference,outputs}
 touch "$BASE/SKILL.md" "$BASE/README.md" "$BASE/outputs/.gitkeep"
