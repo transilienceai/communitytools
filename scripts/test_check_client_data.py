@@ -309,6 +309,140 @@ def test_manifest_refuses_a_non_gitignored_path():
             os.unlink(target)
 
 
+# --------------------------------------------------------------------------
+# Allowlist — the mechanism that stops a baseline absorbing new leaks
+# --------------------------------------------------------------------------
+
+ALLOWLIST = os.path.join(REPO, "scripts", "content-guard-allowlist.json")
+
+
+def _with_allowlist(mutate):
+    """Run the guard with a mutated allowlist, always restoring the original."""
+    import json
+    with open(ALLOWLIST, encoding="utf-8") as fh:
+        original = fh.read()
+    doc = json.loads(original)
+    mutate(doc)
+    try:
+        with open(ALLOWLIST, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh, indent=2)
+        return subprocess.run([sys.executable, GUARD], capture_output=True, text=True, cwd=REPO)
+    finally:
+        with open(ALLOWLIST, "w", encoding="utf-8") as fh:
+            fh.write(original)
+
+
+def test_allowlist_entry_suppresses_its_finding():
+    """The shipped entry must actually be consumed — otherwise it is stale."""
+    r = subprocess.run([sys.executable, GUARD], capture_output=True, text=True, cwd=REPO)
+    assert r.returncode == 0, r.stderr[:500]
+
+
+def test_stale_allowlist_entry_fails_closed():
+    """A location cannot be allowlisted and later refilled with other content."""
+    r = _with_allowlist(lambda d: d["entries"][0].__setitem__("line_sha256", "0" * 64))
+    assert r.returncode == 2, r.returncode
+    assert "stale" in (r.stdout + r.stderr).lower()
+
+
+def test_expired_allowlist_entry_fails_closed():
+    """The list is a queue, not a landfill."""
+    r = _with_allowlist(lambda d: d["entries"][0].__setitem__("expires", "2020-01-01"))
+    assert r.returncode == 2 and "expired" in (r.stdout + r.stderr).lower()
+
+
+def test_unallowlistable_rule_is_rejected():
+    r = _with_allowlist(lambda d: d["entries"][0].__setitem__("rule", "credential-file"))
+    assert r.returncode == 2 and "never be allowlisted" in (r.stdout + r.stderr)
+
+
+def test_allowlist_entry_requires_a_justification():
+    r = _with_allowlist(lambda d: d["entries"][0].__setitem__("reason", ""))
+    assert r.returncode == 2 and "missing" in (r.stdout + r.stderr)
+
+
+def test_allowlist_is_capped():
+    """A cap makes 'just allowlist it' zero-sum against everyone else's future
+    exceptions — the most effective device against a gate becoming a rubber stamp."""
+    def blow_the_cap(d):
+        e = d["entries"][0]
+        d["entries"] = [dict(e, path=f"x{i}.py") for i in range(int(d["max_entries"]) + 5)]
+    r = _with_allowlist(blow_the_cap)
+    assert r.returncode == 2 and "exceeds the cap" in (r.stdout + r.stderr)
+
+
+# --------------------------------------------------------------------------
+# PreToolUse write-gate — the only guard that fires before content hits disk
+# --------------------------------------------------------------------------
+
+WRITE_GATE = os.path.join(REPO, "tools", "content-guard-write.py")
+
+
+def _write_gate(payload: str) -> int:
+    return subprocess.run([sys.executable, WRITE_GATE], input=payload,
+                          capture_output=True, text=True, cwd=REPO).returncode
+
+
+def test_write_gate_blocks_the_structural_classes():
+    for content in ("cd /Users/somebody/dev/x",
+                    "see projects/pentest/20260709_zorbix_vapt/report",
+                    "ported from f09_zmtp_probe.py",
+                    "key=AKIA1234567890ABCDEF",
+                    "-----BEGIN RSA PRIVATE KEY-----"):
+        p = '{"tool_input":{"file_path":"skills/x/SKILL.md","content":%s}}' % json_dumps(content)
+        assert _write_gate(p) == 2, content
+
+
+def test_write_gate_is_silent_inside_an_engagement():
+    """Client data belongs under projects/. The gate must never fire there, or it
+    would block the work it exists to protect."""
+    p = ('{"tool_input":{"file_path":"projects/pentest/20260709_x/notes.md",'
+         '"content":"cd /Users/somebody/dev/x"}}')
+    assert _write_gate(p) == 0
+
+
+def test_write_gate_allows_generic_accounts_and_metavariables():
+    for content in ("cd /home/carlos/loot", r"C:\\Users\\<user>\\x", "/Users/username/a"):
+        p = '{"tool_input":{"file_path":"skills/x/SKILL.md","content":%s}}' % json_dumps(content)
+        assert _write_gate(p) == 0, content
+
+
+def test_write_gate_fails_open():
+    """A misfiring write-blocker makes the repo unusable; the committed-content
+    guards are the ones that must be exhaustive."""
+    for payload in ("not json", "{}", '{"tool_input":{"file_path":"skills/x.md"}}'):
+        assert _write_gate(payload) == 0, payload
+
+
+
+def test_staleness_is_not_enforced_on_a_staged_scan():
+    """--staged sees only the changed files, so an entry for a file outside this
+    commit is legitimately unconsumed. Enforcing staleness there would fail every
+    commit that does not happen to touch every allowlisted file — which is how the
+    pre-commit hook blocked its own guard's commit."""
+    import json
+    with open(ALLOWLIST, encoding="utf-8") as fh:
+        original = fh.read()
+    doc = json.loads(original)
+    doc["entries"][0]["line_sha256"] = "0" * 64
+    try:
+        with open(ALLOWLIST, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh, indent=2)
+        full = subprocess.run([sys.executable, GUARD], capture_output=True, text=True, cwd=REPO)
+        staged = subprocess.run([sys.executable, GUARD, "--staged"],
+                                capture_output=True, text=True, cwd=REPO)
+        assert full.returncode == 2, "a full scan must still catch a stale entry"
+        assert staged.returncode != 2, "a staged scan cannot know an entry is stale"
+    finally:
+        with open(ALLOWLIST, "w", encoding="utf-8") as fh:
+            fh.write(original)
+
+
+def json_dumps(s: str) -> str:
+    import json
+    return json.dumps(s)
+
+
 def main() -> int:
     tests = [v for k, v in sorted(globals().items())
              if k.startswith("test_") and callable(v)]

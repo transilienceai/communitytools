@@ -81,4 +81,6 @@ jobs:
           echo "OK - no absolute tracked symlinks"
 
       - name: Content guard self-tests
-        run: python3 scripts/test_check_client_data.py
+        run: |
+          python3 scripts/test_check_client_data.py
+          python3 tools/test_settings_wiring.py

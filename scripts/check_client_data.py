@@ -73,15 +73,10 @@ SECRET_SELF_EXEMPT = {"scripts/check_client_data.py",
                       "scripts/test_check_client_data.py",
                       ".claude/workflows/lib/helpers.test.mjs"}
 
-# Narrow, reviewed exceptions: (path, finding-label). Each needs a justification.
-# Keep this list SHORT — every entry is a place the guard is deliberately blind.
-PATH_EXEMPT = {
-    # Self-signed throwaway fixture: CN=127.0.0.1, SAN 127.0.0.1, used only to stand
-    # up a loopback HTTPS server inside the unit test. Authenticates nothing, grants
-    # nothing, and is regenerable.
-    # TODO: generate at test time so no PEM lives in the tree at all.
-    ("tools/test_passive_web_probe.py", "private-key"),
-}
+# Reviewed exceptions live in a tracked, reviewable file — not in this source.
+# Keyed on the sha256 of the MATCHED LINE so an entry cannot outlive the content
+# it was granted for; see load_allowlist().
+ALLOWLIST_PATH = os.path.join(REPO, "scripts", "content-guard-allowlist.json")
 
 SECRET_PATTERNS = [
     ("aws-access-key", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
@@ -354,6 +349,58 @@ def classify(rel: str, raw: bytes | None, is_symlink: bool) -> tuple[str, str | 
     return "text", None
 
 
+class AllowlistError(Exception):
+    """Config-integrity failure. Distinct from a leak: the guard cannot be trusted
+    until it is resolved, so it exits 2 rather than 1."""
+
+
+def load_allowlist(today: str) -> tuple[dict, dict]:
+    """(entries_by_key, consumed_tracker). Enforces the rules that stop a baseline
+    from quietly absorbing new leaks:
+
+      * every entry expires — the list is a queue, not a landfill;
+      * an expired entry FAILS rather than silently continuing to suppress;
+      * high-severity classes cannot be allowlisted at all;
+      * the list is capped, which makes "just allowlist it" zero-sum against
+        everyone else's future exceptions — the most effective thing available
+        against a gate becoming a rubber stamp.
+    """
+    try:
+        with open(ALLOWLIST_PATH, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except FileNotFoundError:
+        return {}, {}
+    except (OSError, ValueError) as e:
+        raise AllowlistError(f"{os.path.relpath(ALLOWLIST_PATH, REPO)}: unreadable ({e})") from e
+
+    entries = doc.get("entries", [])
+    cap = int(doc.get("max_entries", 25))
+    if len(entries) > cap:
+        raise AllowlistError(
+            f"{len(entries)} allowlist entries exceeds the cap of {cap}. "
+            f"Fix the findings instead of adding exceptions.")
+    banned = {str(r).lower() for r in doc.get("unallowlistable", [])}
+
+    out = {}
+    for e in entries:
+        for field in ("path", "rule", "line_sha256", "reason", "added_by", "expires"):
+            if not str(e.get(field, "")).strip():
+                raise AllowlistError(f"allowlist entry for {e.get('path', '?')} is missing `{field}`")
+        if str(e["rule"]).lower() in banned:
+            raise AllowlistError(
+                f"rule `{e['rule']}` may never be allowlisted (path {e['path']})")
+        if str(e["expires"]) < today:
+            raise AllowlistError(
+                f"allowlist entry for {e['path']} [{e['rule']}] expired on {e['expires']} — "
+                f"re-review it or fix the finding")
+        out[(e["path"], str(e["rule"]), e["line_sha256"])] = e
+    return out, {k: False for k in out}
+
+
+def line_sha256(line: str) -> str:
+    return hashlib.sha256(line.encode("utf-8", "replace")).hexdigest()
+
+
 BINARY_ALLOWLIST = os.path.join(REPO, "scripts", "content-guard-binaries.json")
 
 
@@ -484,6 +531,13 @@ def main() -> int:
     args = ap.parse_args()
 
     denylist = load_denylist()
+    today = subprocess.run(["date", "-u", "+%Y-%m-%d"], capture_output=True,
+                           text=True).stdout.strip()
+    try:
+        allowlist, consumed = load_allowlist(today)
+    except AllowlistError as e:
+        print(f"check_client_data: CONFIG ERROR — {e}", file=sys.stderr)
+        return 2
     leaks: list[str] = []
     # One entry per publishable path. Built even when --manifest is absent so the
     # unreadable-file check below is always enforced.
@@ -529,10 +583,13 @@ def main() -> int:
                 continue
             if rel in SECRET_SELF_EXEMPT:
                 continue
-            if (rel, label) in PATH_EXEMPT:
-                continue
             for m in rx.finditer(content):
                 lineno = content[:m.start()].count("\n") + 1
+                first = content.splitlines()[lineno - 1]
+                key = (rel, label, line_sha256(first))
+                if key in allowlist:
+                    consumed[key] = True
+                    continue
                 leaks.append(f"{rel}:{lineno}: SECRET [{label}] -> private key material")
 
         for n, line in enumerate(content.splitlines(), 1):
@@ -550,6 +607,10 @@ def main() -> int:
                     continue
                 for m in rx.finditer(line):
                     if SECRET_ALLOW.search(m.group(0)) or SECRET_ALLOW.search(line):
+                        continue
+                    key = (rel, label, line_sha256(line))
+                    if key in allowlist:
+                        consumed[key] = True
                         continue
                     leaks.append(f"{rel}:{n}: SECRET [{label}] -> {m.group(0)[:48]!r}")
 
@@ -581,6 +642,21 @@ def main() -> int:
 
     # A file that could not be read was never checked. Reporting OK for it would
     # be a silent pass on exactly the case a guard exists for.
+    # An entry that suppressed nothing is stale: the line it was granted for is
+    # gone or changed. Failing here is what stops the list from accreting dead
+    # exceptions that could later be repurposed.
+    #
+    # FULL SCANS ONLY. --staged sees just the changed files, so an entry for a file
+    # not in this commit is legitimately unconsumed — enforcing staleness there
+    # would fail every commit that does not happen to touch every allowlisted file.
+    stale = [] if args.staged else [k for k, used in consumed.items() if not used]
+    if stale:
+        print("check_client_data: CONFIG ERROR — stale allowlist entr(ies); the line each "
+              "was granted for no longer matches:", file=sys.stderr)
+        for path, rule, sha in stale:
+            print(f"  {path} [{rule}] line_sha256={sha[:16]}…", file=sys.stderr)
+        return 2
+
     leaks.extend(binary_leaks(entries))
 
     unreadable = sorted(r for r, e in entries.items() if e["kind"] == "unreadable")

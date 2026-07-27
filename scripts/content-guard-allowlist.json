@@ -1,0 +1,24 @@
+{
+  "schema": "content-guard-allowlist/v1",
+  "note": "Reviewed exceptions to scripts/check_client_data.py. Every entry is a place the guard is deliberately blind, so the list is capped (see max_entries) and every entry expires. Entries are keyed on the sha256 of the MATCHED LINE, not its number: an entry survives unrelated edits above it and evaporates the moment that line's content changes, so a location cannot be allowlisted and later refilled with something else. A stale or expired entry fails the build rather than quietly continuing to suppress.",
+  "max_entries": 25,
+  "unallowlistable": [
+    "denylisted term match",
+    "credential-file",
+    "absolute-target",
+    "escapes-repo",
+    "unlisted",
+    "changed"
+  ],
+  "entries": [
+    {
+      "path": "tools/test_passive_web_probe.py",
+      "rule": "private-key",
+      "line_sha256": "36c3af6ae0f97dcf9dcf799d8b5ad75d13275ac63a89db363c17818f7f55ea7b",
+      "reason": "Self-signed throwaway fixture: CN=127.0.0.1, SAN 127.0.0.1, used only to stand up a loopback HTTPS server inside the unit test. Authenticates nothing, grants nothing, regenerable. TODO: generate at test time so no PEM lives in the tree at all.",
+      "added_by": "alexander",
+      "added": "2026-07-27",
+      "expires": "2028-01-23"
+    }
+  ]
+}

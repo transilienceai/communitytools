@@ -66,6 +66,19 @@ def test_helper_script_permissions_present():
         assert perm in allow, f"permissions.allow must contain {perm!r}"
 
 
+
+def test_write_edit_confidentiality_hook_present():
+    """The write-gate must stay wired: it is the only guard that fires BEFORE the
+    content exists on disk."""
+    settings = load_settings()
+    match = [
+        e for e in settings.get("hooks", {}).get("PreToolUse", [])
+        if "Write" in e.get("matcher", "")
+        and "python3 tools/content-guard-write.py" in _entry_commands(e)
+    ]
+    assert match, "Write|Edit -> python3 tools/content-guard-write.py PreToolUse entry must remain"
+
+
 def main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
