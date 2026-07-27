@@ -90,6 +90,9 @@ benchmarks/bountybench/results/
 !skills/**/reference/catalog/*.json
 # PCI SSS catalog build config (deterministic, auditable) — keep tracked
 !tools/pci-sss/*.json
+# Content-guard binary pins. MUST stay tracked: without this file the guard cannot
+# certify any binary and fails closed everywhere it runs, CI included.
+!scripts/content-guard-*.json
 # CERT-In Audit Metadata export — pinned vocabulary + intermediate-JSON schema are
 # committed source-of-truth assets the builder resolves at this path (fresh checkout / CI).
 !formats/certin-audit-metadata/enums.json
