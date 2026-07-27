@@ -11,6 +11,8 @@ Checks, over every tracked + staged text file outside the ignored engagement tre
   2. credentials       — AWS keys, sk-/ghp_/xox*/AIza tokens, PEM private keys, API-key UUIDs
   3. public IPv4       — anything outside RFC 1918/5737 + well-known resolvers
   4. operator paths    — /Users/<name>/ absolute paths (leak the analyst's identity)
+  5. symlink targets   — read from the git blob, never followed (see symlink_targets)
+  6. engagement ids    — engagement directory names, and finding ids minted inside one
 
 Usage:
   python3 scripts/check_client_data.py            # scan the whole tracked tree
@@ -54,11 +56,14 @@ CREDENTIAL_EXT = {".ovpn", ".crt", ".cer", ".der", ".key", ".jks", ".p12", ".pfx
 # incidents and public benchmark suites). Credentials/IPs are still checked.
 NAME_EXEMPT_PREFIXES = ("benchmarks/", "papers/", "threat_intel_case_studies/")
 
-# This file and the denylist necessarily contain the patterns themselves.
-# This file holds the SECRET regexes, so it is exempt from the credential check
-# only — never from the denylist check. The denylist is hashed, so this file has
-# no legitimate reason to contain a plaintext identifier.
-SECRET_SELF_EXEMPT = {"scripts/check_client_data.py"}
+# These two files necessarily contain the patterns and fixtures themselves: the
+# guard holds the SECRET/ENGAGEMENT regexes, and its test suite holds a synthetic
+# leak per rule. Both are exempt from the pattern checks ONLY — never from the
+# denylist check. The denylist is hashed, so neither file has any legitimate
+# reason to contain a plaintext customer identifier, and a fixture must be
+# invented rather than borrowed from a real engagement.
+SECRET_SELF_EXEMPT = {"scripts/check_client_data.py",
+                      "scripts/test_check_client_data.py"}
 
 # Narrow, reviewed exceptions: (path, finding-label). Each needs a justification.
 # Keep this list SHORT — every entry is a place the guard is deliberately blind.
@@ -92,6 +97,35 @@ SECRET_ALLOW = re.compile(
     r"AKIAIOSFODNN7EXAMPLE|AKIAABCDEFGHIJKLMNOP|ASIAYEXAMPLEKEY|xoxb-actual-token-here"
     r"|sk-(?:ant-)?(?:api\d\d-)?(?:your|xxx|placeholder|REDACTED)"
     r"|/Users/(?:username|user|you|<user>|\$USER)/")
+
+# Engagement identifiers. These name a specific customer engagement even when the
+# customer's own name never appears, so the digest lane cannot catch them: an
+# engagement directory is `<tree>/<YYYYMMDD|YYMMDD>_<slug>`, and finding ids are
+# minted inside one. projects/ctf/ is deliberately absent — those are public
+# challenge platforms, cited on purpose, not customers.
+ENGAGEMENT_PATTERNS = [
+    ("engagement-path", re.compile(
+        r"\b(?:projects/(?:pentest|compliance|offsec|webinars|attacks-validation"
+        r"|attack-path-prioritisation)/|outputs?/)(\d{6,8}[_-][A-Za-z0-9_.-]+)")),
+    # An engagement-local script name, fNN_<name>.py — the NN is the finding number
+    # and the rest is the engagement's own naming.
+    ("finding-id", re.compile(r"\bf\d{2}_[a-z][a-z0-9_]*\.py\b")),
+    ("finding-id", re.compile(r"\bF-SWEEP-[A-Za-z0-9_-]+\b")),
+    # A BARE sequence id (F-12, F-01) is deliberately NOT matched. It carries no
+    # customer information — it identifies an engagement only in combination with
+    # context this guard already covers by other means — and the tree uses those
+    # ids as synthetic fixtures throughout (80+ occurrences across tools/test_*.py,
+    # test_generate_report.py, merge-reports.js). Matching them would produce pure
+    # noise, and a guard people learn to ignore protects nothing.
+]
+
+# Slugs that are teaching placeholders rather than customers: a path like
+# `projects/pentest/260101_acme` documents the FORMAT, not an engagement.
+# Letter-boundary lookarounds, NOT \b: the slug follows an underscore, and `_` is
+# a word character, so \bacme\b never fires inside `260101_acme`.
+PLACEHOLDER_SLUG = re.compile(
+    r"(?i)(?<![A-Za-z])(acme|example|sample|demo|dummy|placeholder|foo|bar|test|yourco"
+    r"|client|customer)(?![A-Za-z])")
 
 IP_RE = re.compile(r"(?<![\d.])((?:25[0-5]|2[0-4]\d|1?\d?\d)\.(?:25[0-5]|2[0-4]\d|1?\d?\d)"
                    r"\.(?:25[0-5]|2[0-4]\d|1?\d?\d)\.(?:25[0-5]|2[0-4]\d|1?\d?\d))(?![\d.])")
@@ -184,10 +218,71 @@ def _git_file_list(staged: bool) -> list[str]:
     return [f for f in out.splitlines() if f]
 
 
-def files_to_scan(staged: bool) -> list[str]:
+def _index_modes() -> dict[str, str]:
+    """path -> git mode from the index. Mode 120000 is a symlink."""
+    r = subprocess.run(["git", "-C", REPO, "ls-files", "-s", "-z"],
+                       capture_output=True, text=True)
+    modes: dict[str, str] = {}
+    for rec in r.stdout.split("\0"):
+        if not rec:
+            continue
+        meta, _, path = rec.partition("\t")
+        if path:
+            modes[path] = meta.split()[0]
+    return modes
+
+
+def symlink_targets(staged: bool) -> dict[str, str]:
+    """Every symlink the next commit would publish, mapped to its TARGET STRING.
+
+    Read from the git blob (or os.readlink), never by following the link. A
+    symlink's target IS published content — git stores it as an ordinary blob —
+    so an absolute target publishes the operator's home directory, and once
+    published the name of a private sibling repository. Following the link
+    instead reads the destination file and never examines the target string,
+    which is exactly how that class stayed invisible to every text grep.
+    """
+    modes = _index_modes()
+    wanted = set(_git_file_list(staged))
+    out: dict[str, str] = {}
+    for rel, mode in modes.items():
+        if mode != "120000" or rel not in wanted:
+            continue
+        r = subprocess.run(["git", "-C", REPO, "cat-file", "-p", f":{rel}"],
+                           capture_output=True)
+        if r.returncode == 0:
+            out[rel] = r.stdout.decode("utf-8", "replace").strip()
+    if not staged:
+        # Untracked-but-stageable symlinks have no index entry yet.
+        for rel in wanted:
+            if rel not in out:
+                p = os.path.join(REPO, rel)
+                if os.path.islink(p):
+                    out[rel] = os.readlink(p)
+    return out
+
+
+def symlink_leaks(targets: dict[str, str]) -> list[str]:
+    """Structural verdicts on symlink targets. An absolute target is NOT echoed —
+    that string is itself the leak."""
+    leaks = []
+    for rel, tgt in sorted(targets.items()):
+        if tgt.startswith("/") or re.match(r"^[A-Za-z]:[\\/]", tgt):
+            leaks.append(f"{rel}:0: SYMLINK [absolute-target] -> absolute link target "
+                         f"publishes a local filesystem path; make it relative")
+        elif os.path.normpath(os.path.join(os.path.dirname(rel), tgt)).startswith(".."):
+            leaks.append(f"{rel}:0: SYMLINK [escapes-repo] -> {tgt}")
+    return leaks
+
+
+def files_to_scan(staged: bool, symlinks: frozenset = frozenset()) -> list[str]:
+    """Text files for the line scanners. Symlinks are excluded and handled by
+    symlink_targets(): open()ing one follows it, re-reading the destination file
+    while never examining the link target itself."""
     return [f for f in _git_file_list(staged)
             if os.path.splitext(f)[1].lower() not in BINARY_EXT
-            and not f.endswith(".DS_Store")]
+            and not f.endswith(".DS_Store")
+            and f not in symlinks]
 
 
 def credential_material_files(staged: bool) -> list[str]:
@@ -229,7 +324,12 @@ def main() -> int:
         leaks.append(f"{rel}:0: SECRET [credential-file] -> "
                      f"{os.path.splitext(rel)[1]} key/cert material must never be committed")
 
-    for rel in files_to_scan(args.staged):
+    # Symlink targets: structural verdicts, plus the target string run through the
+    # ordinary line scanners (an absolute target is an operator path by definition).
+    symlinks = symlink_targets(args.staged)
+    leaks.extend(symlink_leaks(symlinks))
+
+    for rel in files_to_scan(args.staged, frozenset(symlinks)):
         content = read_content(rel, args.staged)
         if content is None:
             continue
@@ -264,6 +364,17 @@ def main() -> int:
                     if SECRET_ALLOW.search(m.group(0)) or SECRET_ALLOW.search(line):
                         continue
                     leaks.append(f"{rel}:{n}: SECRET [{label}] -> {m.group(0)[:48]!r}")
+
+            for label, rx in ENGAGEMENT_PATTERNS:
+                if rel in SECRET_SELF_EXEMPT:
+                    continue
+                for m in rx.finditer(line):
+                    hit = m.group(0)
+                    # A placeholder slug documents the format rather than naming
+                    # an engagement, and the CTF tree holds public challenges.
+                    if PLACEHOLDER_SLUG.search(hit) or "projects/ctf/" in line:
+                        continue
+                    leaks.append(f"{rel}:{n}: ENGAGEMENT [{label}] -> {hit[:60]!r}")
 
             for m in IP_RE.finditer(line):
                 s = m.group(1)

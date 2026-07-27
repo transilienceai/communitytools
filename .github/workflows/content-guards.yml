@@ -62,16 +62,23 @@ jobs:
           fi
           echo "OK - no per-machine or credential files tracked"
 
-      # Warn-only until the existing links are regenerated relative
-      # (link-pentest-assets.sh already emits relative links). Flip to `exit 1` then.
-      - name: Tracked symlinks should be relative (warn)
+      # Blocking. The tree is at zero absolute targets, and check_client_data.py
+      # now enforces the same rule, so this is the redundant shell-level backstop.
+      # A symlink target is an ordinary git blob: an absolute one publishes the
+      # operator's home directory, and 66 of them once named a private sibling
+      # repository. The target is NOT echoed on failure - that string is the leak.
+      - name: Tracked symlinks must be relative
         run: |
           bad=$(git ls-files -s | awk '$1=="120000"{print $4}' | while read -r l; do
-                  t=$(git cat-file -p ":$l"); case "$t" in /*) echo "$l -> $t";; esac
+                  t=$(git cat-file -p ":$l"); case "$t" in /*) echo "$l";; esac
                 done)
           if [ -n "$bad" ]; then
-            echo "::warning::$(echo "$bad" | wc -l) tracked symlinks are absolute and should be relative"
-            echo "$bad" | head -20
-          else
-            echo "OK - no absolute tracked symlinks"
+            echo "::error::$(echo "$bad" | wc -l) tracked symlink(s) have an absolute target:"
+            echo "$bad"
+            echo "Fix: make the link relative, e.g. ln -sfn ../formats .claude/formats"
+            exit 1
           fi
+          echo "OK - no absolute tracked symlinks"
+
+      - name: Content guard self-tests
+        run: python3 scripts/test_check_client_data.py
