@@ -1,0 +1,84 @@
+{
+  "schema": "content-guard-binaries/v1",
+  "note": "Every binary in the publishable tree, pinned by sha256. No text lane can read these, so the guarantee is 'unchanged since a human reviewed it' - not 'inspected'. A new binary, or a changed one, blocks until re-reviewed. Deliberately NOT strings-extracted: that measurably false-positives inside fonts.",
+  "binaries": [
+    {
+      "path": ".claude/sounds/notify.mp3",
+      "sha256": "85c045d17e860e2ca5549e633cdf4df3e8462f30c099295ec04e9ff86628770b",
+      "origin": "repo-authored",
+      "reason": "session notification sound"
+    },
+    {
+      "path": "benchmarks/dvba_android/dvba.apk",
+      "sha256": "76c308fac6a655a3534771777780e004feb1d91be032857768c891b2baf40ba6",
+      "origin": "public training artifact",
+      "reason": "Damn Vulnerable Android app, a public benchmark target"
+    },
+    {
+      "path": "formats/transilience-report-style/fonts/Carlito-Bold.ttf",
+      "sha256": "bb5d20f79b82599ec72983597437373a80f2d2085fa91fc144fd74e876a594db",
+      "origin": "OFL font",
+      "reason": "Carlito/Poppins face bundled for the branded PDF renderer"
+    },
+    {
+      "path": "formats/transilience-report-style/fonts/Carlito-BoldItalic.ttf",
+      "sha256": "b32928186c119599e03ca6a1ffc680fdcb7fac95772f4b95d989cf6cd3861517",
+      "origin": "OFL font",
+      "reason": "Carlito/Poppins face bundled for the branded PDF renderer"
+    },
+    {
+      "path": "formats/transilience-report-style/fonts/Carlito-Italic.ttf",
+      "sha256": "0b019225e58d702bfedcbd35c21696769f8ee115cb6343f84c2f240312450d1c",
+      "origin": "OFL font",
+      "reason": "Carlito/Poppins face bundled for the branded PDF renderer"
+    },
+    {
+      "path": "formats/transilience-report-style/fonts/Carlito-Regular.ttf",
+      "sha256": "f6418f708baede9789daef5d458c0f53d2a888af9820e8062934e504fedc6595",
+      "origin": "OFL font",
+      "reason": "Carlito/Poppins face bundled for the branded PDF renderer"
+    },
+    {
+      "path": "formats/transilience-report-style/fonts/Poppins-Bold.ttf",
+      "sha256": "983676516167748b74de6f4771fb384c664fd913acb8b471122ecacf5da5ea6c",
+      "origin": "OFL font",
+      "reason": "Carlito/Poppins face bundled for the branded PDF renderer"
+    },
+    {
+      "path": "formats/transilience-report-style/fonts/Poppins-Italic.ttf",
+      "sha256": "4fa76ae75b40f926420514044722cb97f32186cafd3b38263cc34dad7174d46d",
+      "origin": "OFL font",
+      "reason": "Carlito/Poppins face bundled for the branded PDF renderer"
+    },
+    {
+      "path": "formats/transilience-report-style/fonts/Poppins-Light.ttf",
+      "sha256": "650ba57fa99d12ec40c31ccfb680be656be4497fbe14164617d67e32ffe9cd46",
+      "origin": "OFL font",
+      "reason": "Carlito/Poppins face bundled for the branded PDF renderer"
+    },
+    {
+      "path": "formats/transilience-report-style/fonts/Poppins-Medium.ttf",
+      "sha256": "90373e7d838d32468438fc3e152dca0bdb12edcab99ea639f158790b1ba1fd05",
+      "origin": "OFL font",
+      "reason": "Carlito/Poppins face bundled for the branded PDF renderer"
+    },
+    {
+      "path": "formats/transilience-report-style/fonts/Poppins-Regular.ttf",
+      "sha256": "7e65201e9b79159e2300267cc885e16c8dcef2424cdfa09a29bfb0980a94a7ba",
+      "origin": "OFL font",
+      "reason": "Carlito/Poppins face bundled for the branded PDF renderer"
+    },
+    {
+      "path": "papers/practice-makes-perfect.pdf",
+      "sha256": "c7f216a1cf5ea4e399ad6f67a6d66a090ce98809647ce1e7ba58387e2deae239",
+      "origin": "public research paper",
+      "reason": "cited publication"
+    },
+    {
+      "path": "skills/api-security/reference/scenarios/rest/waf-bypass-techniques.md",
+      "sha256": "ae07a9189e433475583b78330da43febf1146b9daaad7cf128ee5f954e038a62",
+      "origin": "repo-authored",
+      "reason": "markdown; classified binary by the NUL-byte sniff because it documents a NUL-injection WAF bypass"
+    }
+  ]
+}
