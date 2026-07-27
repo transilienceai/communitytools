@@ -65,6 +65,16 @@ raw/
 *.csv
 *.txt
 
+# Office documents. A client deliverable is far likelier to arrive as a workbook
+# or a report document than as prose, and no text lane can read one — the content
+# guard can only hash-pin binaries, never inspect them. Extension rules only, and
+# no office document is tracked today, so this is not a retroactive change.
+*.xlsx
+*.xls
+*.docx
+*.doc
+*.pptx
+
 # Benchmark runner artifacts (per-run workdirs, logs, result JSON)
 benchmarks/xbow/results/
 benchmarks/cybench/results/

@@ -166,6 +166,83 @@ def test_guard_still_catches_a_planted_leak():
 
 
 # --------------------------------------------------------------------------
+# Operator home paths — macOS, Linux and Windows
+# --------------------------------------------------------------------------
+
+def _operator_path_hit(line: str) -> str | None:
+    rx = dict(ccd.SECRET_PATTERNS)["operator-home-path"]
+    for m in rx.finditer(line):
+        if ccd.SECRET_ALLOW.search(m.group(0)) or ccd.SECRET_ALLOW.search(line):
+            continue
+        return m.group(0)
+    return None
+
+
+def test_operator_path_every_platform():
+    for line in ("cd /Users/areallyrealperson/dev/x",
+                 "cd /home/jsmith/tools",
+                 r"dir C:\Users\jdoe\Desktop",
+                 "/home/mariarossi/loot"):
+        assert _operator_path_hit(line), line
+
+
+def test_generic_accounts_are_not_operator_paths():
+    """Shared/lab/service accounts name nobody. This corpus is every /home/ and
+    C:\\Users\\ occurrence measured in the real tree."""
+    for line in ("/home/carlos/secret", "/home/claude/x", "/home/restricted_user/a",
+                 "/home/user/b", "/home/asterisk/c", "/Users/username/a",
+                 r"C:\Users\Public\x", r"C:\Users\Administrator\y",
+                 r"C:\Users\current_user\z", r"C:\Users\svc_backup\z"):
+        assert _operator_path_hit(line) is None, line
+
+
+def test_metavariables_are_not_operator_paths():
+    """A placeholder is syntax, not a name: <user>, [user], *, %VAR%, $VAR."""
+    for line in (r"C:\Users\<user>\z", r"C:\Users\[user]\z", r"C:\Users\*\z",
+                 r"C:\Users\<sam>.<DOMAIN>", "/home/<username>/x", "/Users/$USER/x"):
+        assert _operator_path_hit(line) is None, line
+
+
+# --------------------------------------------------------------------------
+# Binaries — hash-pinned, never read
+# --------------------------------------------------------------------------
+
+def test_binary_allowlist_covers_the_tree():
+    """Every binary in the publishable tree must be pinned, or the guard fails."""
+    import json
+    with open(os.path.join(REPO, "scripts", "content-guard-binaries.json"),
+              encoding="utf-8") as fh:
+        allow = {b["path"] for b in json.load(fh)["binaries"]}
+    binaries = {f["path"] for f in _manifest()["files"] if f["kind"] == "binary"}
+    assert not (binaries - allow), f"unpinned binaries: {sorted(binaries - allow)}"
+
+
+def test_unlisted_binary_blocks():
+    e = {"x/new.pdf": {"kind": "binary", "sha256": "a" * 64}}
+    leaks = ccd.binary_leaks(e)
+    assert len(leaks) == 1 and "unlisted" in leaks[0], leaks
+
+
+def test_changed_binary_blocks():
+    """A reviewed binary whose content moved is unreviewed again."""
+    import json
+    with open(os.path.join(REPO, "scripts", "content-guard-binaries.json"),
+              encoding="utf-8") as fh:
+        first = json.load(fh)["binaries"][0]
+    leaks = ccd.binary_leaks({first["path"]: {"kind": "binary", "sha256": "b" * 64}})
+    assert len(leaks) == 1 and "changed" in leaks[0], leaks
+
+
+def test_pinned_binary_is_clean():
+    import json
+    with open(os.path.join(REPO, "scripts", "content-guard-binaries.json"),
+              encoding="utf-8") as fh:
+        first = json.load(fh)["binaries"][0]
+    assert ccd.binary_leaks({first["path"]:
+                             {"kind": "binary", "sha256": first["sha256"]}}) == []
+
+
+# --------------------------------------------------------------------------
 # Coverage manifest — "file by file, folder by folder" as a checked property
 # --------------------------------------------------------------------------
 

@@ -1,0 +1,26 @@
+#!/bin/sh
+# Last local gate before content reaches a PUBLIC remote.
+#
+# pre-commit scans only what is staged, and `git commit --no-verify` skips it
+# entirely. This runs over the WHOLE tree instead, so anything that slipped past
+# a commit is still caught before it is published. It is the higher-value of the
+# two hooks: a bad commit is recoverable, a bad push is not.
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+# Bypass:                 git push --no-verify   (CI is the authority, not this)
+set -e
+
+root=$(git rev-parse --show-toplevel) || exit 0
+command -v python3 >/dev/null 2>&1 || {
+  echo "pre-push: python3 not found — content guard SKIPPED" >&2
+  exit 0
+}
+
+python3 "$root/scripts/check_client_data.py" || {
+  echo "" >&2
+  echo "pre-push BLOCKED: the working tree carries content that must not become public." >&2
+  echo "This repository is public. Fix the findings above, or re-run with --no-verify" >&2
+  echo "only if you are certain (CI runs the same guard and will fail the push anyway)." >&2
+  exit 1
+}
+python3 "$root/scripts/check_neutrality.py" || exit 1

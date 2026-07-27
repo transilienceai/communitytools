@@ -95,14 +95,29 @@ SECRET_PATTERNS = [
         r"(?:[A-Za-z0-9+/=]{60,}\s*\n){2,}")),
     ("api-key-uuid", re.compile(
         r"(?i)api[ _-]?key\s*[:=]\s*[\"']?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")),
-    ("operator-home-path", re.compile(r"/Users/[A-Za-z][A-Za-z0-9._-]{2,}/")),
+    # macOS, Linux and Windows home directories all name the account holder.
+    ("operator-home-path", re.compile(
+        r"/(?:Users|home)/[A-Za-z][A-Za-z0-9._-]{2,}/"
+        r"|[A-Za-z]:\\Users\\[A-Za-z][A-Za-z0-9._-]{2,}")),
 ]
+
+# Shared, service, or lab accounts that name nobody. Measured against the tree:
+# these cover every /home/ and C:\Users\ occurrence in it, which is why the two
+# new platforms can block from the start rather than warn.
+GENERIC_USER = (r"username|users?|you|carlos|kali|claude|root|admin|administrator"
+                r"|public|restricted_user|asterisk|current_user|target|victim|attacker"
+                r"|ubuntu|ec2-user|vagrant|student|htb|svc_[A-Za-z0-9_]*")
 
 # Published-by-vendor example values that are documentation, not secrets.
 SECRET_ALLOW = re.compile(
     r"AKIAIOSFODNN7EXAMPLE|AKIAABCDEFGHIJKLMNOP|ASIAYEXAMPLEKEY|xoxb-actual-token-here"
     r"|sk-(?:ant-)?(?:api\d\d-)?(?:your|xxx|placeholder|REDACTED)"
-    r"|/Users/(?:username|user|you|<user>|\$USER)/")
+    # A home path naming a generic account, on any platform.
+    rf"|(?i:/(?:Users|home)/(?:{GENERIC_USER})(?:/|\b))"
+    rf"|(?i:[A-Za-z]:\\Users\\(?:{GENERIC_USER})\b)"
+    # ...or a metavariable rather than a name: <user>, [user], *, %USERNAME%, $USER.
+    r"|/(?:Users|home)/[^/\s]*[<>\[\]*%$]"
+    r"|[A-Za-z]:\\Users\\[^\\\s]*[<>\[\]*%$]")
 
 # Engagement identifiers. These name a specific customer engagement even when the
 # customer's own name never appears, so the digest lane cannot catch them: an
@@ -337,6 +352,39 @@ def classify(rel: str, raw: bytes | None, is_symlink: bool) -> tuple[str, str | 
     return "text", None
 
 
+BINARY_ALLOWLIST = os.path.join(REPO, "scripts", "content-guard-binaries.json")
+
+
+def binary_leaks(entries: dict[str, dict]) -> list[str]:
+    """Binaries are hash-pinned, never read.
+
+    No text lane can inspect a .pdf/.apk/.ttf, so the honest guarantee is
+    "unchanged since a human reviewed it", not "inspected". A new binary blocks
+    until someone approves it, and a changed one blocks until someone re-reviews
+    it — a client report is far likelier to arrive as a PDF or a spreadsheet than
+    as prose. Deliberately not strings-extracted: that measurably false-positives
+    inside font tables.
+    """
+    try:
+        with open(BINARY_ALLOWLIST, encoding="utf-8") as fh:
+            allow = {b["path"]: b["sha256"] for b in json.load(fh)["binaries"]}
+    except (OSError, ValueError, KeyError) as e:
+        return [f"{os.path.relpath(BINARY_ALLOWLIST, REPO)}:0: BINARY [allowlist-unreadable]"
+                f" -> {type(e).__name__}; cannot certify any binary"]
+    leaks = []
+    for rel, e in sorted(entries.items()):
+        if e["kind"] != "binary":
+            continue
+        if rel not in allow:
+            leaks.append(f"{rel}:0: BINARY [unlisted] -> a binary no text lane can read; "
+                         f"review it, then add its sha256 to "
+                         f"{os.path.relpath(BINARY_ALLOWLIST, REPO)}")
+        elif allow[rel] != e["sha256"]:
+            leaks.append(f"{rel}:0: BINARY [changed] -> content differs from the reviewed "
+                         f"sha256; re-review and update the allowlist")
+    return leaks
+
+
 def _would_be_published(abspath: str) -> bool:
     """True when this path is inside the worktree AND git does not ignore it.
 
@@ -531,6 +579,8 @@ def main() -> int:
 
     # A file that could not be read was never checked. Reporting OK for it would
     # be a silent pass on exactly the case a guard exists for.
+    leaks.extend(binary_leaks(entries))
+
     unreadable = sorted(r for r, e in entries.items() if e["kind"] == "unreadable")
     for rel in unreadable:
         leaks.append(f"{rel}:0: UNREADABLE -> publishable but could not be read; "
