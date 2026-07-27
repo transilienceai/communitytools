@@ -13,6 +13,8 @@ Checks, over every tracked + staged text file outside the ignored engagement tre
   4. operator paths    — /Users/<name>/ absolute paths (leak the analyst's identity)
   5. symlink targets   — read from the git blob, never followed (see symlink_targets)
   6. engagement ids    — engagement directory names, and finding ids minted inside one
+  7. personal data     — national ids (checksum-validated, BLOCKING); address,
+                         named contact and phone (heuristic, WARN only)
 
 Coverage is a checked property, not a claim: --manifest records one entry per
 publishable path, each either scanned or carrying an explicit reason it was not,
@@ -23,7 +25,7 @@ Usage:
   python3 scripts/check_client_data.py --staged   # pre-commit: scan staged content only
   python3 scripts/check_client_data.py --manifest # + write the coverage manifest
 
-Exit 0 = clean, 1 = leak(s) found.
+Exit 0 = clean (warnings do not fail), 1 = leak(s) found, 2 = config error.
 """
 from __future__ import annotations
 
@@ -144,6 +146,165 @@ ENGAGEMENT_PATTERNS = [
 PLACEHOLDER_SLUG = re.compile(
     r"(?i)(?<![A-Za-z])(acme|example|sample|demo|dummy|placeholder|foo|bar|test|yourco"
     r"|client|customer)(?![A-Za-z])")
+
+# --------------------------------------------------------------------------
+# Personal data. A customer is identified by a name, but also by an address, a
+# phone number, a national id or a named contact — classes the digest lane cannot
+# reach because they are shapes, not words.
+#
+# Severity is split deliberately. Checksum-validated ids are BLOCKING: a
+# Verhoeff-valid Aadhaar or a Luhn+IIN-valid card number is not an accident.
+# Addresses and person names only WARN, because both are heuristics over ordinary
+# prose and a false positive that blocks a commit is how a guard gets bypassed.
+# --------------------------------------------------------------------------
+
+# Checksum-validated identifiers -> blocking.
+PAN_RE = re.compile(r"\b([A-Z]{5})(\d{4})([A-Z])\b")          # Indian PAN
+AADHAAR_RE = re.compile(r"\b([2-9]\d{3})\s?(\d{4})\s?(\d{4})\b")
+SSN_RE = re.compile(r"\b(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b")
+CARD_RE = re.compile(r"\b(?:\d[ -]?){12,18}\d\b")
+CARD_IIN = ("4", "34", "37", "51", "52", "53", "54", "55", "6011", "65", "35")
+# Digit runs that are plainly not identifiers.
+ID_CONTEXT_DENY = re.compile(
+    r"(?i)\b(imei|iccid|order|invoice|timestamp|epoch|nanos|bytes|size|offset|sha|md5"
+    r"|hash|sequence|port|version|cve|cvss|build|serial)\b")
+
+# Phone: two high-precision shapes only. A general phone regex is a noise cannon
+# over 800+ markdown files of ports, offsets and version strings.
+PHONE_RE = re.compile(
+    r"(?<![\w+])\+(\d{1,3})[\s.\-]?(\d[\s.\-]?){7,13}\d(?![\w])"
+    r"|\b(?:\(\d{3}\)\s?\d{3}-\d{4}|\d{3}-\d{3}-\d{4}|\+91[\s-]?\d{5}[\s-]?\d{5})\b")
+# 555 is the reserved fictional NANP exchange; sequential/repeated runs are examples.
+PHONE_ALLOW = re.compile(r"555|1234567890|0123456789|(\d)\1{6,}")
+
+# Postal address: context-SCORED, never a single regex. No individual signal is
+# sufficient, so each contributes and the total decides.
+# Unambiguous address tokens ONLY. Measured against the tree, a broader list fired
+# on `phase` (attack phases), `main` (main(), pg main), `floor` (math.floor),
+# `block` (cipher block), `unit` (unit test) and `sector` (disk sector). In a
+# security repo those words are overwhelmingly technical, so including them buys
+# no recall and costs the rule its credibility.
+STREET_SUFFIX = re.compile(
+    r"(?i)\b(street|st\.|road|rd\.|avenue|ave\.|boulevard|blvd\.|suite|ste\."
+    r"|marg|nagar|colony|plaza)\b")
+HOUSE_NUMBER = re.compile(r"(?<![\w])\d{1,5}[A-Za-z]?[,\s]")
+POSTCODE_STRONG = re.compile(r"\b\d{5}(-\d{4})?\b|\b[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}\b")
+POSTCODE_WEAK = re.compile(r"\b\d{6}\b|\b\d{4}\b")
+GEO_TOKEN = re.compile(
+    r"(?i)\b(mumbai|delhi|bengaluru|bangalore|chennai|hyderabad|pune|kolkata|singapore"
+    r"|dubai|abu dhabi|manila|makati|taipei|london|new york|san francisco|tokyo|sydney"
+    r"|toronto|berlin|paris|madrid|milan|zurich|dublin|amsterdam)\b")
+PLACEHOLDER_MARKER = re.compile(
+    r"(?i)\b(example|sample|placeholder|dummy|synthetic|fictional|redacted|acme|your|test)\b"
+    r"|<[A-Z_]{3,}>|\$\{")
+
+# Person names: three NARROW sub-rules only. A person's name is two capitalised
+# non-dictionary words — structurally identical to `Burp Suite` or `Active
+# Directory` — so the general case is not a regular language and is not attempted.
+PERSON_LABELLED = re.compile(
+    r"(?i)\b(attn|prepared\s+by|reviewed\s+by|approved\s+by|point\s+of\s+contact"
+    r"|account\s+manager|requested\s+by|primary\s+contact)\b\s*[:\-–]\s*"
+    r"([A-Z][a-z]{1,20}(?:\s+[A-Z][a-z']{1,20}){1,2})")
+PERSON_EMAIL = re.compile(r"\b([a-z]{2,})[._]([a-z]{2,})@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b")
+# Attacker/victim/target domains are the standing convention in this tree's
+# examples, alongside the RFC-reserved ones.
+EMAIL_DOMAIN_ALLOW = re.compile(
+    r"(?i)^(.*\.)?(example\.(com|org|net)|acme\.com|test\.com|localhost|transilience\.ai"
+    r"|attacker\.com|evil\.com|victim\.com|trusted\.com|target\.com|corp\.com"
+    r"|company\.com|yourdomain\.com|domain\.com)$"
+    r"|\.(local|invalid|test|internal|example|ccache|keytab)$")
+
+
+def verhoeff_valid(number: str) -> bool:
+    """Aadhaar checksum. Digits alone are ~10x noisier than digits + checksum, and
+    a Verhoeff-valid 12-digit run is not something prose produces by accident."""
+    d = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 2, 3, 4, 0, 6, 7, 8, 9, 5],
+         [2, 3, 4, 0, 1, 7, 8, 9, 5, 6], [3, 4, 0, 1, 2, 8, 9, 5, 6, 7],
+         [4, 0, 1, 2, 3, 9, 5, 6, 7, 8], [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
+         [6, 5, 9, 8, 7, 1, 0, 4, 3, 2], [7, 6, 5, 9, 8, 2, 1, 0, 4, 3],
+         [8, 7, 6, 5, 9, 3, 2, 1, 0, 4], [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]]
+    p = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 5, 7, 6, 2, 8, 3, 0, 9, 4],
+         [5, 8, 0, 3, 7, 9, 6, 1, 4, 2], [8, 9, 1, 6, 0, 4, 3, 5, 2, 7],
+         [9, 4, 5, 3, 1, 2, 6, 8, 7, 0], [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
+         [2, 7, 9, 3, 8, 0, 6, 4, 1, 5], [7, 0, 4, 6, 9, 1, 3, 2, 5, 8]]
+    c = 0
+    for i, ch in enumerate(reversed(number)):
+        if not ch.isdigit():
+            return False
+        c = d[c][p[i % 8][int(ch)]]
+    return c == 0
+
+
+def luhn_valid(number: str) -> bool:
+    total, alt = 0, False
+    for ch in reversed(number):
+        if not ch.isdigit():
+            return False
+        n = int(ch)
+        if alt:
+            n *= 2
+            if n > 9:
+                n -= 9
+        total += n
+        alt = not alt
+    return total % 10 == 0
+
+
+def address_score(line: str) -> int:
+    """No single signal identifies an address; the combination does — but a street
+    token is MANDATORY. Measured against the tree, scoring without it fired on
+    Postgres tablespace paths, a CVSS table and a crypto transcript: a number plus
+    a city name is not an address."""
+    if not STREET_SUFFIX.search(line):
+        return 0
+    score = 2
+    if HOUSE_NUMBER.match(line.strip()):
+        score += 2
+    if POSTCODE_STRONG.search(line):
+        score += 3
+    elif POSTCODE_WEAK.search(line):
+        score += 1
+    if GEO_TOKEN.search(line):
+        score += 2
+    if PLACEHOLDER_MARKER.search(line):
+        score -= 3
+    return score
+
+
+def personal_data_findings(rel: str, n: int, line: str) -> tuple[list[str], list[str]]:
+    """(blocking, warnings) for one line."""
+    leaks, warns = [], []
+    if ID_CONTEXT_DENY.search(line):
+        return leaks, warns
+
+    for m in PAN_RE.finditer(line):
+        if m.group(1)[3] in "ABCFGHLJPTK":
+            leaks.append(f"{rel}:{n}: PERSONAL [indian-pan] -> redacted ({len(m.group(0))} chars)")
+    for m in AADHAAR_RE.finditer(line):
+        if verhoeff_valid("".join(m.groups())):
+            leaks.append(f"{rel}:{n}: PERSONAL [aadhaar] -> Verhoeff-valid, redacted")
+    for _ in SSN_RE.finditer(line):
+        leaks.append(f"{rel}:{n}: PERSONAL [us-ssn] -> redacted")
+    for m in CARD_RE.finditer(line):
+        digits = re.sub(r"[ -]", "", m.group(0))
+        if 13 <= len(digits) <= 19 and digits.startswith(CARD_IIN) and luhn_valid(digits):
+            leaks.append(f"{rel}:{n}: PERSONAL [card-pan] -> Luhn+IIN valid, redacted")
+
+    for m in PHONE_RE.finditer(line):
+        raw = m.group(0)
+        if PHONE_ALLOW.search(re.sub(r"[^\d]", "", raw)):
+            continue
+        warns.append(f"{rel}:{n}: PERSONAL [phone] -> redacted ({len(raw)} chars)")
+    for m in PERSON_LABELLED.finditer(line):
+        warns.append(f"{rel}:{n}: PERSONAL [named-contact after '{m.group(1)}'] -> redacted")
+    for m in PERSON_EMAIL.finditer(line):
+        if not EMAIL_DOMAIN_ALLOW.search(m.group(3)):
+            warns.append(f"{rel}:{n}: PERSONAL [first.last email] -> redacted @{m.group(3)}")
+    score = address_score(line)
+    if score >= 5:
+        warns.append(f"{rel}:{n}: PERSONAL [postal address, score {score}] -> redacted")
+    return leaks, warns
+
 
 IP_RE = re.compile(r"(?<![\d.])((?:25[0-5]|2[0-4]\d|1?\d?\d)\.(?:25[0-5]|2[0-4]\d|1?\d?\d)"
                    r"\.(?:25[0-5]|2[0-4]\d|1?\d?\d)\.(?:25[0-5]|2[0-4]\d|1?\d?\d))(?![\d.])")
@@ -539,6 +700,7 @@ def main() -> int:
         print(f"check_client_data: CONFIG ERROR — {e}", file=sys.stderr)
         return 2
     leaks: list[str] = []
+    warnings: list[str] = []
     # One entry per publishable path. Built even when --manifest is absent so the
     # unreadable-file check below is always enforced.
     entries: dict[str, dict] = {}
@@ -625,6 +787,11 @@ def main() -> int:
                         continue
                     leaks.append(f"{rel}:{n}: ENGAGEMENT [{label}] -> {hit[:60]!r}")
 
+            if rel not in SECRET_SELF_EXEMPT:
+                pl, pw = personal_data_findings(rel, n, line)
+                leaks.extend(pl)
+                warnings.extend(pw)
+
             for m in IP_RE.finditer(line):
                 s = m.group(1)
                 if s in IP_ALLOW or s.startswith(IP_ALLOW_PREFIX) or len(set(s.split("."))) == 1:
@@ -666,6 +833,15 @@ def main() -> int:
 
     if args.manifest:
         write_manifest(args.manifest, args.staged, entries)
+
+    if warnings:
+        print(f"check_client_data: {len(warnings)} warning(s) — heuristic classes "
+              f"(address / named contact / phone). Review, do not ignore; these do "
+              f"not fail the build:", file=sys.stderr)
+        for w in sorted(set(warnings))[:25]:
+            print(f"  {w}", file=sys.stderr)
+        if len(set(warnings)) > 25:
+            print(f"  ... and {len(set(warnings)) - 25} more", file=sys.stderr)
 
     if not leaks:
         scope = "staged content" if args.staged else "the tracked tree"

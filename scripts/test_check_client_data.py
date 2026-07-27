@@ -438,6 +438,91 @@ def test_staleness_is_not_enforced_on_a_staged_scan():
             fh.write(original)
 
 
+# --------------------------------------------------------------------------
+# Personal data — name, address, phone, national id
+# --------------------------------------------------------------------------
+
+def _personal(line: str):
+    return ccd.personal_data_findings("fixture.md", 1, line)
+
+
+def test_checksum_validated_ids_block():
+    """A Verhoeff-valid Aadhaar or a Luhn+IIN-valid card is not an accident, so
+    these BLOCK rather than warn. All fixtures are synthetic."""
+    for line, label in (("card 4111111111111111 on file", "card"),
+                        ("PAN ABCPD1234E issued", "indian pan"),
+                        ("SSN 123-45-6789", "us ssn"),
+                        ("uid 2345 6789 0124", "aadhaar")):
+        leaks, _ = _personal(line)
+        assert leaks, f"{label} must block: {line}"
+
+
+def test_identifier_findings_never_carry_the_value():
+    """Reporting a leak must not reproduce it in a CI log."""
+    leaks, _ = _personal("card 4111111111111111 on file")
+    assert leaks and "4111" not in leaks[0], leaks
+
+
+def test_verhoeff_rejects_a_bad_checksum():
+    assert ccd.verhoeff_valid("234567890124")
+    assert not ccd.verhoeff_valid("234567890123")
+
+
+def test_luhn_and_iin_both_required():
+    assert ccd.luhn_valid("4111111111111111")
+    assert not ccd.luhn_valid("4111111111111112")
+    # Luhn-valid but no known IIN -> not a card.
+    leaks, _ = _personal("value 7992739871000005 here")
+    assert not leaks
+
+
+def test_heuristic_classes_warn_but_do_not_block():
+    """Address and person-name are heuristics over ordinary prose. A false positive
+    that blocks a commit is how a guard gets bypassed, so these only warn."""
+    for line in ("Attn: Maria Rossi",
+                 "mail john.smith@nemora-bank.co.in",
+                 "call +442071838750 now",
+                 "12 Maple Street, Springfield 90210"):
+        leaks, warns = _personal(line)
+        assert warns and not leaks, line
+
+
+def test_technical_words_are_not_addresses():
+    """Regression: `phase`, `main`, `floor`, `block`, `unit`, `sector` are street
+    suffixes in the abstract and technical terms in this repo. A street token is
+    mandatory, and the list excludes every ambiguous one."""
+    for line in ("cipher block phase main floor unit sector 12345",
+                 "return math.floor(i / 10000) + 1",
+                 "ln -sf /tmp/x /var/lib/postgresql/14/main/pg_tblspc/99999"):
+        _, warns = _personal(line)
+        assert not warns, line
+
+
+def test_pentest_example_domains_are_not_people():
+    for dom in ("attacker.com", "victim.com", "evil.com", "example.org", "acme.com"):
+        _, warns = _personal(f"mail john.smith@{dom}")
+        assert not warns, dom
+
+
+def test_fictional_and_placeholder_phones_are_ignored():
+    for line in ("call +15551234567", "dial +1234567890"):
+        _, warns = _personal(line)
+        assert not warns, line
+
+
+def test_digit_context_suppresses_identifier_shapes():
+    """A port, an offset or a hash is a digit run, not an identity."""
+    for line in ("port 4111111111111111 offset", "sha 4111111111111111"):
+        leaks, _ = _personal(line)
+        assert not leaks, line
+
+
+def test_tree_has_no_personal_data_warnings():
+    """The warn tier only stays useful while it is empty on a clean tree."""
+    r = subprocess.run([sys.executable, GUARD], capture_output=True, text=True, cwd=REPO)
+    assert "PERSONAL [" not in r.stderr, r.stderr[:1500]
+
+
 def json_dumps(s: str) -> str:
     import json
     return json.dumps(s)
