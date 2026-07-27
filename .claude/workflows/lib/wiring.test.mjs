@@ -221,8 +221,11 @@ ok(/refusing to write without a delta baseline/.test(su), 'a missing baseline fa
 ok(/promotionGate\(c, carry\.j, carry\.votes\)/.test(su), 'the promote/reject decision is made by promotionGate in pure JS');
 ok(/writeGate\(\{ \.\.\.a, target_path: target \}/.test(su), 'every authored block passes through writeGate before any write');
 ok(/skillUpdateGate\(\{/.test(su), 'the final COMPLETE/BLOCKED call is skillUpdateGate');
-ok(/buildChangeReport\(/.test(su) && !/report_markdown: *`/.test(su),
-   'the three-bucket report is built in code, never authored by an agent');
+// "Built in code" means no AGENT ever supplies the report: no schema exposes a
+// report_markdown field for one to fill. A JS template literal is still code.
+ok(/buildChangeReport\(/.test(su), 'the three-bucket report comes from buildChangeReport');
+ok(!/report_markdown: \{ type/.test(su),
+   'no agent schema exposes report_markdown — the report is never authored by an agent');
 // The confidentiality sweep is an independent veto that no agent can talk past.
 ok(/python3 scripts\/check_client_data\.py/.test(su), 'the Sweep phase runs the confidentiality guard');
 ok(/gate\.ok && !sweepClean/.test(su), 'a failed confidentiality sweep vetoes an otherwise-passing gate');

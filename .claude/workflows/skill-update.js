@@ -58,6 +58,12 @@ const BASELINE = '.claude/state/skill-update/baseline.json'
 
 const EMPTY = { counts: { candidates: 0, promoted: 0, skipped: 0, written: 0, deferred: 0 }, updated_files: [], skipped: [], report_markdown: '**No changes.**' }
 
+// blocked — a refusal, reported as one. "No changes." would claim nothing warranted
+// a change; a blocked run evaluated nothing. EMPTY is spread FIRST because it carries
+// a default report_markdown that would otherwise overwrite the reason.
+const blocked = (reason) => ({ ...EMPTY, status: 'BLOCKED', mode, blocked_reason: reason,
+  report_markdown: `⚠️ **BLOCKED.** ${reason}` })
+
 // ---- inline helpers ------------------------------------------------------
 // Byte-identical copies of .claude/workflows/lib/wf-helpers.mjs — the sandbox
 // forbids import, and lib/parity.test.mjs fails the build if these drift.
@@ -354,16 +360,16 @@ const LINT_SCHEMA = {
 
 // ---- validation-failure returns (fail closed; never throw) ----------------
 if (INVOKED_BY === 'coordinator') {
-  return { status: 'BLOCKED', mode, blocked_reason: 'skill-update is orchestrator-only; a coordinator must not run it (skills/coordination/reference/role-matrix.md).', ...EMPTY }
+  return blocked('skill-update is orchestrator-only; a coordinator must not run it (skills/coordination/reference/role-matrix.md).')
 }
 if (mode === 'harvest' && !OUTPUT_DIR) {
-  return { status: 'BLOCKED', mode, blocked_reason: 'harvest mode needs {output_dir} — the engagement tree to mine. Use {mode:"learnings", learnings:[...]} to skip harvesting.', ...EMPTY }
+  return blocked('harvest mode needs {output_dir} — the engagement tree to mine. Use {mode:"learnings", learnings:[...]} to skip harvesting.')
 }
 if (mode === 'learnings' && !LEARNINGS.length) {
-  return { status: 'BLOCKED', mode, blocked_reason: 'learnings mode needs a non-empty {learnings:[{text,technique_type}]}.', ...EMPTY }
+  return blocked('learnings mode needs a non-empty {learnings:[{text,technique_type}]}.')
 }
 if (mode === 'create' && !CREATE) {
-  return { status: 'BLOCKED', mode, blocked_reason: 'create mode needs {create:{name,description}}.', ...EMPTY }
+  return blocked('create mode needs {create:{name,description}}.')
 }
 
 // ---- Intake ---------------------------------------------------------------
@@ -392,7 +398,7 @@ const intake = await agent(
 
 const baseline = (intake && intake.lint && intake.lint.ok && intake.lint.payload) || null
 if (!baseline || !baseline.baseline_path) {
-  return { status: 'BLOCKED', mode, blocked_reason: 'baseline skill_linter --json did not parse; refusing to write without a delta baseline', ...EMPTY }
+  return blocked('baseline skill_linter --json did not parse; refusing to write without a delta baseline')
 }
 const CAPS = baseline.caps || {}
 // No file inventory is relayed any more — the author agent reports lines_before
@@ -421,8 +427,10 @@ if (mode === 'audit') {
     `- Files: ${(a && a.files) || 'unknown'}`,
     `- Violations: ${(a && a.violations) != null ? a.violations : baseline.count} — ${Object.entries(byCode).map(([k, v]) => `${k} ${v}`).join(', ') || 'none'}`,
     `- Over cap: ${overCap.length}${overCap.length ? ` (${overCap.slice(0, 5).join(', ')})` : ''}`]
-  return { status: 'AUDIT', mode, counts_by_code: byCode, over_cap: overCap,
-           report_markdown: lines.join('\n'), ...EMPTY }
+  // EMPTY is spread FIRST: it carries a default report_markdown, so spreading it
+  // last would silently overwrite the audit report with "**No changes.**".
+  return { ...EMPTY, status: 'AUDIT', mode, counts_by_code: byCode, over_cap: overCap,
+           report_markdown: lines.join('\n') }
 }
 
 // ---- Harvest --------------------------------------------------------------
@@ -433,7 +441,7 @@ if (mode === 'learnings') {
   phase('Harvest')
   const present = (intake && intake.sources_present) || []
   if (!present.length) {
-    return { status: 'BLOCKED', mode, blocked_reason: `no harvestable artifact found under ${OUTPUT_DIR} (looked for ${SOURCES.length} known paths)`, ...EMPTY }
+    return blocked(`no harvestable artifact found under ${OUTPUT_DIR} (looked for ${SOURCES.length} known paths)`)
   }
   const groups = await parallel(present.slice(0, 5).map((p) => () => agent(
     `ROLE: LEARNING HARVESTER (read-only). Read EXACTLY ONE file: ${p}. Read nothing else in the engagement tree.\n` +
@@ -453,7 +461,7 @@ if (mode === 'learnings') {
     candidates.push({ id: `h${gi + 1}-${ci + 1}`, text: String(c.text), technique_type: c.technique_type || 'other', evidence: c.evidence || present[gi] })
   }))
 } else if (mode === 'create') {
-  return { status: 'BLOCKED', mode, blocked_reason: 'create mode is not implemented in this revision; scaffold by hand and re-run mode:"audit" to check conformance.', ...EMPTY }
+  return blocked('create mode is not implemented in this revision; scaffold by hand and re-run mode:"audit" to check conformance.')
 }
 
 // Machine scrub before any agent spends a token on lore.
