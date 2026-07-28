@@ -1,7 +1,7 @@
 export const meta = {
-  name: 'pr-save',
+  name: 'safe-pr',
   description: 'Turn the work currently in this repository — uncommitted changes and the commits already on this branch — into a pull request, but ONLY after the standalone /content-guard workflow certifies that none of it carries a customer name, engagement identifier, target IP, credential, personal data or operator path. The guard runs FIRST and its verdict is structural: on anything other than CLEAN this returns before a branch, commit, push or PR step is ever constructed, so there is no ordering mistake available and nothing reaches GitHub. Then it branches off main if needed, stages exactly the paths the guard certified (never `git add -A`), commits under the repo\'s conventional format, RE-VERIFIES that the committed tree digest still matches the one the guard read, scans the PR and issue bodies as authored public text, and finally pushes and opens the PR against the repo template. Never force-pushes, never uses --no-verify, never commits to main.',
-  whenToUse: 'When you want the current state of the repo saved as a reviewable PR without leaking client data — "open a PR for this", "save this work", "/pr-save". args: {title?, summary?, issue?: <number to link>, create_issue?: true, base?: "main", branch?, draft?: false, type?: "feat"|"fix"|"docs"|"refactor"|"test"|"chore", paths?: [restrict staging to these], dryRun?}. Blocks rather than publishing whenever the guard is not CLEAN, the gh CLI is unauthenticated, or the push would need a token scope the token does not hold.',
+  whenToUse: 'When you want the current state of the repo saved as a reviewable PR without leaking client data — "open a PR for this", "save this work", "/safe-pr". args: {title?, summary?, issue?: <number to link>, create_issue?: true, base?: "main", branch?, draft?: false, type?: "feat"|"fix"|"docs"|"refactor"|"test"|"chore", paths?: [restrict staging to these], dryRun?}. Blocks rather than publishing whenever the guard is not CLEAN, the gh CLI is unauthenticated, or the push would need a token scope the token does not hold.',
   phases: [
     { title: 'Guard', detail: 'the standalone /content-guard workflow — hard gate, nothing runs past it unless CLEAN' },
     { title: 'Plan', detail: 'branch, commit message and PR body, validated against the repo conventions in code' },
@@ -54,7 +54,7 @@ const ISSUE_FILE = '.claude/state/confidentiality/issue-body.md'
 const EMPTY = { pr_url: null, issue_url: null, branch: null, committed: false, pushed: false }
 const blocked = (reason, extra) => ({
   ...EMPTY, status: 'BLOCKED', reason,
-  report_markdown: `⛔ **/pr-save BLOCKED.** ${reason}\n\nNothing was committed, pushed or published.`,
+  report_markdown: `⛔ **/safe-pr BLOCKED.** ${reason}\n\nNothing was committed, pushed or published.`,
   ...(extra || {}),
 })
 
@@ -114,9 +114,9 @@ if (!guard || guard.clean !== true) {
     reason: why,
     guard_status: guard?.status || 'UNKNOWN',
     findings: guard?.findings || [],
-    report_markdown: `⛔ **/pr-save BLOCKED — the content guard did not certify this change.**\n\n`
+    report_markdown: `⛔ **/safe-pr BLOCKED — the content guard did not certify this change.**\n\n`
       + `${why}\n\nNothing was committed, pushed or published. Fix the findings, then re-run `
-      + `\`/pr-save\`. Describe the CLASS of issue rather than the customer, use RFC 5737 `
+      + `\`/safe-pr\`. Describe the CLASS of issue rather than the customer, use RFC 5737 `
       + `addresses (203.0.113.x) in examples, and keep engagement data under \`projects/\`.`
       + `${detail}`,
   }
@@ -291,7 +291,7 @@ if (!post || post.clean !== true) {
 if (post.tree_digest && guard.tree_digest && post.tree_digest !== guard.tree_digest) {
   return blocked('the content changed between the guard run and the commit — the tree digest '
     + `no longer matches what was certified (${String(guard.tree_digest).slice(0, 12)} → `
-    + `${String(post.tree_digest).slice(0, 12)}). Nothing was pushed. Re-run /pr-save on a quiet tree.`,
+    + `${String(post.tree_digest).slice(0, 12)}). Nothing was pushed. Re-run /safe-pr on a quiet tree.`,
     { branch: commitRun.branch || branch, committed: !!commitRun.committed })
 }
 

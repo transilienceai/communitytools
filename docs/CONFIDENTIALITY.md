@@ -60,14 +60,14 @@ untracked-not-ignored ones, because the latter is what the next commit would pub
 | `tools/content-guard-write.py` | one incoming Write/Edit, before it reaches disk | yes (fails open by design) |
 | `.githooks/pre-commit` | staged content | yes (`--no-verify`) |
 | `.githooks/pre-push` | whole tree | yes (`--no-verify`) |
-| `/content-guard` workflow | changed scope **+** whole tree | it is the gate inside `/pr-save` |
+| `/content-guard` workflow | changed scope **+** whole tree | it is the gate inside `/safe-pr` |
 | `.github/workflows/content-guards.yml` | whole tree, **no path filter**; plus changed scope on every PR | no |
 
 Enable the hooks once per clone: `git config core.hooksPath .githooks`
 
-## Before you publish: `/content-guard` and `/pr-save`
+## Before you publish: `/content-guard` and `/safe-pr`
 
-`/content-guard` answers "is what I have right now safe to push?" and `/pr-save` opens a
+`/content-guard` answers "is what I have right now safe to push?" and `/safe-pr` opens a
 pull request **only** if it says yes. The verdict is computed by
 `scripts/check_client_data.py` and gated in code — no model is in the finding path, and no
 model can clear a finding.
@@ -92,7 +92,7 @@ Three flags exist for the same reason the guard never echoes a denylisted term:
 - `--json PATH` writes a machine-readable verdict that is value-free by construction: every
   record is truncated at the first `->`, and the writer asserts it.
 - `--scan-file PATH` runs the same line rules over authored text — a PR or issue body — which
-  becomes public and which no other seam in this repo scanned. `/pr-save` gates on it before
+  becomes public and which no other seam in this repo scanned. `/safe-pr` gates on it before
   `gh pr create`.
 
 `--require-denylist` fails a scan whose client-name lane never ran. `load_denylist()` returns

@@ -1,7 +1,7 @@
 export const meta = {
   name: 'content-guard',
   description: 'Deterministically prove that the changes currently in this repository carry no customer name, engagement identifier, target IP, credential, personal data or operator path before any of it becomes public. Scans what PUSHING THIS BRANCH would publish — every blob any commit on the branch introduced, plus the worktree, the index and untracked files — not the net diff, because a push publishes history and a secret added then deleted is absent from `BASE...HEAD` yet still fetched by anyone who clones the PR ref. Runs the changed scan AND a whole-tree backstop, plus the IP-neutrality and report-generator-fork guards, then computes the verdict in pure JS from the tools JSON. NO model is in the finding path: agents run commands and relay output verbatim, and every accept/reject is code. Matched values never leave the tool — findings are truncated at the first " -> " so a report, a transcript and a public CI log carry the rule and the location only.',
-  whenToUse: 'Before publishing anything from this repo — invoked on its own to answer "is what I have right now safe to push?", or as the hard gate inside /pr-save. args: {base?: "origin/main", scope?: "both"|"changed"|"full", require_denylist?: true, manifest?: true, dryRun?}. Exit-code semantics are the tool\'s: CLEAN, BLOCKED (findings) or CONFIG_ERROR (the scan could not be trusted). Read-only — it writes nothing except gitignored scan artefacts under .claude/state/confidentiality/.',
+  whenToUse: 'Before publishing anything from this repo — invoked on its own to answer "is what I have right now safe to push?", or as the hard gate inside /safe-pr. args: {base?: "origin/main", scope?: "both"|"changed"|"full", require_denylist?: true, manifest?: true, dryRun?}. Exit-code semantics are the tool\'s: CLEAN, BLOCKED (findings) or CONFIG_ERROR (the scan could not be trusted). Read-only — it writes nothing except gitignored scan artefacts under .claude/state/confidentiality/.',
   phases: [
     { title: 'Scope', detail: 'resolve the base ref, HEAD, branch and the size of the change set' },
     { title: 'Scan', detail: 'run the deterministic guards; agents relay their JSON verbatim' },
@@ -286,7 +286,7 @@ const primary = changedPayload || fullPayload
 const findings = [...new Set([...(changedPayload?.findings || []), ...(fullPayload?.findings || [])])].sort()
 const warnings = [...new Set([...(changedPayload?.warnings || []), ...(fullPayload?.warnings || [])])].sort()
 
-// Paths this run actually certified — what /pr-save is allowed to stage. Taken
+// Paths this run actually certified — what /safe-pr is allowed to stage. Taken
 // from the tool's own universe (live worktree/index entries only), so the staged
 // set can never exceed the scanned set.
 const stageablePaths = [...new Set(changedPayload?.paths || [])].sort()

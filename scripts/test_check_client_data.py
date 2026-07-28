@@ -661,7 +661,7 @@ def test_staged_and_changed_are_exclusive():
 def test_changed_scan_exempts_allowlist_staleness():
     """A changed scan is partial exactly as a staged one is, so an entry for an
     untouched file is legitimately unconsumed. Without this exemption every
-    /pr-save run would exit 2 as a config error.
+    /safe-pr run would exit 2 as a config error.
 
     Runs entirely inside a probe repo. Mutating this repository's own tracked
     allowlist to assert a property of the guard means a crashed run leaves the
@@ -856,7 +856,7 @@ def test_oversized_text_fails_closed_in_every_mode():
 
 
 def test_tree_digest_is_invariant_across_a_commit():
-    """/pr-save re-scans after committing and refuses to push unless the digest
+    """/safe-pr re-scans after committing and refuses to push unless the digest
     still matches what the guard certified. Committing moves an item from the
     worktree lane to the history lane and changes its KEY, so a key-addressed
     digest would change on every commit and that check could never pass."""

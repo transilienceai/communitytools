@@ -889,7 +889,7 @@ def tree_digest(entries: dict[str, dict]) -> str:
     keys. The distinction is load-bearing: `git commit` moves an item from the
     worktree lane to the history lane, and a history item is keyed `path@<sha>`
     while a live one is keyed `path`. Digesting keys would therefore change on
-    every commit, so /pr-save's "is what I am pushing still what the guard read?"
+    every commit, so /safe-pr's "is what I am pushing still what the guard read?"
     check could never pass. Digesting (path, content) makes the answer depend on
     the published bytes alone — which is the question actually being asked.
     """
