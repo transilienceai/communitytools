@@ -160,6 +160,54 @@ def validate(catalog: dict, md_path) -> list[str]:
     except FileNotFoundError:
         errors.append(f"coverage-matrix.md not found at {md_path}")
 
+    # 13. OWASP Top 10 accountability. Claiming OWASP alignment is only honest if
+    #     every category is either exercised by a class or excluded on the record.
+    #     A category that is simply absent reads as covered, which is the failure
+    #     this check exists to prevent.
+    errors += _validate_owasp(meta, rows)
+
+    return errors
+
+
+def _validate_owasp(meta: dict, rows: list) -> list[str]:
+    errors: list[str] = []
+    block = meta.get("owasp_top10_2021")
+    if not block:
+        return ["meta.owasp_top10_2021 missing — the OWASP accountability map is required"]
+
+    valid = {f"A{n:02d}:2021" for n in range(1, 11)}
+    covered: set = set()
+    for r in rows:
+        refs = r.get("owasp_refs", [])
+        if not isinstance(refs, list):
+            errors.append(f"[{r.get('class_id')}] owasp_refs must be a list, got {type(refs).__name__}")
+            continue
+        bad = [x for x in refs if x not in valid]
+        if bad:
+            errors.append(f"[{r.get('class_id')}] owasp_refs has unknown categor(ies): {bad}")
+        covered |= {x for x in refs if x in valid}
+
+    excluded = block.get("not_assessed") or {}
+    if not isinstance(excluded, dict):
+        return errors + ["meta.owasp_top10_2021.not_assessed must be an object {category: reason}"]
+    bad_excl = [k for k in excluded if k not in valid]
+    if bad_excl:
+        errors.append(f"not_assessed has unknown categor(ies): {sorted(bad_excl)}")
+    thin = [k for k, v in excluded.items() if not isinstance(v, str) or len(v.strip()) < 40]
+    if thin:
+        errors.append(f"not_assessed needs a substantive reason (>=40 chars) for: {sorted(thin)}")
+
+    both = sorted(covered & set(excluded))
+    if both:
+        errors.append(f"categor(ies) both covered by a class and listed not_assessed: {both}")
+
+    unaccounted = sorted(valid - covered - set(excluded))
+    if unaccounted:
+        errors.append(
+            "OWASP categor(ies) neither covered by a class nor explicitly excluded: "
+            f"{unaccounted} — add owasp_refs to the class that exercises it, or record it "
+            "in meta.owasp_top10_2021.not_assessed with a reason")
+
     return errors
 
 
