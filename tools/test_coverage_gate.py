@@ -582,6 +582,319 @@ def test_all_deferred_never_completes():
     assert m["coverage_ratio"] == 0.0 and not m["complete"] and rc == 1, f"all-deferred must hard-block: {out}"
 
 
+# --- mobile (MASVS) ----------------------------------------------------------
+MOBILE_CLASSES = {c["class_id"] for c in CATALOG["classes"] if c["taxonomy"] == "MASVS-2023"}
+# the six classes that gate solely on http_listener / tls_listener — a mobile asset
+# must never enumerate any of them
+WEB_LISTENER_CLASSES = {"XC-CORS", "XC-TRANSPORT-DOWNGRADE", "XC-VERBOSE-ERRORS",
+                        "XC-SECURITY-HEADERS", "XC-TLS-POSTURE", "WEB-A06-COMPONENTS"}
+# the worked example from masvs-class-map.md / the plan
+RN_UNITS = [
+    {"unit_id": "cmp:MainActivity", "type": "component",
+     "address": "com.example.fieldapp/.MainActivity", "flags": ["exported_component"]},
+    {"unit_id": "cmp:DevSettings", "type": "component",
+     "address": "com.facebook.react.devsupport.DevSettingsActivity",
+     "flags": ["exported_component"], "equiv_group": "rn-devsupport"},
+    {"unit_id": "cmp:DevLoading", "type": "component",
+     "address": "com.facebook.react.devsupport.DevLoadingView",
+     "flags": ["exported_component"], "equiv_group": "rn-devsupport"},
+    {"unit_id": "dl:ticket", "type": "deeplink", "address": "fieldapp://ticket/{id}", "flags": []},
+    {"unit_id": "wv:Help", "type": "webview",
+     "address": "com.example.fieldapp.ui.HelpWebView#onCreate", "flags": ["webview"]},
+    {"unit_id": "st:prefs", "type": "storage",
+     "address": "/data/data/com.example.fieldapp/shared_prefs/session.xml", "flags": ["local_store"]},
+    {"unit_id": "st:rkstorage", "type": "storage",
+     "address": "/data/data/com.example.fieldapp/databases/RKStorage", "flags": ["local_store"]},
+    {"unit_id": "cy:Envelope", "type": "crypto-use",
+     "address": "com/example/fieldapp/net/Envelope;->encrypt", "flags": ["crypto_use"]},
+]
+
+
+def mobile_app(base, tag, units, platform="android", dirname=None, flags=None):
+    d = os.path.join(base, dirname or tag)
+    wjson(os.path.join(d, "recon", "inventory", "mobile-surface.json"),
+          {"schema": "mobile-surface/v1", "asset_tag": tag, "platform": platform,
+           "package": "com.example.fieldapp", "version": "2.4.1",
+           "artifact_sha256": "deadbeef", "flags": flags or [], "units": units})
+    return d
+
+
+def test_mobile_never_acquires_http_listener():
+    """Trap 1: a mobile unit must never be routed through web_unit_flags/parse_listener.
+
+    web_unit_flags stamps http_listener on EVERY unit unconditionally, and
+    parse_listener defaults any colon-less address to '<addr>:443'. If a mobile unit
+    ever reached them, `com.example.fieldapp/.MainActivity` would mint the listener
+    `com.example.fieldapp:443` and the app would enumerate the four http_listener
+    classes. Belt-and-braces so this still fires if a host-scope mobile class is
+    ever added.
+    """
+    import re
+    tmp = tempfile.mkdtemp()
+    d = mobile_app(tmp, "fieldapp-app", RN_UNITS)
+    cells = load_cells(tmp, d)
+    raw = open(os.path.join(d, "applicability", "cells.json")).read()
+    doc = json.loads(raw)
+
+    assert not [c for c in cells if c["scope"] == "host"], "mobile must yield ZERO host-scope cells"
+    got = {c["class_id"] for c in cells}
+    assert not (got & WEB_LISTENER_CLASSES), f"listener classes enumerated for an app: {got & WEB_LISTENER_CLASSES}"
+    assert not [c for c in cells if re.search(r":\d+$", str(c["scope_key"]))], \
+        "no host:port scope_key may be minted from a mobile address"
+    assert ":443" not in raw, "parse_listener's :443 default must never touch a mobile asset"
+    assert doc["assets"]["fieldapp-app"]["open_listeners"] == []
+
+    sys.path.insert(0, HERE)
+    import enumerate_cells as ec
+    a = ec.load_mobile_app(d)
+    assert a["listener_flags"] == {} and a["kind"] == "mobile"
+    assert "http_listener" not in a["asset_flags"] and "tls_listener" not in a["asset_flags"]
+    assert all("http_listener" not in u["flags"] for u in a["units"])
+
+
+def test_mobile_loader_shape():
+    """Unit flags must NOT roll up to the asset, or every app double-counts its work-list."""
+    sys.path.insert(0, HERE)
+    import enumerate_cells as ec
+    tmp = tempfile.mkdtemp()
+    d = mobile_app(tmp, "fieldapp-app", RN_UNITS)
+    a = ec.load_mobile_app(d)
+    assert a["asset_flags"] == {"mobile_app"}, f"asset_flags rolled up unit flags: {a['asset_flags']}"
+    # an asset-level agent declaration IS honoured
+    d2 = mobile_app(tmp, "other-app", RN_UNITS, dirname="other", flags=["static_js_or_repo"])
+    a2 = ec.load_mobile_app(d2)
+    assert a2["asset_flags"] == {"mobile_app", "static_js_or_repo"}
+    # a derived flag can never be injected by the agent
+    d3 = mobile_app(tmp, "evil-app", RN_UNITS, dirname="evil", flags=["http_listener", "is_apex"])
+    a3 = ec.load_mobile_app(d3)
+    assert a3["asset_flags"] == {"mobile_app"}, "an agent must not be able to declare a DERIVED flag"
+
+
+def test_mobile_per_class_enumeration():
+    tmp = tempfile.mkdtemp()
+    d = mobile_app(tmp, "fieldapp-app", RN_UNITS)
+    cells = load_cells(tmp, d)
+    unit_cells = [c for c in cells if c["scope"] == "unit"]
+    asset_cells = [c for c in cells if c["scope"] == "asset"]
+    by_class = {}
+    for c in unit_cells:
+        by_class.setdefault(c["class_id"], []).append(c["scope_key"])
+    assert len(by_class["MAS-PLATFORM-IPC"]) == 4, by_class.get("MAS-PLATFORM-IPC")
+    assert len(by_class["MAS-PLATFORM-WEBVIEW"]) == 1
+    assert len(by_class["MAS-STORAGE-LOCAL"]) == 2
+    assert len(by_class["MAS-CRYPTO-WEAK"]) == 1
+    assert len(unit_cells) == 8, f"expected 8 unit cells, got {len(unit_cells)}"
+    # 11 MASVS asset classes + the unconditional API8-MISCONFIG
+    assert len(asset_cells) == 12, f"expected 12 asset cells, got {len(asset_cells)}"
+    assert all(c["scope_key"] == "fieldapp-app" for c in asset_cells)
+
+
+def test_mobile_shares_only_api8():
+    """The sharpest statement of disjointness: mobile and web classes never cross."""
+    tmp = tempfile.mkdtemp()
+    d = mobile_app(tmp, "fieldapp-app", RN_UNITS)
+    got = {c["class_id"] for c in load_cells(tmp, d)}
+    assert got - MOBILE_CLASSES == {"API8-MISCONFIG"}, f"unexpected web classes on an app: {got - MOBILE_CLASSES}"
+
+
+def test_web_asset_gets_no_mobile_cells():
+    tmp = tempfile.mkdtemp()
+    d = web_asset(tmp, "api-demo", [{"unit_id": "u-1", "type": "endpoint",
+                                     "address": "https://api.demo.test/v1/x/{id}",
+                                     "flags": ["object_by_id", "json_body"]}])
+    got = {c["class_id"] for c in load_cells(tmp, d)}
+    assert not (got & MOBILE_CLASSES), f"mobile classes leaked onto a web asset: {got & MOBILE_CLASSES}"
+
+
+def test_mobile_type_implies_flag():
+    """A declared type adds its flag even when the agent omitted it (monotone)."""
+    tmp = tempfile.mkdtemp()
+    d = mobile_app(tmp, "fieldapp-app", [
+        {"unit_id": "wv:bare", "type": "webview", "address": "X#onCreate", "flags": []},
+    ])
+    got = {c["class_id"] for c in load_cells(tmp, d) if c["scope"] == "unit"}
+    assert got == {"MAS-PLATFORM-WEBVIEW"}, got
+
+
+def test_mobile_zero_units_still_owes_asset_cells():
+    """A units-less app is a recon FAILURE, not an absent asset (unlike a dead host)."""
+    tmp = tempfile.mkdtemp()
+    d = mobile_app(tmp, "fieldapp-app", [])
+    cells = load_cells(tmp, d)
+    assert len(cells) == 12, f"expected the 12 asset cells, got {len(cells)}"
+    rc, out, m = gate(d, single=True)
+    assert rc == 1 and not m["complete"], "an unenumerated app must block, not pass vacuously"
+
+
+def test_mobile_active_probe_needs_corroborator():
+    tmp = tempfile.mkdtemp()
+    d = mobile_app(tmp, "fieldapp-app", RN_UNITS)
+    cells = load_cells(tmp, d)
+    target = next(c for c in cells if c["class_id"] == "MAS-RESILIENCE-ROOT")
+    append_experiment(d, "E-001")
+    write_coverage(d, {"MAS-RESILIENCE-ROOT": [
+        {"key": target["scope_key"], "status": "covered_negative", "e_id": "E-001"}]})
+    rc, out, m = gate(d, single=True)
+    bad = [r for r in m["missing_cells"] if r["class_id"] == "MAS-RESILIENCE-ROOT"]
+    assert bad and bad[0]["reason"] == "uncorroborated_negative", bad
+    write_tool_md(d, "E-001")
+    rc, out, m = gate(d, single=True)
+    assert not [r for r in m["missing_cells"] if r["class_id"] == "MAS-RESILIENCE-ROOT"], \
+        "a corroborated negative must close the cell"
+
+
+def test_only_runtime_cells_are_device_deferrable():
+    """A device excuse is valid ONLY for a cell that genuinely needs a device.
+
+    static  -> provable from the artifact; a missing device is no excuse.
+    either  -> the static route stays open when no device is available; likewise.
+    runtime -> genuinely blocked, so a substantiated device deferral is legitimate.
+    """
+    tmp = tempfile.mkdtemp()
+    d = mobile_app(tmp, "fieldapp-app", RN_UNITS)
+    cells = load_cells(tmp, d)
+    pick = lambda cid: next(c for c in cells if c["class_id"] == cid)
+    static_cell, either_cell = pick("MAS-NETWORK-CLEARTEXT"), pick("MAS-CRYPTO-KEYMGMT")
+    runtime_cell, web_cell = pick("MAS-NETWORK-PINNING"), pick("API8-MISCONFIG")
+    assert static_cell["proof_mode"] == "static"
+    assert either_cell["proof_mode"] == "either"
+    assert runtime_cell["proof_mode"] == "runtime"
+    assert web_cell["proof_mode"] == "either", "a class with no proof_mode defaults to either"
+    cir = write_cir(d)
+    defer = {"status": "deferred", "deferral_reason": "no rooted device available",
+             "client_input_request": cir, "blocked_on": "device"}
+    write_coverage(d, {c["class_id"]: [{"key": c["scope_key"], **defer}]
+                       for c in (static_cell, either_cell, runtime_cell, web_cell)})
+    rc, out, m = gate(d, single=True, accept_deferrals=True)
+    rejected = {r["class_id"] for r in m["missing_cells"]
+                if r["reason"] == "deferred_device_excuse_on_provable_cell"}
+    deferred = {r["class_id"] for r in m["deferred_cells"]}
+    assert rejected == {"MAS-NETWORK-CLEARTEXT", "MAS-CRYPTO-KEYMGMT", "API8-MISCONFIG"}, rejected
+    assert deferred == {"MAS-NETWORK-PINNING"}, deferred
+    assert not (rejected & deferred)
+
+
+def test_non_device_deferral_still_works_for_any_cell():
+    """Tightening the DEVICE excuse must not break deferrals for other blockers."""
+    tmp = tempfile.mkdtemp()
+    d = mobile_app(tmp, "fieldapp-app", RN_UNITS)
+    cells = load_cells(tmp, d)
+    static_cell = next(c for c in cells if c["class_id"] == "MAS-NETWORK-CLEARTEXT")
+    cir = write_cir(d)
+    write_coverage(d, {"MAS-NETWORK-CLEARTEXT": [{
+        "key": static_cell["scope_key"], "status": "deferred",
+        "deferral_reason": "client has not released the production build for analysis",
+        "client_input_request": cir, "blocked_on": "artifact"}]})
+    rc, out, m = gate(d, single=True, accept_deferrals=True)
+    assert any(r["class_id"] == "MAS-NETWORK-CLEARTEXT" for r in m["deferred_cells"]), \
+        "a non-device blocker must still be deferrable on a static cell"
+
+
+def test_mobile_dast_deferral_lifecycle():
+    tmp = tempfile.mkdtemp()
+    d = mobile_app(tmp, "fieldapp-app", RN_UNITS)
+    cells = load_cells(tmp, d)
+    runtime_cells = [c for c in cells if c["proof_mode"] == "runtime"]
+    assert runtime_cells, "the catalog must mark some mobile cells runtime-only"
+    close_all_but_defer(d, cells, runtime_cells)
+    rc, out, m = gate(d, single=True)
+    assert not m["complete"], "deferrals must not silently complete without --accept-deferrals"
+    rc, out, m = gate(d, single=True, accept_deferrals=True)
+    deferred_ids = {c["class_id"] for c in m["deferred_cells"]}
+    assert deferred_ids == {c["class_id"] for c in runtime_cells}, deferred_ids
+    assert not m["missing_cells"], f"substantiated deferrals are not misses: {m['missing_cells']}"
+    assert m["complete"], out
+
+
+def test_mobile_unsubstantiated_deferral_is_hard_miss():
+    tmp = tempfile.mkdtemp()
+    d = mobile_app(tmp, "fieldapp-app", RN_UNITS)
+    cells = load_cells(tmp, d)
+    runtime_cells = [c for c in cells if c["proof_mode"] == "runtime"]
+    close_all_but_defer(d, cells, runtime_cells, cir=False)  # CIR path does not resolve
+    rc, out, m = gate(d, single=True, accept_deferrals=True)
+    assert rc == 1 and not m["complete"]
+    assert any(c["reason"] == "deferred_unsubstantiated" for c in m["missing_cells"]), m["missing_cells"]
+
+
+def test_emit_open_marks_runtime_cells():
+    tmp = tempfile.mkdtemp()
+    d = mobile_app(tmp, "fieldapp-app", [])
+    load_cells(tmp, d)
+    rc, out, _ = gate(d, single=True, emit_open=True)
+    assert "[runtime]" in out, f"open runtime cells must be annotated for THINK routing:\n{out}"
+    assert "MAS-NETWORK-PINNING" in out
+
+
+def test_mobile_equiv_group():
+    """Near-identical exported components ride one real probe."""
+    tmp = tempfile.mkdtemp()
+    d = mobile_app(tmp, "fieldapp-app", RN_UNITS)
+    cells = load_cells(tmp, d)
+    ipc = [c for c in cells if c["class_id"] == "MAS-PLATFORM-IPC"]
+    grouped = [c for c in ipc if c.get("equiv_group") == "rn-devsupport"]
+    assert len(grouped) == 2, grouped
+    rep, sibling = grouped[0], grouped[1]
+    append_experiment(d, "E-010")
+    write_validated(d, "F-01", "MAS-PLATFORM-IPC", [rep["scope_key"]], "fieldapp-app")
+    write_coverage(d, {"MAS-PLATFORM-IPC": [
+        {"key": rep["scope_key"], "status": "covered", "e_id": "E-010"},
+        {"key": sibling["scope_key"], "status": "covered", "e_id": "E-010"},
+    ]})
+    rc, out, m = gate(d, single=True)
+    sib = next((r for r in m["covered_equiv"] if r["scope_key"] == sibling["scope_key"]), None)
+    assert sib is not None and sib.get("representative") == rep["scope_key"], m["covered_equiv"]
+    assert not [r for r in m["missing_cells"] if r["scope_key"] == sibling["scope_key"]]
+
+
+def test_mobile_and_web_in_separate_dirs():
+    """The MAPT layout: app bundle and its recovered backend, each its own asset dir.
+
+    They MUST NOT share a directory — coverage_gate loads the ledger per asset_dir,
+    so a shared coverage.json makes each asset see the other's entries as extra_cells,
+    mutually, and `complete` becomes unreachable.
+    """
+    tmp = tempfile.mkdtemp()
+    app = mobile_app(tmp, "fieldapp-app", RN_UNITS)
+    api = web_asset(tmp, "example-api", [{"unit_id": "u-1", "type": "endpoint",
+                                          "address": "https://api.example.test/v1/t/{id}",
+                                          "flags": ["object_by_id"]}], apex="example.test")
+    assert os.path.dirname(app) == os.path.dirname(api) and app != api
+    enum(tmp)
+    doc = json.loads(open(os.path.join(tmp, "applicability", "cells.json")).read())
+    assert set(doc["assets"]) == {"fieldapp-app", "example-api"}
+    assert doc["assets"]["fieldapp-app"]["kind"] == "mobile"
+    assert doc["assets"]["example-api"]["kind"] == "web"
+    app_ids = {c["class_id"] for c in doc["cells"] if c["asset_tag"] == "fieldapp-app"}
+    api_ids = {c["class_id"] for c in doc["cells"] if c["asset_tag"] == "example-api"}
+    assert not (app_ids & WEB_LISTENER_CLASSES)
+    assert not (api_ids & MOBILE_CLASSES)
+    rc, out, m = gate(tmp)
+    assert not m["extra_cells"], f"separate dirs must not cross-contaminate: {m['extra_cells']}"
+
+
+def test_duplicate_asset_tag_fails_closed():
+    tmp = tempfile.mkdtemp()
+    mobile_app(tmp, "same-tag", RN_UNITS, dirname="a")
+    web_asset(tmp, "same-tag", [{"unit_id": "u-1", "type": "endpoint",
+                                 "address": "https://x.test/", "flags": []}])
+    rc, out = enum(tmp)
+    assert rc == 2, f"a duplicate asset_tag must fail closed (exit 2), got {rc}: {out}"
+    assert "duplicate asset_tag" in out
+
+
+def test_mobile_no_surface_undercount():
+    """surface_undercount is web-only; a subdomains.json beside an app must not trip it."""
+    tmp = tempfile.mkdtemp()
+    d = mobile_app(tmp, "fieldapp-app", RN_UNITS)
+    wjson(os.path.join(d, "recon", "inventory", "subdomains.json"),
+          [{"host": "never-enumerated.example.test"}])
+    cells = load_cells(tmp, d)
+    close_all(d, cells)
+    rc, out, m = gate(d, single=True)
+    assert not m["surface_undercount"], m["surface_undercount"]
+
+
 def main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     failed = 0

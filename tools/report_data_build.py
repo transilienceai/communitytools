@@ -161,7 +161,7 @@ def build_attack_coverage(eng_dir):
     per_class = m.get("per_class") or {}
     if not per_class:
         return None
-    tax_order = {"API-2023": 0, "Web-2021": 1, "Cross-cut": 2}
+    tax_order = {"API-2023": 0, "Web-2021": 1, "Cross-cut": 2, "MASVS-2023": 3}
     items = sorted(per_class.items(),
                    key=lambda kv: (tax_order.get((kv[1] or {}).get("taxonomy"), 9), kv[0]))
     rows = [[cid, pc.get("taxonomy", ""), (pc.get("title") or "")[:52],

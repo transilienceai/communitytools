@@ -42,7 +42,10 @@ ok(/ROLE: CERT-IN CLASSIFIER \(single batched pass/.test(ce), 'Classify is a sin
 ok(/ROLE: CERT-IN VERIFIER \(blind/.test(ce), 'Verify is a blind independent agent');
 
 // ---- pentest-engagement.js auto-trigger (guarded, non-blocking) ----------
-ok((pe.match(/certinExport: input\.certin_export === true/g) || []).length === 2, 'certinExport threaded at BOTH finalize call sites (web + network)');
+// Exact equality, not >=: the property is that EVERY finalize site threads it and
+// no site is dead code. A mobile CERT-In audit would otherwise silently lose its
+// deliverable.
+ok((pe.match(/certinExport: input\.certin_export === true/g) || []).length === 3, 'certinExport threaded at ALL THREE finalize call sites (web + network + mobile)');
 ok(/const wantCertin = opts\.certinExport === true/.test(pe), 'finalizeEngagement derives wantCertin from opts');
 ok(/certin_metadata_build\.py --engagement-dir \$\{engagementDir\}/.test(pe), 'the guarded finalize step runs the builder');
 {

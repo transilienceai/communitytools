@@ -88,6 +88,14 @@ benchmarks/bountybench/results/
 !mcp/**/*.json
 # Skill compliance catalogs are source-of-truth data, not engagement output — keep them tracked
 !skills/**/reference/catalog/*.json
+# The attack-class coverage catalog is the MACHINE source of truth for the whole
+# coverage gate (enumerate_cells / coverage_gate / validate_catalog all load it) and
+# the report-data schema is the contract generate_report.py renders against. Both sat
+# under the blanket *.json rule, so neither was tracked: a fresh checkout had no
+# catalog, `validate_catalog.py` could not run in CI, and the CI paths: filter that
+# names coverage-matrix.json could never fire on a file git did not know about.
+!skills/coordination/reference/coverage-matrix.json
+!skills/transilience-report-style/reference/report-data-schema.json
 # PCI SSS catalog build config (deterministic, auditable) — keep tracked
 !tools/pci-sss/*.json
 # Content-guard binary pins. MUST stay tracked: without this file the guard cannot

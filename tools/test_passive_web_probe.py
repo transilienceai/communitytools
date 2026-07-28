@@ -506,6 +506,32 @@ def test_soft404_shell_not_reported_as_openapi():
     assert any(o["kind"] == "soft_404" for o in obs), f"swagger paths must be recorded as soft-404: {obs}"
 
 
+def test_mobile_asset_is_never_probed():
+    """Trap 4: a mobile app asset must never be sent an HTTP probe.
+
+    XC-SECRET-EXPOSURE gates on static_js_or_repo, an AGENT flag a mobile app can
+    legitimately carry (a bundled JS/AOT blob IS a static bundle). Filtering cells by
+    class alone would enumerate that cell for the app and fabricate a covered_negative
+    against a file on disk.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        d = os.path.join(tmp, "fieldapp-app")
+        os.makedirs(os.path.join(d, "recon", "inventory"))
+        with open(os.path.join(d, "recon", "inventory", "mobile-surface.json"), "w") as f:
+            json.dump({"schema": "mobile-surface/v1", "asset_tag": "fieldapp-app",
+                       "platform": "android", "package": "com.example.fieldapp",
+                       "flags": ["static_js_or_repo"],
+                       "units": [{"unit_id": "st:prefs", "type": "storage",
+                                  "address": "/data/data/com.example.fieldapp/shared_prefs/s.xml",
+                                  "flags": ["local_store"]}]}, f)
+        summary = run_probe(d, no_nmap=True)
+        assert summary["covered_negative"] == [], \
+            f"a mobile asset must yield no probed negatives: {summary['covered_negative']}"
+        assert summary["findings"] == [], summary["findings"]
+        assert not os.path.isfile(os.path.join(d, "coverage.json")), \
+            "the probe must not write a coverage ledger for a mobile asset"
+
+
 def main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     failed = 0

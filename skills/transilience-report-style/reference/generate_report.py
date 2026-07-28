@@ -246,7 +246,11 @@ def build(data, dest, assets, theme=None):
         # Paragraph cells, so the colour must live in the cell markup itself.
         # sevcol/scorecol/statuscol accept an int or a list.
         sevc, scoc, statc = _cols(sevcol), _cols(scorecol), _cols(statuscol)
+        # "deferred" needs its own colour: it is neither covered nor open work, and
+        # rendering it uncoloured beside a red "pending" reads as "fine" when it means
+        # "blocked on the client". Mobile DAST deferrals make this routine.
         STATUS_COL = {"covered": T["GREEN"], "covered_negative": T["BLUE"],
+                      "deferred": T["AMBER"],
                       "pending": T["SEV"]["Critical"], "untested": T["SEV"]["Critical"]}
         def cellp(val, ci):
             col = None

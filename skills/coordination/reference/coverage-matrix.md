@@ -2,13 +2,13 @@
 
 The completion contract for **coverage-style engagements** (web / API / cloud / network pentests, as opposed to flag/CTF hunts). A flag engagement is done when the flag submits; a coverage engagement is done when **every applicable (surface-unit × attack-class) cell has been covered or genuinely negated** — enforced deterministically by code, not agent narrative.
 
-The **machine-readable catalog is [`coverage-matrix.json`](coverage-matrix.json)** — 24 classes, each with a `scope` (`unit` | `host` | `asset`), a code-evaluable `applies_when` predicate over surface flags, and a `negative_kind` (`active_probe` | `reachability` | `none`). This markdown is the human companion; `tools/validate_catalog.py` keeps the two in class_id-parity. `tools/enumerate_cells.py` reads the catalog + the discovered surface (`recon/inventory/surface.json` for web, `hosts/<ip>/host.json` for network) to code-produce the applicable-cell work-list `OUTPUT_DIR/applicability/cells.json`; each engagement records coverage as a per-cell `units_tested` ledger in `OUTPUT_DIR/coverage.json`; and `tools/coverage_gate.py` joins the two against real on-disk evidence.
+The **machine-readable catalog is [`coverage-matrix.json`](coverage-matrix.json)** — 39 classes (24 web/API + 15 mobile MASVS), each with a `scope` (`unit` | `host` | `asset`), a code-evaluable `applies_when` predicate over surface flags, and a `negative_kind` (`active_probe` | `reachability` | `none`). This markdown is the human companion; `tools/validate_catalog.py` keeps the two in class_id-parity. `tools/enumerate_cells.py` reads the catalog + the discovered surface (`recon/inventory/surface.json` for web, `hosts/<ip>/host.json` for network, `recon/inventory/mobile-surface.json` for a mobile app bundle) to code-produce the applicable-cell work-list `OUTPUT_DIR/applicability/cells.json`; each engagement records coverage as a per-cell `units_tested` ledger in `OUTPUT_DIR/coverage.json`; and `tools/coverage_gate.py` joins the two against real on-disk evidence.
 
 Companion to `ATTACK_INDEX.md` (which inventories *what techniques the library covers*). This file defines *what an engagement must cover before it may be called COMPLETE*. The api-security fingerprint decision tree (`skills/api-security/reference/api-security-principles.md`) tells you where to START once a symptom appears; this matrix defines DONE — including the classes that emit **no fingerprint until actively probed** and are therefore missed by symptom-driven routing.
 
 ## Scoping rule
 
-Applicability is decided **by code**, per cell: `tools/enumerate_cells.py` evaluates each class's `applies_when` predicate against the flags of every surface unit / listener / asset (14 agent-set flags the recon agent records, plus 6 code-derived flags — `http_listener`, `tls_listener`, `version_fingerprinted`, `has_api`, `is_apex`, `serves_js` — that the agent cannot fabricate). A `unit`-scope class emits one cell per matching surface unit; `host`-scope one cell per distinct open listener (`host:port`); `asset`-scope one cell per asset. `coverage_ratio = passed_cells / applicable_cells`. **The gate is a hard 100% gate**: `tools/coverage_gate.py` FAILs (exit 1) unless `coverage_ratio == 1.0` with no missing / extra / dangling / false-NA / surface-undercount cells. Marking a code-applicable cell `NA` is a hard fabrication FAIL. (This replaces the old 0.80 soft bar; `validator-role.md` check 8 now runs the gate.)
+Applicability is decided **by code**, per cell: `tools/enumerate_cells.py` evaluates each class's `applies_when` predicate against the flags of every surface unit / listener / asset (18 agent-set flags the recon agent records, plus 7 code-derived flags — `http_listener`, `tls_listener`, `version_fingerprinted`, `has_api`, `is_apex`, `serves_js`, `mobile_app` — that the agent cannot fabricate). A `unit`-scope class emits one cell per matching surface unit; `host`-scope one cell per distinct open listener (`host:port`); `asset`-scope one cell per asset. `coverage_ratio = passed_cells / applicable_cells`. **The gate is a hard 100% gate**: `tools/coverage_gate.py` FAILs (exit 1) unless `coverage_ratio == 1.0` with no missing / extra / dangling / false-NA / surface-undercount cells. Marking a code-applicable cell `NA` is a hard fabrication FAIL. (This replaces the old 0.80 soft bar; `validator-role.md` check 8 now runs the gate.)
 
 ## Class catalog
 
@@ -40,6 +40,32 @@ Applicability is decided **by code**, per cell: `tools/enumerate_cells.py` evalu
 | `XC-STORED-XSS` | Cross-cut | Stored/reflected/DOM XSS (report **persistence** even when render needs follow-up creds) | any stored user-controlled field | `client-side/SKILL.md` |
 | `XC-TLS-POSTURE` | Cross-cut | TLS posture (weak ciphers/protocols) via sslscan | any TLS listener | `cryptography/SKILL.md` (sslscan) |
 | `XC-SECRET-EXPOSURE` | Cross-cut | Secret/key exposure in JS bundles, docs, git | any static JS / repo | `osint/SKILL.md` |
+
+### Mobile app bundle (MASVS-2023)
+
+These cover a **mobile app artifact** enumerated from `recon/inventory/mobile-surface.json`. They are disjoint from the classes above by construction: every predicate requires the code-derived `mobile_app` flag, and a mobile asset never acquires `http_listener`/`tls_listener`/`is_apex`/`serves_js`/`has_api` — so an app enumerates no web class except the unconditional `API8-MISCONFIG`. **The backend API the app talks to is a separate web asset** with its own `surface.json` and the ordinary 24 classes; that split is deliberate, because a mobile engagement that only tests the bundle leaves the real risk untested.
+
+`proof_mode` says what closing the cell **as a negative** requires — `static` (the artifact suffices), `runtime` (a running instance is required), or `either`. `coverage_gate.py` rejects a `blocked_on: "device"` deferral on anything that is not `runtime`: a missing device cannot excuse work the static route could still do. Deferrals citing other blockers (no test tenant, no credentials, no released build) remain available to every cell.
+
+| class_id | Scope | Class — what it is | Applicability trigger | proof_mode |
+|----------|-------|--------------------|-----------------------|------------|
+| `MAS-STORAGE-LOCAL` | unit | Sensitive data in local storage (prefs/SQLite/Realm/files/Keychain item) | any local store unit | runtime |
+| `MAS-CRYPTO-WEAK` | unit | Weak crypto primitive at a call-site (ECB, static IV, MD5/SHA-1, seeded RNG) | any crypto call-site | static |
+| `MAS-PLATFORM-IPC` | unit | Exported component / deep link / URL scheme reachable by a third-party app | any exported component | runtime |
+| `MAS-PLATFORM-WEBVIEW` | unit | WebView/WKWebView misconfiguration (JS bridge, file access, mixed content) | any WebView | either |
+| `MAS-STORAGE-LOGS` | asset | Sensitive data leaked to logs, backups, or crash/analytics sinks | every app | runtime |
+| `MAS-CRYPTO-KEYMGMT` | asset | Key management (hardcoded keys; keys not bound to Keystore/Keychain) | every app | either |
+| `MAS-AUTH-LOCAL` | asset | Local auth (biometric/PIN) bypassable or not server-bound | every app | runtime |
+| `MAS-NETWORK-CLEARTEXT` | asset | Cleartext traffic permitted (NSC `cleartextTrafficPermitted` / ATS exceptions) | every app | static |
+| `MAS-NETWORK-PINNING` | asset | TLS pinning absent, inert, or bypassable | every app | runtime |
+| `MAS-PLATFORM-SCREEN` | asset | UI-channel leakage (FLAG_SECURE, task snapshot, pasteboard, keyboard cache) | every app | runtime |
+| `MAS-CODE-DEPENDENCY` | asset | Vulnerable & outdated bundled components (SBOM + CVE screen) | every app | static |
+| `MAS-CODE-SECRETS` | asset | Secrets/keys/endpoints recoverable from the artifact or JS/AOT bundle | every app | static |
+| `MAS-RESILIENCE-ROOT` | asset | Root/jailbreak & anti-debug detection absent, unwired, or defeated | every app | runtime |
+| `MAS-RESILIENCE-INTEGRITY` | asset | Code-signing / repackaging integrity (signature scheme, debug cert, repack+resign) | every app | static |
+| `MAS-PRIVACY-DATA` | asset | Declared-vs-actual data collection, trackers, PII egress | every app | runtime |
+
+Every asset-scope MAS class applies to **every** app — an agent cannot switch one off. An app with no biometric gate closes `MAS-AUTH-LOCAL` as a corroborated negative ("no local authenticator present, objection biometrics-bypass N/A, log attached"), which is honest and enforceable; an agent-controlled applicability switch would not be. Per-class technique detail: [`mobile-security/reference/masvs-class-map.md`](../../mobile-security/reference/masvs-class-map.md).
 
 ## Instance-file contract — `OUTPUT_DIR/coverage.json`
 

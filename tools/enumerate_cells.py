@@ -206,6 +206,78 @@ def load_network_host(host_json_path: str) -> dict | None:
     }
 
 
+# mobile: unit `type` -> the flag it implies. Monotone — a declared type can only
+# ADD cells, never remove one, so a forgotten flag costs coverage but never hides it.
+MOBILE_TYPE_FLAGS = {
+    "component": "exported_component",
+    "deeplink": "exported_component",
+    "webview": "webview",
+    "storage": "local_store",
+    "crypto-use": "crypto_use",
+}
+
+
+def load_mobile_app(asset_dir: str) -> dict | None:
+    """Mobile app-bundle asset (schema mobile-surface/v1).
+
+    Deliberately does NOT call web_unit_flags() or parse_listener(). web_unit_flags
+    stamps http_listener on every unit unconditionally ("a web surface unit is an
+    HTTP endpoint by definition") and parse_listener coerces any colon-less address
+    to "<addr>:443" — so routing a mobile unit through them would turn
+    `com.example.app/.MainActivity` into the listener `com.example.app:443` and make
+    the app eligible for XC-CORS / XC-TRANSPORT-DOWNGRADE / XC-VERBOSE-ERRORS /
+    XC-SECURITY-HEADERS. listener_flags stays EMPTY, so the host-scope branch of
+    cells_for_asset iterates zero times.
+
+    The backend API this client talks to is a SEPARATE web asset with its own
+    surface.json and the ordinary web/API classes — never modelled here.
+    """
+    spath = os.path.join(asset_dir, "recon", "inventory", "mobile-surface.json")
+    if not os.path.isfile(spath):
+        return None
+    try:
+        surf = json.load(open(spath, encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+    base = os.path.basename(asset_dir.rstrip("/"))
+    asset_tag = surf.get("asset_tag") or base
+
+    # Asset flags are the derived mobile_app plus ASSET-level declarations only.
+    # Unit flags deliberately do NOT roll up: rolling them up would make every app
+    # enumerate the four unit classes at asset scope as well, double-counting the
+    # work-list and breaking the "12 asset cells per app" invariant.
+    asset_flags: set = {"mobile_app"}
+    asset_flags |= {f for f in (surf.get("flags") or []) if f in AGENT_FLAGS}
+
+    unit_records = []
+    for u in surf.get("units") or []:
+        uid = u.get("unit_id")
+        if not uid:
+            continue
+        uf = {f for f in (u.get("flags") or []) if f in AGENT_FLAGS}
+        implied = MOBILE_TYPE_FLAGS.get(u.get("type"))
+        if implied:
+            uf.add(implied)
+        uf.add("mobile_app")
+        unit_records.append({"unit_id": uid, "flags": uf, "equiv_group": u.get("equiv_group")})
+
+    # NOTE: unlike load_network_host's zero-units guard, a units-less mobile app is
+    # a RECON FAILURE, not an absent asset — it still owes its asset-scope cells so
+    # the gate blocks rather than reporting a vacuous 1.0.
+    return {
+        "asset_tag": asset_tag, "kind": "mobile", "dir": asset_dir,
+        "platform": (surf.get("platform") or "").lower() or None,
+        "package": surf.get("package"), "version": surf.get("version"),
+        "artifact_sha256": surf.get("artifact_sha256"),
+        "units": unit_records,
+        "listener_flags": {},          # an app binary has NO listener
+        "asset_flags": asset_flags,
+        "open_listeners": [],
+        "surface_hosts": [], "recon_hosts": [],   # kind != "web" -> no surface_undercount
+    }
+
+
 def cells_for_asset(catalog: dict, asset: dict) -> list:
     cells = []
     by_id = catalog_by_id(catalog)
@@ -213,6 +285,7 @@ def cells_for_asset(catalog: dict, asset: dict) -> list:
         scope = cls["scope"]
         base = {"class_id": cid, "taxonomy": cls["taxonomy"], "title": cls["title"],
                 "scope": scope, "negative_kind": cls["negative_kind"], "min_vantages": cls["min_vantages"],
+                "proof_mode": cls.get("proof_mode", "either"),
                 "asset_tag": asset["asset_tag"]}
         if scope == "unit":
             for u in asset["units"]:
@@ -230,8 +303,14 @@ def cells_for_asset(catalog: dict, asset: dict) -> list:
 
 def discover_assets(engagement_dir: str) -> list:
     assets = []
+    # NOTE: the surface.json glob does NOT match mobile-surface.json — basenames are
+    # exact — so the two surface kinds never collide.
     for sp in sorted(glob.glob(os.path.join(engagement_dir, "**", "recon", "inventory", "surface.json"), recursive=True)):
         a = load_web_asset(os.path.dirname(os.path.dirname(os.path.dirname(sp))))
+        if a:
+            assets.append(a)
+    for mp in sorted(glob.glob(os.path.join(engagement_dir, "**", "recon", "inventory", "mobile-surface.json"), recursive=True)):
+        a = load_mobile_app(os.path.dirname(os.path.dirname(os.path.dirname(mp))))
         if a:
             assets.append(a)
     for hp in sorted(glob.glob(os.path.join(engagement_dir, "hosts", "*", "host.json"))):
@@ -244,21 +323,32 @@ def discover_assets(engagement_dir: str) -> list:
 def build(root: str, single_asset: bool) -> dict:
     catalog = load_catalog(DEFAULT_CATALOG)
     if single_asset:
-        if os.path.isfile(os.path.join(root, "recon", "inventory", "surface.json")):
-            assets = [a for a in [load_web_asset(root)] if a]
-        elif os.path.isfile(os.path.join(root, "host.json")):
-            assets = [a for a in [load_network_host(os.path.join(root, "host.json"))] if a]
-        else:
-            assets = []
+        # Accumulate rather than first-match-wins: a dir carrying both surface kinds
+        # must contribute both assets, never silently drop one.
+        assets = [a for a in (load_web_asset(root), load_mobile_app(root)) if a]
+        if not assets and os.path.isfile(os.path.join(root, "host.json")):
+            n = load_network_host(os.path.join(root, "host.json"))
+            if n:
+                assets.append(n)
     else:
         assets = discover_assets(root)
 
     all_cells = []
     asset_meta = {}
+    seen_tags: dict = {}
     for a in assets:
+        # Fail closed on a duplicate tag. asset_meta is keyed by asset_tag and the
+        # gate resolves each asset's ledger from meta["dir"], so a collision would
+        # silently evaluate both assets' cells against ONE directory.
+        if a["asset_tag"] in seen_tags:
+            raise CatalogError(
+                f"duplicate asset_tag {a['asset_tag']!r} in {seen_tags[a['asset_tag']]} "
+                f"and {a['dir']} — asset_tag must be unique across the engagement")
+        seen_tags[a["asset_tag"]] = a["dir"]
         all_cells.extend(cells_for_asset(catalog, a))
         asset_meta[a["asset_tag"]] = {
             "kind": a["kind"], "dir": os.path.relpath(a["dir"], root),
+            "platform": a.get("platform"),
             "open_listeners": a["open_listeners"],
             "surface_hosts": a["surface_hosts"], "recon_hosts": a["recon_hosts"],
         }

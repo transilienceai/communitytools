@@ -633,7 +633,13 @@ def write_finding(asset_dir: str, class_id: str, key: str, seq: int, one_line: s
 # --- orchestration -----------------------------------------------------------
 def run(asset_dir: str, allow: list, timeout: int, use_nmap: bool) -> dict:
     doc = run_enumerate(asset_dir)
-    cells = [c for c in doc.get("cells", []) if c["class_id"] in MECHANICAL]
+    # Web-kind guard: a mobile app asset can legitimately carry the AGENT flag
+    # static_js_or_repo (a bundled JS/AOT blob IS a static bundle), which makes the
+    # asset-scope XC-SECRET-EXPOSURE cell enumerate for it. Filtering by class alone
+    # would then send an HTTP probe at an app binary and fabricate a covered_negative.
+    kinds = {t: (m or {}).get("kind") for t, m in (doc.get("assets") or {}).items()}
+    cells = [c for c in doc.get("cells", [])
+             if c["class_id"] in MECHANICAL and kinds.get(c["asset_tag"]) == "web"]
     summary = {"asset_dir": asset_dir, "covered_negative": [], "findings": [],
                "limitations": [], "skipped_out_of_scope": [], "block_observations": []}
     if not cells:

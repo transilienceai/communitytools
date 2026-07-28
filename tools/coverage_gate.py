@@ -259,6 +259,15 @@ def eval_cell(cell, ctx):
     if status == "NA":
         return False, "na_fabrication", None
     if status == "deferred":
+        # A DEVICE excuse is only valid for a cell that genuinely needs a device.
+        # proof_mode "static" (provable from the artifact) and "either" (provable
+        # either way) both leave the static route open when no device is available,
+        # so deferring them on blocked_on:"device" would sweep away work nobody was
+        # prevented from doing — exactly the loophole the DAST gate exists to close.
+        # Deferrals for any OTHER reason (no test tenant, no credentials, client
+        # policy) are unaffected and still available to every cell.
+        if entry.get("blocked_on") == "device" and cell.get("proof_mode", "either") != "runtime":
+            return False, "deferred_device_excuse_on_provable_cell", None
         # Substantiation guard: a deferred cell must name a reason AND a client-input
         # request that resolves to a real on-disk file (like _is_corroborated). Two
         # agent-authored strings alone can never exempt a cell from the 100% gate.
@@ -357,6 +366,7 @@ def run_gate(root: str, single: bool, accept_deferrals: bool = False) -> dict:
             passed, reason, mode = eval_cell(c, ctx)
             rec = {"asset_tag": asset_tag, "scope": c["scope"], "scope_key": c["scope_key"],
                    "class_id": c["class_id"], "passed": passed, "reason": reason,
+                   "proof_mode": c.get("proof_mode", "either"),
                    "equiv_group": c.get("equiv_group")}
             if mode == "covered_equiv":
                 rec["representative"] = ctx.get("chosen_rep")
@@ -496,7 +506,10 @@ def _emit_open(result: dict) -> None:
     elif len(openc) <= 60:
         for r in openc:
             eq = f" [equiv:{r['equiv_group']}]" if r.get("equiv_group") else ""
-            print(f"OPEN {r['class_id']} @ {r['scope_key']} ({r['asset_tag']}){eq} — {r['reason']}")
+            # a runtime cell cannot be closed from the artifact — route it to a
+            # device-bearing mission rather than another static pass
+            pm = " [runtime]" if r.get("proof_mode") == "runtime" else ""
+            print(f"OPEN {r['class_id']} @ {r['scope_key']} ({r['asset_tag']}){eq}{pm} — {r['reason']}")
     else:
         by_class = defaultdict(int)
         for r in openc:

@@ -16,6 +16,22 @@ End-to-end mobile application VAPT for **Android (APK/AAB)** and **iOS (IPA)**, 
 
 **Static dump first** (faster, no device); dynamic is a first-class phase whenever a control can only be proven at runtime (enforced pinning, Keystore-backed keys, root reaction, IPC guards). Cross-asset stitching, scoring, and reporting are owned by sibling skills — this skill produces MASVS/MASTG-tagged findings and hands them off.
 
+## Coverage contract
+
+In a coverage-mode engagement (`pentest-engagement` mobile mode) completion is **code-enforced, not narrative**. Two surfaces are gated, and both are mandatory:
+
+| Surface | File | Classes |
+|---|---|---|
+| The app bundle | `recon/inventory/mobile-surface.json` | the 15 `MAS-*` MASVS classes |
+| The backend recovered **from** the bundle | `<apex>-api/recon/inventory/surface.json` | the ordinary OWASP API/web classes |
+
+The second row is where the material risk has historically been. A decompiled bundle hands you the full server contract, and that surface is not browser-reachable — so it is systematically under-tested by everyone, including the app's own developers. Recovering the endpoint inventory and driving it through the API classes is not an optional extra; a bundle that yields zero endpoints is treated as a **failed acquisition**.
+
+Per-class detail: [`reference/masvs-class-map.md`](reference/masvs-class-map.md). Two rules worth internalising before you write a negative:
+
+- **`proof_mode: runtime` cannot be closed statically.** Pinning and root detection are the classic traps: static analysis can prove a control is *inert* (a `CertificatePinner` built and never attached, a RootBeer that no DEX references) — raise that as a positive. It can never prove the control is *effective*; that needs a bypass attempt that failed, and a failed bypass is a legitimate, reportable result.
+- **`proof_mode: static` can never be device-deferred.** No device does not excuse the manifest, the signature, the bundled dependencies, or the secrets in the artifact.
+
 ## When to use
 
 - Target ships an **Android APK/AAB** or **iOS IPA** — extract and inspect before any runtime testing.

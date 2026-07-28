@@ -26,7 +26,13 @@ export const meta = {
 // a documented deviation from the "short-circuit before agents" convention.
 // ============================================================================
 
-const a = (args && typeof args === 'object' && !Array.isArray(args)) ? args : {}
+// args may arrive already-decoded, or as the JSON text of the same object when the
+// caller round-trips it through a string field — accept both.
+let rawArgs = args
+if (typeof rawArgs === 'string') {
+  try { rawArgs = JSON.parse(rawArgs) } catch (e) { rawArgs = null }
+}
+const a = (rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)) ? rawArgs : {}
 const OUTPUT_DIR = (a.output_dir || a.engagement_dir || '').replace(/\/+$/, '')
 const DRY = !!a.dryRun
 const FIRST_FINAL = a.first_final || null
@@ -49,7 +55,7 @@ const GATHER_SCHEMA = {
     findings_count: { type: 'number' },
     findings_source: { type: 'string', description: 'report_data.json | artifacts/validated | none' },
     target: { type: ['string', 'null'] },
-    engagement_kind: { type: ['string', 'null'], description: 'web | network | unknown' },
+    engagement_kind: { type: ['string', 'null'], description: 'web | network | mobile | unknown' },
     existing_certin: { type: 'boolean', description: 'input/certin.json present' },
     coverage_matrix_present: { type: 'boolean' },
     followup: { type: 'object', additionalProperties: true },
@@ -110,7 +116,7 @@ phase('Gather')
 const inv = await agent(
   `ROLE: GATHER (read-only inventory). cwd is repo root. Engagement dir: ${OUTPUT_DIR}.\n` +
   `1. Findings source: if ${OUTPUT_DIR}/reports/report_data.json exists and parses, findings_source="report_data.json" and findings_count=len(.findings); else count ${OUTPUT_DIR}/**/artifacts/validated/*.json with verdict in {VALID,REPAIRED} (findings_source="artifacts/validated"); else 0 and "none".\n` +
-  `2. From ${OUTPUT_DIR}/engagement-meta.json and ${OUTPUT_DIR}/engagement-scope.json (either may be absent): target, engagement_kind (network iff scope has targets and no apex_domains, else web), followup = {resume_round, supersedes, first_audit_count?}.\n` +
+  `2. From ${OUTPUT_DIR}/engagement-meta.json and ${OUTPUT_DIR}/engagement-scope.json (either may be absent): target, engagement_kind (prefer the engagement_kind recorded in engagement-meta.json; only if it is absent infer it: "mobile" iff the tree holds a recon/inventory/mobile-surface.json or the scope names an .apk/.aab/.ipa artifact, else "network" iff scope has targets and no apex_domains, else "web". A MOBILE engagement audits the app AND the backend recovered from it under ONE audit_type of "Mobile Application Audit" — the builder stamps a single value per export, so do not split the backend leg out), followup = {resume_round, supersedes, first_audit_count?}.\n` +
   `3. existing_certin = ${OUTPUT_DIR}/input/certin.json exists. coverage_matrix_present = ${OUTPUT_DIR}/reports/coverage-matrix.json exists.\n` +
   `4. cwe_defaults: for each finding output {id, title, cwe, cves:[ids], default_factor} where default_factor = "Vulnerable Software Versions" if it has any CVE, else a best-guess Attributing Factor from its CWE (one of: Coding Error, Configuration Error, Deployment Error, Design Error, Operation Error, Vulnerable Software Versions). Cap at 200 rows.\n` +
   `Do NOT modify anything. Return GATHER_SCHEMA.`,

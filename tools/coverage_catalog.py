@@ -16,9 +16,16 @@ present on a surface unit / listener / asset:
     {"all_flags": ["a", "b"]}     # the flag set is a superset of the list
     {"not": <node>}
 
-Every leaf flag must be one of the 20 vocabulary flags (14 agent-set + 6
-code-derived); eval/collect raise CatalogError on an unknown flag or malformed
+Every leaf flag must be one of the vocabulary flags (see AGENT_FLAGS /
+DERIVED_FLAGS); eval/collect raise CatalogError on an unknown flag or malformed
 node so the validator fails closed rather than silently mis-scoping.
+
+Mobile (MASVS) classes share this catalog. They are kept disjoint from the
+web/API classes by construction: every MAS-* predicate requires the code-derived
+`mobile_app` flag, which only load_mobile_app() sets, and no web/network loader
+can produce it. The reverse holds too — a mobile asset never acquires
+http_listener/is_apex/serves_js, so it enumerates no web class except the
+unconditional API8-MISCONFIG.
 """
 from __future__ import annotations
 
@@ -32,8 +39,9 @@ REPO = Path(__file__).resolve().parent.parent
 DEFAULT_CATALOG = REPO / "skills" / "coordination" / "reference" / "coverage-matrix.json"
 DEFAULT_MD = REPO / "skills" / "coordination" / "reference" / "coverage-matrix.md"
 
-# 14 agent-set flags (recon-justifiable; an agent may set these on a unit)
+# Agent-set flags (recon-justifiable; an agent may set these on a unit)
 AGENT_FLAGS = {
+    # web / API surface units
     "object_by_id",
     "json_body",
     "role_verb_gated",
@@ -48,8 +56,14 @@ AGENT_FLAGS = {
     "auth_surface",
     "consumes_upstream",
     "static_js_or_repo",
+    # mobile app units (mobile-surface/v1)
+    "local_store",          # persistent local store: prefs/NSUserDefaults/SQLite/Realm/file/Keychain item
+    "crypto_use",           # cryptographic call-site or key-material use
+    "exported_component",   # externally reachable: exported activity/service/receiver/provider,
+                            #   intent-filter deep link, iOS URL scheme / Universal Link / app extension
+    "webview",              # WebView/WKWebView instantiation or JS bridge
 }
-# 6 code-derived flags (computed by enumerate_cells.py; agent-unfabricatable)
+# Code-derived flags (computed by enumerate_cells.py; agent-unfabricatable)
 DERIVED_FLAGS = {
     "http_listener",
     "tls_listener",
@@ -57,12 +71,36 @@ DERIVED_FLAGS = {
     "has_api",
     "is_apex",
     "serves_js",
+    "mobile_app",           # stamped by load_mobile_app() on the asset AND every unit
 }
 ALL_FLAGS = AGENT_FLAGS | DERIVED_FLAGS
+
+# The mobile vocabulary. mobile_surface_build.py filters app units against THIS
+# set, not against AGENT_FLAGS — a single shared 14-flag filter would strip every
+# mobile flag and silently yield an app with zero unit cells.
+MOBILE_FLAGS = {"local_store", "crypto_use", "exported_component", "webview", "mobile_app"}
+# ...and its complement, for filtering a WEB surface unit. Mobile flags live in
+# AGENT_FLAGS, so filtering a web unit against AGENT_FLAGS alone would let a stray
+# `webview`/`local_store` through. Harmless to the gate (every MAS predicate also
+# requires the derived mobile_app flag, which no web loader sets) but semantically
+# wrong, so the surface builder filters each unit kind against its own vocabulary.
+WEB_AGENT_FLAGS = AGENT_FLAGS - MOBILE_FLAGS
+
+# The single pinned catalog size. Adding or removing a class must be an explicit,
+# acknowledged edit here — that is the whole anti-drift value. The scope split is
+# deliberately NOT pinned: meta-vs-recomputed parity already catches the only
+# silent failure mode, and pinning it additionally blocks a legitimate scope move.
+CLASS_COUNT = 39
 
 SCOPES = {"unit", "host", "asset"}
 NEGATIVE_KINDS = {"active_probe", "reachability", "none"}
 KEY_BY_FOR_SCOPE = {"unit": "unit_id", "host": "listener", "asset": "asset_tag"}
+
+# Optional 10th field, MAS-* rows only: does closing this cell need a running
+# device, or can static analysis prove it? Consumed by coverage_gate.py (a
+# `static` cell may never be device-deferred) and _emit_open (routes `runtime`
+# cells to a device-bearing mission).
+PROOF_MODES = {"static", "runtime", "either"}
 
 # Table-scoped class_id extractor for coverage-matrix.md: only a backtick-wrapped
 # FIRST cell of a markdown table row, e.g. "| `API1-BOLA` | API'23 | ...". This
@@ -113,7 +151,7 @@ def _check_leaves(leaves) -> None:
         raise CatalogError(f"flag list must be a non-empty array, got {leaves!r}")
     for f in leaves:
         if f not in ALL_FLAGS:
-            raise CatalogError(f"unknown flag {f!r} (not in the 20-flag vocabulary)")
+            raise CatalogError(f"unknown flag {f!r} (not in the {len(ALL_FLAGS)}-flag vocabulary)")
 
 
 def collect_flags(node, out: set) -> None:

@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Transilience report_data",
+  "description": "Input to generate_report.py. Only `engagement` and `findings` are required; every other key is an optional section that is skipped when absent.",
+  "type": "object",
+  "required": ["engagement", "findings"],
+  "properties": {
+    "engagement": {
+      "type": "object",
+      "description": "Cover + footer metadata.",
+      "properties": {
+        "title": {"type": "string"},
+        "title_lines": {"type": "array", "items": {"type": "string"}, "description": "Cover title lines (each rendered big)"},
+        "subtitle": {"type": "string"},
+        "date": {"type": "string"},
+        "duration": {"type": "string", "description": "assessment window / effort, e.g. '23 Jun – 04 Jul 2026 (8 working days)' — renders as the cover DURATION row"},
+        "classification": {"type": "string"},
+        "sector": {"type": "string"},
+        "target": {"type": "string"},
+        "method": {"type": "string"},
+        "prepared_by": {"type": "string"},
+        "report_id": {"type": "string"},
+        "footer": {"type": "string"},
+        "confidentiality": {"type": "string"},
+        "cover_meta": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}, "description": "Optional explicit [[label,value],...] override for the cover metadata table"}
+      }
+    },
+    "executive_summary": {
+      "type": "object",
+      "properties": {
+        "narrative": {"type": "array", "items": {"type": "string"}, "description": "Paragraphs (may contain ReportLab inline tags <b> <font>)"},
+        "key_risks": {"type": "array", "items": {"type": "string"}},
+        "positives": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "metrics": {
+      "type": "array",
+      "description": "Up to 6 KPI boxes. If omitted, auto-derived from severity counts.",
+      "items": {"type": "object", "properties": {
+        "label": {"type": "string"}, "value": {}, "sev": {"type": "string"}, "color": {"type": "string"}}}
+    },
+    "sections": {
+      "type": "array",
+      "description": "Free-form sections (e.g. Scope, Methodology) rendered after the exec summary.",
+      "items": {"type": "object", "required": ["title"], "properties": {
+        "title": {"type": "string"},
+        "internal": {"type": "boolean", "description": "If true, the section is retained in report_data.json (internal record / QA log, e.g. blind-validation reproduction) but is NEVER rendered into the client PDF."},
+        "paragraphs": {"type": "array", "items": {"type": "string"}},
+        "table": {"type": "object", "properties": {"header": {"type": "array"}, "rows": {"type": "array"}, "widths": {"type": "array", "description": "fractions of content width"}}}}}
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "severity"],
+        "properties": {
+          "id": {"type": "string"},
+          "title": {"type": "string"},
+          "severity": {"type": "string", "enum": ["Critical", "High", "Medium", "Low", "Info"]},
+          "cvss_score": {"type": "number"},
+          "cvss_vector": {"type": "string"},
+          "cwe": {"type": "string"},
+          "owasp": {"type": "string"},
+          "ease_of_exploitation": {"type": "string", "description": "exploitability rating/rationale, e.g. 'Easy — no auth, remotely reachable'"},
+          "references": {"type": "array", "items": {"type": "string"}, "description": "advisory/standard URLs rendered under a REFERENCES block"},
+          "affected": {"type": "array", "items": {"type": "string"}},
+          "description": {"type": "string"},
+          "impact": {"type": "string"},
+          "recommendation": {"type": "string"},
+          "calibration": {"type": "string", "description": "severity-calibration rationale (optional)"},
+          "poc": {
+            "type": "array",
+            "description": "Ordered proof-of-concept steps (merges the former evidence / poc_request / screenshot fields). Each step renders as a numbered prose description, an optional code-styled command (the exact command to run at that step), and an optional embedded image.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["description"],
+              "properties": {
+                "description": {"type": "string", "description": "what this step does / what you observe (prose)"},
+                "command": {"type": "string", "description": "the exact command/URL to run at this step; rendered as a monospace code block"},
+                "image_url": {"type": "string", "description": "local path or http(s) URL to a screenshot/output image; embedded inline when available"}
+              }
+            }
+          },
+          "needs_live_confirmation": {"type": "boolean"},
+          "cves": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "score": {"type": "number"}, "severity": {"type": "string"}}}},
+          "cve_caveat": {"type": "string"}
+        }
+      }
+    },
+    "cve_register": {"type": "array", "items": {"type": "object", "properties": {"cve": {"type": "string"}, "component": {"type": "string"}, "score": {"type": "number"}, "severity": {"type": "string"}, "summary": {"type": "string"}}}},
+    "coverage_table": {"type": "object", "properties": {"header": {"type": "array"}, "rows": {"type": "array"}, "widths": {"type": "array"}, "note": {"type": "string"}}},
+    "attack_pattern_coverage": {"type": "object", "description": "Deterministic (surface-unit × attack-class) coverage matrix, derived from tools/coverage_gate.py's reports/coverage-matrix.json. Status column values covered|covered_negative|deferred|pending are colour-coded (deferred = blocked on client input, amber).", "properties": {"header": {"type": "array"}, "rows": {"type": "array"}, "widths": {"type": "array"}, "note": {"type": "string"}}},
+    "ruled_out": {"type": "array", "items": {"type": "object", "properties": {"title": {"type": "string"}, "why": {"type": "string"}}}},
+    "tools_used": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}, "description": "rows of [tool, purpose, invocations]"},
+    "tools_intro": {"type": "string"},
+    "source_ips": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}, "description": "rows of [source IP, role, provider/region] — every IP attacks/recon originated from"},
+    "source_ips_intro": {"type": "string"},
+    "roadmap": {"type": "array", "items": {"type": "object", "properties": {"title": {"type": "string", "description": "include 'Immediate'/'Short'/'Medium'/'Long' to colour-code"}, "items": {"type": "array", "items": {"type": "string"}}}}},
+    "conclusion": {"type": "object", "description": "closing section: overall security opinion + engagement limitations", "properties": {"narrative": {"type": "array", "items": {"type": "string"}}, "assessment": {"description": "overall assessment paragraph(s) — string or string[]"}, "limitations": {"description": "project limitations — string or string[] (rendered as bullets)"}}},
+    "disclaimer": {"type": "string"}
+  }
+}

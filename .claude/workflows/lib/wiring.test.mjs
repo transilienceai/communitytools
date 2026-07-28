@@ -22,12 +22,12 @@ const ok = (cond, msg) => { if (cond) pass++; else { fail++; fails.push(`✗ ${m
 // pentest-engagement: validation is INLINE — no Stage-2 validate-findings call,
 // inline_validate + business_tier + frozen-operand paths threaded, snapshot created.
 ok(!/workflow\('validate-findings'/.test(pe), 'pentest-engagement no longer calls the validate-findings workflow (validation is inline)');
-ok((pe.match(/inline_validate: true/g) || []).length >= 2, 'inline_validate:true passed for BOTH the WEB and NETWORK deep-dive loops');
+ok((pe.match(/inline_validate: true/g) || []).length >= 4, 'inline_validate:true passed for the WEB, NETWORK and BOTH mobile (app + recovered-backend) loops');
 ok(/nvd_cache_dir: nvdCacheDir/.test(pe) && /kev_snapshot: kevSnapshot/.test(pe), 'frozen NVD/KEV snapshot paths threaded into the loop');
-ok(/assets: N,/.test(pe) && /assets: NH,/.test(pe), 'assets:N (web) + assets:NH (network) threaded — the governor partitions the cap by the PER-RUN running count');
+ok(/assets: N,/.test(pe) && /assets: NH,/.test(pe) && /assets: NM,/.test(pe), 'assets:N (web) + assets:NH (network) + assets:NM (mobile) threaded — the governor partitions the cap by the PER-RUN running count');
 ok(/kev-lookup\.py --cache-dir/.test(pe), 'Setup freezes the KEV snapshot via kev-lookup.py --cache-dir');
 ok(!/validate: false/.test(pe), 'the retired validate:false flag is gone');
-ok((pe.match(/VALID\/REPAIRED/g) || []).length >= 2, 'Correlate reads VALID+REPAIRED (both modes), not VALID-only');
+ok((pe.match(/VALID\/REPAIRED/g) || []).length >= 3, 'Correlate reads VALID+REPAIRED (all three modes), not VALID-only');
 
 // coordinator-loop: interleave machinery present; vestigial P5 retired.
 ok(/const INLINE_VALIDATE = shouldInlineValidate\(MODE, a\.inline_validate\)/.test(cl), 'coordinator-loop gates the lane on shouldInlineValidate');
@@ -175,7 +175,7 @@ ok(/deep_asset_slice/.test(pe) && /const deepAssetSlice = /.test(pe), 'DEEP_ASSE
 
 // E1 tools-not-agents: the deterministic mechanical-class probe is wired into the loop.
 ok(/tools\/passive_web_probe\.py --asset-dir OUTPUT_DIR/.test(cl), 'E1: passive_web_probe.py runs at bootstrap to clear the mechanical attack-classes');
-ok(/RESUME-AWARE: if OUTPUT_DIR\/recon\/inventory\/surface\.json AND OUTPUT_DIR\/coverage\.json BOTH already exist/.test(cl), 'coverage bootstrap is resume-aware (preserves surface.json/coverage.json, re-derives the backlog)');
+ok(/RESUME-AWARE: if OUTPUT_DIR\/\$\{SURFACE_FILE\} AND OUTPUT_DIR\/coverage\.json BOTH already exist/.test(cl), 'coverage bootstrap is resume-aware (preserves the surface file/coverage.json, re-derives the backlog)');
 
 // E2 equivalence-class validation: gate credit + loop instruction + validator sampling.
 ok(/EQUIVALENCE \(E2\)/.test(cl) && /validate ONE representative/.test(cl), 'COVERAGE-BY-VALID instructs one representative per (class x equiv_group)');
@@ -195,7 +195,7 @@ ok(/python3 tools\/test_passive_web_probe\.py/.test(ciYml), 'CI runs the passive
 // (kept alongside the plaintext), with an auto-generated out-of-band password.
 ok(/tools\/protect_deliverable\.py --engagement-dir/.test(pe), 'finalize runs protect_deliverable.py for an AES-256 protected copy');
 ok(/const wantProtect = opts\.protect !== false/.test(pe), 'protection is default-ON with a protect:false kill-switch');
-ok((pe.match(/protect: input\.protect !== false/g) || []).length >= 2, 'the protect flag is threaded from BOTH the web and network finalize calls');
+ok((pe.match(/protect: input\.protect !== false/g) || []).length >= 3, 'the protect flag is threaded from ALL THREE (web, network, mobile) finalize calls');
 ok(/deliverable_password: \{ type/.test(pe) && /protected_zip: \{ type/.test(pe), 'FINALIZE_SCHEMA carries the protected artifacts + password');
 ok(/NEVER write the password VALUE into summary\.md/.test(pe), 'the runner is told to keep the password value out of the zipped summary');
 ok(/DELIVERABLE-PASSWORD\.txt/.test(pe), 'the password is surfaced via a root file excluded from the deliverable');
@@ -360,6 +360,75 @@ ok(!/gh pr edit/.test(ps),
 ok(/check_client_data\.py --changed/.test(guardYml),
    'CI runs the changed-scope scan on pull requests');
 ok(/--redact/.test(guardYml), 'CI redacts — an Actions log on a public repo is public');
+
+// ---------------------------------------------------------------------------
+// MOBILE mode: three-way dispatch, TWO gated surfaces, device-gated DAST.
+// The motivating failure was a MAPT that ran outside the coverage machinery
+// entirely and under-tested the backend the app talks to. These assert the
+// structure that makes both halves impossible to skip.
+// ---------------------------------------------------------------------------
+ok(/enum: \['web', 'network', 'mobile'\]/.test(pe), "SETUP_SCHEMA.engagement_kind admits 'mobile' (a strict enum would reject the structured output otherwise)");
+ok(/const KIND = \['network', 'mobile'\]\.includes\(setup\.engagement_kind\) \? setup\.engagement_kind : 'web'/.test(pe), "KIND is a three-way WHITELIST — an unknown or absent kind still falls back to web");
+ok(/if \(KIND === 'mobile'\)/.test(pe), 'a self-contained MOBILE branch exists');
+{ // the branch must precede the WEB fallthrough (which has no `else`) and return internally
+  const mobIdx = pe.indexOf("if (KIND === 'mobile')");
+  const webIdx = pe.indexOf("// WEB MODE (engagement_kind !== 'network')");
+  ok(mobIdx > 0 && webIdx > 0 && mobIdx < webIdx, 'the MOBILE branch sits before the WEB fallthrough');
+  const seg = pe.slice(mobIdx, webIdx);
+  ok(seg.includes("status: 'DONE'") && seg.includes("status: 'DRY_RUN'") && seg.includes("status: 'BLOCKED'"),
+     'the MOBILE branch returns internally on every path (DONE + DRY_RUN + BLOCKED) — a fallthrough would CT-log-enumerate an APK');
+}
+ok((pe.match(/engagement_kind: 'mobile'/g) || []).length >= 2, 'the mobile returns stamp engagement_kind');
+ok(/\.apk\/\.aab\/\.xapk\/\.apks\/\.ipa/.test(pe), 'the Setup classifier keys mobile off an ARTIFACT/store-id/package-id, not off the absence of a domain');
+ok(/FIRST MATCH WINS/.test(pe), 'the kind classifier is an ordered first-match test (mobile before network before web)');
+
+// TWO gated surfaces — the app bundle AND the backend recovered from it.
+ok(/recon\/inventory\/mobile-surface\.json/.test(pe), 'MOBILE emits the app-bundle MASVS surface');
+ok(/tools\/mobile_surface_build\.py/.test(pe), 'both surfaces are written by the shared deterministic tool, not an engagement-local script');
+ok(/tools\/mobile_manifest_facts\.py/.test(pe), 'manifest/Info.plist facts are extracted by code, not authored by the agent');
+ok(/const mobSurfaceOk = mobApps\.length > 0/.test(pe), 'mobSurfaceOk guards on mobApps.length — [].every() is vacuously true');
+ok(/apiAssets\.length > 0 && apiAssets\.every\(a => Number\(a\.units\) > 0\)/.test(pe), 'zero recovered backend endpoints is a FAILED acquisition, not a small surface');
+ok(/INCOMPLETE_sast/.test(pe), 'an unemitted surface can never reach COMPLETE');
+ok(/platform: 'mobile'/.test(pe) && (pe.match(/platform: 'web'/g) || []).length >= 2, "the app loop runs platform:'mobile' and the RECOVERED backend loop platform:'web'");
+ok(/skills_hint: 'mobile-security/.test(pe) && /skills_hint: 'api-security/.test(pe), 'the two mobile lanes mount different skill sets (MASVS vs API)');
+ok(/SYSTEMATICALLY UNDER-TESTED/.test(pe), 'the recovered-backend goal names why that surface is under-tested (not browser-reachable)');
+ok(/--allow /.test(pe), 'the recovered-backend allow-list is passed explicitly (a bundle string never steers out-of-scope testing)');
+
+// DAST is device-gated; a deferral must be MACHINE-substantiated, never a flag.
+ok(/tools\/mobile_device_check\.py/.test(pe), 'the Device phase runs the mobile_device_check preflight');
+ok(/INCOMPLETE_dast/.test(pe), 'an unresolved DAST obstruction is its own incomplete status (the mobile analogue of INCOMPLETE_scan)');
+// no operator INPUT may skip DAST (the prose comment saying so is allowed to
+// mention the names — what must not exist is a read of one)
+ok(!/input\.(skip_dast|static_only|no_dast|skip_device)/.test(pe), 'there is NO operator flag that skips DAST — the only way past the gate is a device or a substantiated obstruction');
+ok(/deliberately NO skip_dast/.test(pe), 'the absence of a DAST kill-switch is documented at the knob block, so it is not "re-added as a convenience" later');
+ok(/ready = \(exit code 0\) and NOTHING ELSE/.test(pe), 'only exit 0 counts as ready — DEGRADED (incl. every iOS Simulator) routes to the obstruction path');
+{ // the deferral may only be constructed AFTER the machine evidence exists
+  const oIdx = pe.indexOf('recon/dast/obstruction.json');
+  const dIdx = pe.indexOf('dastDeferral = {');
+  ok(oIdx > 0 && dIdx > 0 && oIdx < dIdx, 'the machine obstruction record is written BEFORE any deferral is constructed');
+}
+ok(/obst\.obstructed === true && obst\.obstruction_path && obst\.cir_path/.test(pe), 'JS requires BOTH the obstruction record and the CIR before a deferral exists');
+ok(/RELATIVE TO THE ASSET DIR/.test(pe), 'the obstruction agent is told the CIR path is asset-dir-relative (coverage_gate resolves it against asset_dir)');
+ok(/proof_mode:static cells are NOT deferrable/.test(pe), 'the app loop is told static cells cannot be device-deferred');
+ok(/phase\('Acquire'\)/.test(pe) && /phase\('Device'\)/.test(pe), 'MOBILE runs the Acquire + Device phases');
+{ // a phase() title absent from meta.phases does not group in the progress UI
+  const emitted = [...new Set([...pe.matchAll(/phase\('([A-Za-z]+)'\)/g)].map((m) => m[1]))];
+  const declared = [...pe.matchAll(/\{ title: '([A-Za-z]+)'/g)].map((m) => m[1]);
+  const undeclared = emitted.filter((t) => !declared.includes(t));
+  ok(undeclared.length === 0, `every phase() title is declared in meta.phases (undeclared: ${undeclared.join(',') || 'none'})`);
+}
+
+// coordinator-loop must not manufacture a WEB surface for an app bundle.
+ok(/const SURFACE_FILE = a\.surface_file/.test(cl), 'coordinator-loop takes a surface_file override');
+ok(/const IS_MOBILE_SURFACE = /.test(cl), 'the loop branches on the surface SCHEMA, not just the filename');
+ok(/surface_file: 'recon\/inventory\/mobile-surface\.json'/.test(pe), 'the app loop overrides the surface file so bootstrap does not enumerate a web surface for an APK');
+ok(/passive_web_probe\.py is an HTTP tool and must NOT be run against an app bundle/.test(cl), 'the mobile bootstrap forbids the passive HTTP probe (it would fabricate covered_negative cells)');
+ok(/CANNOT be closed from the artifact/.test(cl), 'THINK is told a [runtime] cell needs a device-bearing mission');
+
+// the mobile tools are CI-enforced like every other tool in tools/
+ok(/python3 tools\/test_mobile_surface_build\.py/.test(ciYml), 'CI runs the mobile surface-builder test');
+ok(/python3 tools\/test_mobile_device_check\.py/.test(ciYml), 'CI runs the device-check test');
+ok(/python3 tools\/test_mobile_manifest_facts\.py/.test(ciYml), 'CI runs the manifest-facts test');
 
 console.log(`\nwiring: ${pass} passed, ${fail} failed`);
 if (fail) { console.log('\n' + fails.join('\n')); process.exit(1); }

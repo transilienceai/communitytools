@@ -82,16 +82,25 @@ custom `.so` logic → [`scenarios/android/native-lib-host-extraction.md`](scena
 Tag **every** finding with its MASVS control id **and** the covering MASTG-TEST id
 so it hands cleanly to the reporting skill. Groups × owning file:
 
-| MASVS group | Android file | iOS file | Typical MASTG / MASWE |
-|-------------|--------------|----------|------------------------|
-| STORAGE | android-static + dynamic | ios-static + dynamic | MASTG-TEST-0200s · MASWE-0006 |
-| CRYPTO | android-static-analysis.md | ios-static-analysis.md | MASTG-TEST-0210s · MASWE-0009 |
-| AUTH | dynamic + backend pivot | dynamic + backend pivot | MASTG-TEST-0017 · MASWE-0040 |
-| NETWORK | android-dynamic-analysis.md | ios-dynamic-analysis.md | MASTG-TEST-0230s · MASWE-0050 |
-| PLATFORM | android-static (manifest/IPC) | ios-static (Info.plist/URL) | MASTG-TEST-0250s · MASWE-0060 |
-| CODE | framework recipes + static | ios-static-analysis.md | MASTG-TEST-0270s · MASWE-0071 |
-| RESILIENCE | android-dynamic-analysis.md | ios-dynamic-analysis.md | MASTG-TEST-0280s · MASWE-0100 |
-| PRIVACY | privacy-testing.md | privacy-testing.md | MASTG-TEST-0300s · MASWE-0110 |
+| MASVS group | Android file | iOS file | Coverage class_id(s) | Typical MASTG / MASWE |
+|-------------|--------------|----------|----------------------|------------------------|
+| STORAGE | android-static + dynamic | ios-static + dynamic | `MAS-STORAGE-LOCAL` `MAS-STORAGE-LOGS` | MASTG-TEST-0200s · MASWE-0006 |
+| CRYPTO | android-static-analysis.md | ios-static-analysis.md | `MAS-CRYPTO-WEAK` `MAS-CRYPTO-KEYMGMT` | MASTG-TEST-0210s · MASWE-0009 |
+| AUTH | dynamic + backend pivot | dynamic + backend pivot | `MAS-AUTH-LOCAL` | MASTG-TEST-0017 · MASWE-0040 |
+| NETWORK | android-dynamic-analysis.md | ios-dynamic-analysis.md | `MAS-NETWORK-CLEARTEXT` `MAS-NETWORK-PINNING` | MASTG-TEST-0230s · MASWE-0050 |
+| PLATFORM | android-static (manifest/IPC) | ios-static (Info.plist/URL) | `MAS-PLATFORM-IPC` `MAS-PLATFORM-WEBVIEW` `MAS-PLATFORM-SCREEN` | MASTG-TEST-0250s · MASWE-0060 |
+| CODE | framework recipes + static | ios-static-analysis.md | `MAS-CODE-SECRETS` `MAS-CODE-DEPENDENCY` | MASTG-TEST-0270s · MASWE-0071 |
+| RESILIENCE | android-dynamic-analysis.md | ios-dynamic-analysis.md | `MAS-RESILIENCE-ROOT` `MAS-RESILIENCE-INTEGRITY` | MASTG-TEST-0280s · MASWE-0100 |
+| PRIVACY | privacy-testing.md | privacy-testing.md | `MAS-PRIVACY-DATA` | MASTG-TEST-0300s · MASWE-0110 |
+
+The `class_id` column is not decoration: in a coverage-mode engagement those 15
+classes ARE the completion contract, enumerated per app by
+`tools/enumerate_cells.py` from `recon/inventory/mobile-surface.json` and gated at
+a hard 100% by `tools/coverage_gate.py`. "I ran out of ideas" is not done; an open
+cell is. Per-class technique detail, and what a genuine negative has to look like,
+live in [`masvs-class-map.md`](masvs-class-map.md). Note `proof_mode`: a `runtime`
+class cannot be closed from the artifact, and a `static` class can never be
+device-deferred — a missing device does not excuse the manifest.
 
 RESILIENCE (root/jailbreak/anti-debug/pinning enforcement) is inherently
 runtime — presence is static, **defeat is dynamic**. Do not score a bypass you

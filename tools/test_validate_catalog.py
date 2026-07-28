@@ -15,6 +15,8 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 VALIDATOR = os.path.join(HERE, "validate_catalog.py")
+sys.path.insert(0, HERE)
+from coverage_catalog import CLASS_COUNT, PROOF_MODES  # noqa: E402
 REAL_CATALOG = os.path.join(REPO, "skills", "coordination", "reference", "coverage-matrix.json")
 REAL_MD = os.path.join(REPO, "skills", "coordination", "reference", "coverage-matrix.md")
 
@@ -75,12 +77,13 @@ def test_positive():
 
 def test_missing_class_fails():
     cat = _load_real()
-    cat["classes"] = cat["classes"][:-1]  # drop one -> 23
+    cat["classes"] = cat["classes"][:-1]  # drop one
     with tempfile.TemporaryDirectory() as tmp:
         cpath = _write(tmp, "cat.json", cat)
         rc, out = run(catalog=cpath)
-        assert rc == 1, f"23-class catalog must fail, rc={rc}: {out}"
-        assert "expected 24 classes" in out
+        assert rc == 1, f"short catalog must fail, rc={rc}: {out}"
+        # derived from the pin, so this test never needs re-baselining again
+        assert f"expected {CLASS_COUNT} classes" in out
 
 
 def test_parity_drift_fails():
@@ -106,7 +109,8 @@ def test_parse_robustness_ignores_noise():
 
 def test_bad_scope_split_fails():
     cat = _load_real()
-    # move a unit-scope class to host -> scope split becomes 11/7/6
+    # move a unit-scope class to host without touching meta -> meta disagrees with
+    # the recomputed split. (The split itself is no longer separately pinned.)
     for c in cat["classes"]:
         if c["scope"] == "unit":
             c["scope"] = "host"
@@ -116,7 +120,97 @@ def test_bad_scope_split_fails():
         cpath = _write(tmp, "cat.json", cat)
         rc, out = run(catalog=cpath)
         assert rc == 1, f"bad scope split must fail, rc={rc}: {out}"
-        assert "scope split" in out
+        assert "scope_split" in out
+
+
+def test_meta_class_count_drift_fails():
+    cat = _load_real()
+    cat["meta"]["class_count"] = CLASS_COUNT + 1  # meta self-certifies a wrong size
+    with tempfile.TemporaryDirectory() as tmp:
+        cpath = _write(tmp, "cat.json", cat)
+        rc, out = run(catalog=cpath)
+        assert rc == 1, f"meta.class_count drift must fail, rc={rc}: {out}"
+        assert "meta.class_count" in out
+
+
+def test_meta_flag_vocab_drift_fails():
+    cat = _load_real()
+    cat["meta"]["agent_flags"] = [f for f in cat["meta"]["agent_flags"] if f != "webview"]
+    with tempfile.TemporaryDirectory() as tmp:
+        cpath = _write(tmp, "cat.json", cat)
+        rc, out = run(catalog=cpath)
+        assert rc == 1, f"meta flag-vocab drift must fail, rc={rc}: {out}"
+        assert "meta.agent_flags" in out and "webview" in out
+
+
+def test_dead_flag_fails():
+    cat = _load_real()
+    # drop the only other reference to static_js_or_repo -> it becomes dead vocabulary
+    for c in cat["classes"]:
+        if c["class_id"] == "XC-SECRET-EXPOSURE":
+            c["applies_when"] = {"any_flag": ["serves_js"]}
+            break
+    with tempfile.TemporaryDirectory() as tmp:
+        cpath = _write(tmp, "cat.json", cat)
+        rc, out = run(catalog=cpath)
+        assert rc == 1, f"dead flag must fail, rc={rc}: {out}"
+        assert "dead" in out and "static_js_or_repo" in out
+
+
+def test_broken_technique_ref_fails():
+    cat = _load_real()
+    cat["classes"][0]["technique_ref"] = "skills/nope/does-not-exist.md"
+    with tempfile.TemporaryDirectory() as tmp:
+        cpath = _write(tmp, "cat.json", cat)
+        rc, out = run(catalog=cpath)
+        assert rc == 1, f"unresolvable technique_ref must fail, rc={rc}: {out}"
+        assert "technique_ref does not resolve" in out
+
+
+def test_bad_proof_mode_fails():
+    cat = _load_real()
+    for c in cat["classes"]:
+        if c["class_id"].startswith("MAS-"):
+            c["proof_mode"] = "sometimes"
+            break
+    with tempfile.TemporaryDirectory() as tmp:
+        cpath = _write(tmp, "cat.json", cat)
+        rc, out = run(catalog=cpath)
+        assert rc == 1, f"bad proof_mode must fail, rc={rc}: {out}"
+        assert "proof_mode" in out
+
+
+def test_proof_mode_on_web_class_fails():
+    cat = _load_real()
+    cat["classes"][0]["proof_mode"] = "static"  # a non-MAS class must not carry it
+    with tempfile.TemporaryDirectory() as tmp:
+        cpath = _write(tmp, "cat.json", cat)
+        rc, out = run(catalog=cpath)
+        assert rc == 1, f"proof_mode on a web class must fail, rc={rc}: {out}"
+        assert "mobile-only field" in out
+
+
+def test_mobile_classes_shaped():
+    """The 15 MAS-* rows obey the mobile design invariants."""
+    cat = _load_real()
+    mas = [c for c in cat["classes"] if c["class_id"].startswith("MAS-")]
+    assert len(mas) == 15, f"expected 15 MAS-* classes, found {len(mas)}"
+    mobile_flags = {"local_store", "crypto_use", "exported_component", "webview", "mobile_app"}
+    for c in mas:
+        cid = c["class_id"]
+        assert c["taxonomy"] == "MASVS-2023", f"{cid} taxonomy {c['taxonomy']!r}"
+        # an app binary has no listener: a host-scope mobile class would be incoherent
+        assert c["scope"] in ("unit", "asset"), f"{cid} scope {c['scope']!r} must be unit|asset"
+        assert c["negative_kind"] == "active_probe", f"{cid} negative_kind {c['negative_kind']!r}"
+        assert c["min_vantages"] == 0, f"{cid} min_vantages {c['min_vantages']!r}"
+        assert c["proof_mode"] in PROOF_MODES, f"{cid} proof_mode missing/invalid"
+        assert c["technique_ref"].startswith("skills/mobile-security/"), f"{cid} technique_ref"
+        refd: set = set()
+        for key in ("any_flag", "all_flags"):
+            refd |= set(c["applies_when"].get(key) or [])
+        assert refd & mobile_flags, f"{cid} applies_when references no mobile flag"
+        # the disjointness guarantee: every MAS class requires the derived mobile_app flag
+        assert "mobile_app" in refd, f"{cid} must require the mobile_app flag"
 
 
 def test_unknown_flag_fails():

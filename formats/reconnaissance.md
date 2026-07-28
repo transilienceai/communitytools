@@ -175,4 +175,37 @@ Summary report structure:
 }
 ```
 
-**Agent-set flags (14):** `object_by_id, json_body, role_verb_gated, sensitive_flow, server_fetched_url, input_sink, workflow, deser_or_ci, inbound_webhook, id_keyed_unauth, stored_field, auth_surface, consumes_upstream, static_js_or_repo`. Setting a flag only ADDS coverage work; the gate lints for *under*-reporting (missing units cross-checked against `subdomains.json` → `surface_undercount`). NETWORK mode needs no `surface.json` — `host.json`'s structured `ports[]` is normalized to units by code. Catalog + predicates: `skills/coordination/reference/coverage-matrix.json`.
+**Agent-set flags (web units, 14):** `object_by_id, json_body, role_verb_gated, sensitive_flow, server_fetched_url, input_sink, workflow, deser_or_ci, inbound_webhook, id_keyed_unauth, stored_field, auth_surface, consumes_upstream, static_js_or_repo`. Setting a flag only ADDS coverage work; the gate lints for *under*-reporting (missing units cross-checked against `subdomains.json` → `surface_undercount`). NETWORK mode needs no `surface.json` — `host.json`'s structured `ports[]` is normalized to units by code. Catalog + predicates: `skills/coordination/reference/coverage-matrix.json`.
+
+## mobile-surface/v1 — the app-bundle surface (MASVS coverage input)
+
+`{OUTPUT_DIR}/recon/inventory/mobile-surface.json` — written by `tools/mobile_surface_build.py`, read by `enumerate_cells.load_mobile_app()`, and covered by the 15 `MAS-*` classes.
+
+**It is a separate file with a separate loader, and that is structural.** `web_unit_flags()` stamps `http_listener` on every unit unconditionally and `parse_listener()` coerces any colon-less address to `<addr>:443`. A mobile unit placed in `surface.json` would therefore mint the listener `com.example.app:443` and enumerate CORS / transport-downgrade / verbose-errors / security-headers against an app binary. A mobile asset has `listener_flags = {}` and owes **zero** host-scope cells.
+
+```json
+{
+  "schema": "mobile-surface/v1",
+  "asset_tag": "fieldapp-android-app",  // MUST equal the OUTPUT_DIR basename
+  "platform": "android",
+  "package": "com.example.fieldapp",
+  "version": "2.4.1",
+  "artifact_sha256": "9f2c1a…",
+  "framework": "react-native-hermes",
+  "flags": [],                          // asset-level AGENT flags only; mobile_app is code-derived
+  "units": [
+    {
+      "unit_id": "cmp:MainActivity",
+      "type": "component",              // component|deeplink|webview|storage|crypto-use|other
+      "address": "com.example.fieldapp/.MainActivity",   // a report anchor — NEVER parsed
+      "flags": ["exported_component"],  // ONLY: local_store, crypto_use, exported_component, webview
+      "equiv_group": null,
+      "evidence_ref": ["E-004"]
+    }
+  ]
+}
+```
+
+`type` implies its flag (`component`/`deeplink`→`exported_component`, `webview`→`webview`, `storage`→`local_store`, `crypto-use`→`crypto_use`), unioned with whatever the agent declared — monotone, so a forgotten flag costs coverage but never hides it. Unit flags do **not** roll up to the asset: every app owes its 11 MASVS asset cells plus `API8-MISCONFIG` regardless of what it contains.
+
+**The backend is a separate asset.** Endpoints recovered from the bundle go to `<apex-slug>-api/recon/inventory/surface.json` as ordinary `surface/v2`, in **its own directory** — `coverage_gate.py` loads the ledger per asset dir, so two assets sharing a directory read each other's entries as `extra_cells` and neither can complete.
