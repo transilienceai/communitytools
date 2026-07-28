@@ -88,7 +88,81 @@ def main():
             failed = 1
         else:
             print(f"PASS: source_ips appendix renders ({os.path.getsize(out)} bytes)")
+
+    failed |= _check_exec_only(data)
+    failed |= _check_attack_renders()
     sys.exit(1 if failed else 0)
+
+
+def _check_exec_only(data):
+    """The executive edition is a filtered VIEW, so assert the filter directly
+    (deterministic) as well as rendering it (catches a reportlab-level break)."""
+    sys.path.insert(0, HERE)
+    from generate_report import exec_only_view, EXEC_ONLY_KEYS
+
+    rich = dict(data)
+    rich["cve_register"] = [{"cve": "CVE-2021-23017", "score": 9.4}]
+    rich["sections"] = [{"title": "Methodology", "paragraphs": ["internal detail"]}]
+    view = exec_only_view(rich)
+
+    leaked = [k for k in view if k not in EXEC_ONLY_KEYS and k != "findings"]
+    if leaked:
+        print(f"FAIL: exec-only leaked technical key(s): {leaked}")
+        return 1
+    if view["findings"]:
+        print("FAIL: exec-only still carries finding detail")
+        return 1
+    if not view.get("metrics"):
+        print("FAIL: exec-only lost the KPI boxes (metrics must survive dropping findings)")
+        return 1
+
+    with tempfile.TemporaryDirectory() as d:
+        dj = os.path.join(d, "report_data.json")
+        full, ex = os.path.join(d, "full.pdf"), os.path.join(d, "exec.pdf")
+        with open(dj, "w") as f:
+            json.dump(rich, f)
+        for args, out in (([], full), (["--exec-only"], ex)):
+            p = subprocess.run([sys.executable, GEN, dj, "-o", out] + args,
+                               capture_output=True, text=True)
+            if p.returncode != 0 or not os.path.getsize(out):
+                print(f"FAIL: exec-only render {args}: {p.stderr.strip()}")
+                return 1
+        if os.path.getsize(ex) >= os.path.getsize(full):
+            print("FAIL: executive edition is not smaller than the full report")
+            return 1
+        print(f"PASS: exec-only drops detail ({os.path.getsize(ex)} < {os.path.getsize(full)} bytes)")
+    return 0
+
+
+def _check_attack_renders():
+    """MITRE ids must reach the PDF: the row is contracted by pentest-report.md
+    but had no schema field, no builder copy and no renderer clause."""
+    data = {
+        "engagement": {"title": "T", "date": "2026-01-01"},
+        "findings": [{"id": "F-001", "title": "Finding", "severity": "High",
+                      "attack": ["T1190", "AML.T0051"]}],
+    }
+    with tempfile.TemporaryDirectory() as d:
+        dj, out = os.path.join(d, "d.json"), os.path.join(d, "o.pdf")
+        with open(dj, "w") as f:
+            json.dump(data, f)
+        p = subprocess.run([sys.executable, GEN, dj, "-o", out],
+                           capture_output=True, text=True)
+        if p.returncode != 0:
+            print(f"FAIL: attack render: {p.stderr.strip()}")
+            return 1
+        try:
+            from pypdf import PdfReader
+        except ImportError:
+            print("PASS: attack field renders (text not verified — pypdf absent)")
+            return 0
+        text = " ".join(pg.extract_text() or "" for pg in PdfReader(out).pages)
+        missing = [t for t in ("MITRE", "T1190", "AML.T0051") if t not in text]
+        if missing:
+            print(f"FAIL: not rendered into the PDF: {missing}")
+            return 1
+        print("PASS: MITRE ATT&CK + ATLAS ids render on the finding card")
+    return 0
 
 
 if __name__ == "__main__":

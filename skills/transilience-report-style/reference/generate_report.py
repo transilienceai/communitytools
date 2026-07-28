@@ -171,6 +171,30 @@ def styles(T):
     }
 
 
+# The executive summary is a deliverable in its own right, not a section of the
+# technical report — it goes to a different audience. build() is already fully
+# data-driven (every technical block is `if data.get(...)`, and the findings
+# groups are `if not fl: continue`), so the exec edition is a filtered VIEW of
+# report_data rather than a second code path through a 400-line function.
+#
+# ALLOWLIST, deliberately: a denylist would silently leak any technical key added
+# later into a document meant for circulation outside the security team.
+EXEC_ONLY_KEYS = ("engagement", "executive_summary", "metrics", "roadmap",
+                  "conclusion", "disclaimer")
+
+
+def exec_only_view(data):
+    """report_data -> the executive edition: cover, KPI boxes, narrative, roadmap."""
+    view = {k: data[k] for k in EXEC_ONLY_KEYS if k in data}
+    # KPI boxes normally derive from findings[]. Precompute them from the FULL
+    # finding set before dropping it, so the counts still describe the whole
+    # engagement rather than the empty list left behind.
+    if view.get("metrics") is None:
+        view["metrics"] = default_metrics(data.get("findings") or [])
+    view["findings"] = []          # keeps the shape valid; renders no cards
+    return view
+
+
 def build(data, dest, assets, theme=None):
     register_fonts(os.path.join(assets, "fonts"))
     LOGO = os.path.join(assets, "transilience-logo.png")
@@ -434,6 +458,13 @@ def build(data, dest, assets, theme=None):
                  f'<font color="{hx(T["LBL"])}">{cvss_lbl}</font> <font name="{FB}" color="{hx(scc)}">{esc(cvss_display(cvss_val))}</font>']
         if f.get("cwe"): parts.append(f'<font color="{hx(T["LBL"])}">CWE</font> {esc(f["cwe"])}')
         if f.get("owasp"): parts.append(f'<font color="{hx(T["LBL"])}">OWASP</font> {esc(f["owasp"])}')
+        # MITRE technique ids sit beside CWE/OWASP. A string is accepted as well
+        # as a list so a hand-written report_data.json is not a silent blank.
+        _atk = f.get("attack")
+        if _atk:
+            _atk = [_atk] if isinstance(_atk, str) else _atk
+            _ids = ", ".join(esc(str(t)) for t in _atk if str(t).strip())
+            if _ids: parts.append(f'<font color="{hx(T["LBL"])}">MITRE</font> {_ids}')
         parts.append(f'<font color="{hx(T["LBL"])}">Status</font> <font color="{hx(stc)}">{status}</font>')
         row(Paragraph("&nbsp;&nbsp;&nbsp;".join(parts), S["cardbody"]))
         if f.get("cvss_vector"):
@@ -576,6 +607,9 @@ def main():
     ap.add_argument("-o", "--output", default=None, help="output PDF path")
     ap.add_argument("--assets", default=None, help="path to formats/transilience-report-style (fonts + logo)")
     ap.add_argument("--theme", default=None, help="light (default) | dark; unknown falls back to light")
+    ap.add_argument("--exec-only", action="store_true",
+                    help="render the executive edition only (cover, KPI boxes, narrative, roadmap) "
+                         "— no findings detail, no technical registers")
     a = ap.parse_args()
     data = json.load(open(a.data))
     try:  # fail-closed: block the crash-invariants (string narrative, bad severity, ...) before rendering
@@ -583,10 +617,12 @@ def main():
     except ValueError as e:
         print(f"generate_report: invalid report_data — {e}", file=sys.stderr)
         raise SystemExit(2)
-    out = a.output or os.path.splitext(a.data)[0] + ".pdf"
+    default_out = os.path.splitext(a.data)[0] + ("-exec.pdf" if a.exec_only else ".pdf")
+    out = a.output or default_out
     assets = find_assets(a.assets)
-    build(data, out, assets, theme=a.theme)
-    print(f"WROTE {out} ({os.path.getsize(out)} bytes)  [assets: {assets}]")
+    build(exec_only_view(data) if a.exec_only else data, out, assets, theme=a.theme)
+    print(f"WROTE {out} ({os.path.getsize(out)} bytes)  [assets: {assets}]"
+          + ("  [executive edition]" if a.exec_only else ""))
 
 
 if __name__ == "__main__":
