@@ -24,11 +24,15 @@ Turns a structured findings JSON into a branded A4 PDF (**light theme** by defau
 
 3. **Verify** by rendering a page (`pdftoppm -png -r 100 -f 1 -l 1 out.pdf /tmp/p`) and reading it before delivery.
 
+### Other editions of the same data
+- **Executive edition** — `generate_report.py <data.json> --exec-only` renders cover + KPI boxes + narrative + roadmap and **no** finding detail or technical registers, for circulation beyond the security team. The KPI counts still describe the whole engagement.
+- **Machine-readable exports** — `python3 ../../tools/report_export.py <data.json> --format csv|xml -o findings.csv` emits the findings register for a vulnerability-management import. Same rows as the PDF register and the xlsx: one projection, three renderings.
+
 ## What it renders
 Cover (logo, title lines, subtitle, metadata) → Executive Summary (auto KPI metric boxes from severity counts + narrative + key risks + positives) → free-form `sections` (Scope/Methodology) → **finding cards grouped Critical→Info** (severity bar, CVSS+vector, CWE/OWASP, status, affected, description, impact, optional **PoC block** — ordered steps each with prose + code-styled command + embedded screenshot, optional severity-calibration, optional per-finding CVE table, remediation) → optional CVE register, coverage table, **Attack Pattern Coverage** (deterministic surface-unit × attack-class matrix with colour-coded status), ruled-out appendix, **Tools & Techniques Used**, remediation roadmap, disclaimer. Section numbers are assigned automatically.
 
 ## Finding object (the important fields)
-`id, title, severity (Critical|High|Medium|Low|Info), cvss_score, cvss_vector, cwe, owasp, affected[], description, impact, recommendation` + optional `poc[], calibration, needs_live_confirmation, cves[]`. **`poc`** is an ordered list of steps `{description, command, image_url}` (it merges the former evidence / poc_request / screenshot fields): each renders as a numbered prose description, an optional code-styled command, and an optional embedded image. PAN/Aadhaar/card-like values are defensively masked at render time — but redact real secrets/PII in your source text anyway.
+`id, title, severity (Critical|High|Medium|Low|Info), cvss_score, cvss_vector, cwe, owasp, affected[], description, impact, recommendation` + optional `poc[], calibration, needs_live_confirmation, cves[], attack[]`. **`attack[]`** carries MITRE technique ids — ATT&CK (`T1190`, `T1059.001`) or, for AI/LLM findings that have no ATT&CK technique, ATLAS (`AML.T0051`); it renders beside CWE/OWASP and appears in every export. **`poc`** is an ordered list of steps `{description, command, image_url}` (it merges the former evidence / poc_request / screenshot fields): each renders as a numbered prose description, an optional code-styled command, and an optional embedded image. PAN/Aadhaar/card-like values are defensively masked at render time — but redact real secrets/PII in your source text anyway.
 
 ## Conventions
 - Severity is set by the CVSS band (≥9 Critical, ≥7 High, ≥4 Medium, >0 Low, 0 Info) unless deliberately env-adjusted — state the calibration in the `calibration` field (see [`formats/transilience-report-style/pentest-report.md`](../../formats/transilience-report-style/pentest-report.md) §7).

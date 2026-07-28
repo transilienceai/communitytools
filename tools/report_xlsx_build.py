@@ -53,17 +53,14 @@ _thin = Side(style="thin", color=BORDER)
 GRID = Border(left=_thin, right=_thin, top=_thin, bottom=_thin)
 
 
-def norm_sev(s):
-    """Canonicalize a severity label; 'Info' displays as 'Informational'."""
-    s = (s or "").strip().title()
-    if s in ("Info", "Informational"):
-        return "Informational"
-    return s if s in ("Critical", "High", "Medium", "Low") else "Informational"
-
-
-def sev_display(s):
-    return norm_sev(s)
-
+# The report_data -> row projection lives in report_export.py so xlsx, CSV and
+# XML are literally the same rows and report_ingest has one contract to invert.
+# Imported by name (not `import *`) so every borrowed symbol is visible here.
+from report_export import (  # noqa: E402
+    HEADERS, REGISTER_COLUMNS, affected_list, attack_str, classification,
+    cves_str, cvss_label, cvss_str, cvss_version, finding_row, neutralize,
+    norm_sev, poc_text, refs_str, sev_display, sort_key, status_of,
+)
 
 # ---- low-level cell helpers -------------------------------------------------
 def _c(ws, r, col, value, *, bold=False, size=11, color=None, fill=None,
@@ -107,78 +104,6 @@ def _sev_cell(ws, r, col, sev):
 _IP_RE = re.compile(r"(\d{1,3}(?:\.\d{1,3}){3})")
 
 
-def cvss_str(f):
-    v = f.get("cvss_score")
-    if v is None or v == "" or (isinstance(v, str) and v.strip().lower() in ("n/a", "none")):
-        return "N/A"
-    try:
-        return f"{float(v):.1f}"
-    except (TypeError, ValueError):
-        return str(v)
-
-
-def cvss_version(f):
-    """CVSS version tag ('v4.0'/'v3.1'/'v3.0'/'v2.0') from the finding's vector
-    prefix, or '' when unknown. v4.0 is the primary version repo-wide; a
-    prefix-less vector is CVSS v2.0."""
-    vec = f.get("cvss_vector") or ""
-    m = re.match(r"(?i)^CVSS:(\d\.\d)/", str(vec))
-    if m:
-        return "v" + m.group(1)
-    return "v2.0" if vec else ""
-
-
-def cvss_label(f):
-    """'CVSS v4.0 9.3' — score paired with its version when both are known."""
-    score = cvss_str(f)
-    ver = cvss_version(f)
-    if score == "N/A":
-        return "CVSS N/A"
-    return f"CVSS {ver} {score}".replace("  ", " ")
-
-
-def classification(f):
-    bits = [b for b in (f.get("cwe"), f.get("owasp")) if b]
-    return "; ".join(bits) if bits else "—"
-
-
-def status_of(f):
-    return "Open — needs live confirmation" if f.get("needs_live_confirmation") else "Open — confirmed"
-
-
-def refs_str(f):
-    refs = f.get("references") or []
-    return "; ".join(str(x) for x in refs) if refs else "—"
-
-
-def cves_str(f):
-    out = []
-    for c in (f.get("cves") or []):
-        cid = c.get("id") if isinstance(c, dict) else c
-        if cid:
-            out.append(str(cid))
-    return ", ".join(out)
-
-
-def poc_text(f):
-    """Render the ordered PoC steps as a single readable cell."""
-    lines = []
-    for i, step in enumerate(f.get("poc") or [], start=1):
-        if not isinstance(step, dict):
-            continue
-        desc = (step.get("description") or "").strip()
-        cmd = (step.get("command") or "").strip()
-        seg = f"{i}. {desc}" if desc else f"{i}."
-        if cmd:
-            seg += f"\n    $ {cmd}"
-        lines.append(seg)
-    return "\n".join(lines) if lines else "See evidence appendix / proof package."
-
-
-def affected_list(f):
-    return [str(a) for a in (f.get("affected") or []) if str(a).strip()]
-
-
 # ---- sheet builders ---------------------------------------------------------
 def build_summary(wb, eng, findings, ctx3, ctx4):
     ws = wb.create_sheet("Summary")
@@ -219,26 +144,35 @@ def build_summary(wb, eng, findings, ctx3, ctx4):
     return ws
 
 
+# Per-column display width, keyed by the shared header. A column added to
+# REGISTER_COLUMNS renders at DEFAULT_WIDTH until it is given one here — the
+# sheet never silently loses a column just because the width table lagged.
+COL_WIDTH = {
+    "ID": 8, "Finding": 40, "Severity": 14, "CVSS": 7, "CVSS Vector": 32,
+    "Affected Hosts": 26, "CWE / Classification": 30, "CVE(s)": 20,
+    "MITRE": 18, "Status": 24, "References": 34,
+}
+DEFAULT_WIDTH = 22
+# Columns the sheet styles specially; everything else is a wrapped text cell.
+_CENTERED = {"ID", "CVSS"}
+
+
 def build_register(wb, findings, ctx3, ctx4):
     ws = wb.create_sheet("Findings Register")
     _brand_header(ws, "Findings Register", ctx3, ctx4)
-    headers = ["ID", "Finding", "Severity", "CVSS", "CVSS Vector",
-               "Affected Hosts", "CWE / Classification", "CVE(s)", "Status", "References"]
-    widths = [8, 40, 14, 7, 32, 26, 30, 20, 24, 34]
-    _table_header(ws, 7, headers, widths)
+    _table_header(ws, 7, HEADERS, [COL_WIDTH.get(h, DEFAULT_WIDTH) for h in HEADERS])
     ws.freeze_panes = "A8"
+    sev_col = HEADERS.index("Severity") + 1
     r = 8
     for f in findings:
-        _c(ws, r, 1, f.get("id") or "", bold=True, align="center", border=True)
-        _c(ws, r, 2, f.get("title") or "", wrap=True, border=True)
-        _sev_cell(ws, r, 3, f.get("severity"))
-        _c(ws, r, 4, cvss_str(f), align="center", border=True)
-        _c(ws, r, 5, f.get("cvss_vector") or "—", wrap=True, border=True)
-        _c(ws, r, 6, "\n".join(affected_list(f)) or "—", wrap=True, border=True)
-        _c(ws, r, 7, classification(f), wrap=True, border=True)
-        _c(ws, r, 8, cves_str(f) or "—", wrap=True, border=True)
-        _c(ws, r, 9, status_of(f), wrap=True, border=True)
-        _c(ws, r, 10, refs_str(f), wrap=True, border=True)
+        for col, (header, value) in enumerate(zip(HEADERS, finding_row(f)), start=1):
+            if col == sev_col:
+                _sev_cell(ws, r, col, f.get("severity"))
+            elif header in _CENTERED:
+                _c(ws, r, col, neutralize(value), bold=(header == "ID"),
+                   align="center", border=True)
+            else:
+                _c(ws, r, col, neutralize(value), wrap=True, border=True)
         r += 1
     return ws
 
@@ -374,7 +308,11 @@ def build_workbook(data, overrides):
     for k in ("title", "target", "date"):
         if overrides.get(k):
             eng[k] = overrides[k]
-    findings = list(data.get("findings") or [])
+    # Severity-major, then id — the same order the CSV/XML exports and the PDF's
+    # severity-grouped cards use. Previously this was raw JSON order, so the
+    # workbook listed findings differently from the PDF built from the same file.
+    findings = sorted((f for f in (data.get("findings") or []) if isinstance(f, dict)),
+                      key=sort_key)
 
     client = eng.get("target") or ""
     loc = overrides.get("location") or eng.get("sector") or ""

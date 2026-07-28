@@ -55,6 +55,11 @@ try:
 except Exception:  # pragma: no cover - defensive
     require_report_data_shape = None
 
+# The exporters prefix a leading =/+/-/@ with a quote so a crafted title cannot
+# execute as a formula in a spreadsheet. Undoing it here is what keeps ingest a
+# faithful inverse of the export rather than an approximate one.
+from report_export import read_cell  # noqa: E402
+
 EXIT_OK = 0
 EXIT_USAGE = 2
 EXIT_MISSING_DEP = 3
@@ -89,6 +94,10 @@ HEADER_ALIASES = {
             "weakness", "cwe id"},
     "owasp": {"owasp", "owasp category"},
     "cves": {"cve(s)", "cves", "cve", "cve ids", "cve id"},
+    # One field for both MITRE taxonomies: ATT&CK for conventional findings,
+    # ATLAS for AI/LLM ones (which have no ATT&CK technique to cite).
+    "attack": {"mitre", "mitre att&ck", "att&ck", "attack", "technique",
+               "techniques", "mitre atlas", "atlas"},
     "status": {"status"},
     "references": {"references", "reference", "refs"},
     "description": {"description", "desc", "details", "detail"},
@@ -107,6 +116,9 @@ SUMMARY_LABELS = {
 _CWE_RE = re.compile(r"CWE-\d+", re.I)
 _OWASP_RE = re.compile(r"\b(?:A\d{1,2}:\d{4}|API\d{1,2}:\d{4}|M\d{1,2}:\d{4})\b", re.I)
 _CVE_RE = re.compile(r"CVE-\d{4}-\d{4,7}", re.I)
+# ATT&CK technique/sub-technique, or an ATLAS technique. AML. is matched first
+# so 'AML.T0051' is not truncated to the bare 'T0051' by the ATT&CK branch.
+_ATTACK_RE = re.compile(r"\bAML\.T\d{4}(?:\.\d{3})?|\bT\d{4}(?:\.\d{3})?\b", re.I)
 _SCORE_RE = re.compile(r"\d+(?:\.\d+)?")
 
 
@@ -193,6 +205,21 @@ def parse_cves(v):
     return out
 
 
+def parse_attack(v):
+    """MITRE technique ids, de-duplicated, order preserved. Accepts ATT&CK
+    (T1059, T1059.001) and ATLAS (AML.T0051); anything else is dropped rather
+    than guessed at."""
+    out = []
+    for tok in _split(v, comma=True):
+        m = _ATTACK_RE.search(tok)
+        if not m:
+            continue
+        tid = m.group(0).upper().replace("AML.T", "AML.T")
+        if tid not in out:
+            out.append(tid)
+    return out
+
+
 def _build_finding(values, *, affected_comma):
     """Assemble one canonical finding from a {canonical_field: raw_value} dict.
     Only present, non-placeholder fields are emitted; nothing is invented."""
@@ -223,6 +250,9 @@ def _build_finding(values, *, affected_comma):
     refs = _split(values.get("references"), comma=True)
     if refs:
         f["references"] = refs
+    attack = parse_attack(values.get("attack"))
+    if attack:
+        f["attack"] = attack
     for k in ("description", "impact", "recommendation"):
         val = values.get(k)
         if val is not None and not _is_empty(val):
@@ -249,7 +279,7 @@ def _findings_from_grid(rows, affected_comma):
         values = {}
         for k, c in zip(canon, row):
             if k and c is not None and str(c).strip() != "":
-                values.setdefault(k, c)
+                values.setdefault(k, read_cell(c))
         idv = str(values.get("id") or "").strip()
         if not idv or _is_empty(idv):
             continue
