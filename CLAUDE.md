@@ -46,6 +46,8 @@ Boundaries and context contracts: [`skills/coordination/reference/role-matrix.md
 | Skill-base caps & promotion gates | [`skills/skill-update/SKILL.md`](skills/skill-update/SKILL.md) — procedure: `.claude/workflows/skill-update.js` |
 | Activity & source-IP logging | [`formats/logs.md`](formats/logs.md) |
 | Public-repo confidentiality (what may never be committed) | [`docs/CONFIDENTIALITY.md`](docs/CONFIDENTIALITY.md) |
+| Pre-publication leak analysis | `/content-guard` — procedure: `.claude/workflows/content-guard.js` |
+| Opening a PR from the current changes | `/pr-save` — procedure: `.claude/workflows/pr-save.js` (runs `/content-guard` as a hard gate first) |
 
 ## CVE risk lookup
 

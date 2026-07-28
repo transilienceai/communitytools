@@ -383,24 +383,202 @@ def looks_like_oid_or_version(line: str, ip: str) -> bool:
                                   "gecko", "edg/", "user-agent"))
 
 
-def _git_file_list(staged: bool) -> list[str]:
-    """Every path the next commit would publish, unfiltered."""
-    if staged:
-        cmds = [["git", "-C", REPO, "diff", "--cached", "--name-only", "--diff-filter=ACMR"]]
+# --------------------------------------------------------------------------
+# The scan universe.
+#
+# Three modes, and the distinction that matters is not WHICH paths but WHERE
+# each one's bytes are read from. That is why an item carries a `source` rather
+# than the scan carrying a boolean:
+#
+#   full     — every tracked + untracked-not-ignored path, read from the WORKTREE
+#   staged   — what `git commit` would write, read from the INDEX
+#   changed  — what pushing this branch would publish, read from all three:
+#              the worktree (tip state), the index (staged-but-not-worktree),
+#              and every blob any commit on the branch INTRODUCED.
+#
+# That last lane is the whole reason `changed` is not a path filter over `full`.
+# A push publishes history, not the tip: a secret added in one commit and deleted
+# in the next is absent from `BASE...HEAD` yet is fetched by anyone who clones the
+# PR ref, and stays reachable from the PR ref after the branch is deleted.
+# Measured on this repository's own feature branch: 35 net-diff paths, 57 distinct
+# destination blobs. A net-diff scan would have read 60% of what it published.
+# --------------------------------------------------------------------------
+
+MODES = ("full", "staged", "changed")
+
+# Recorded verbatim into the manifest's `universe_source`, so the coverage proof
+# names the commands that actually ran rather than a hand-maintained description.
+UNIVERSE_CMDS = {
+    "full": ["git ls-files", "git ls-files --others --exclude-standard"],
+    "staged": ["git diff --cached --name-only --diff-filter=ACMRT"],
+    "changed": ["git rev-list BASE..HEAD | git diff-tree -r -m --raw --no-abbrev -z -M --stdin",
+                "git diff HEAD --name-only --diff-filter=ACMRT -z",
+                "git diff --cached --name-only --diff-filter=ACMRT -z",
+                "git ls-files --others --exclude-standard -z"],
+}
+
+# A, C, M, R, T — deletions (D) publish nothing, and U/X/B are not states a scan
+# of publishable content can act on. T is load-bearing and easy to omit: replacing
+# a tracked FILE with a symlink is a type change, so `ACMR` silently drops it —
+# and "file replaced by a link to /Users/<name>/..." is precisely the operator-path
+# class the symlink lane exists for.
+DIFF_FILTER = "--diff-filter=ACMRT"
+
+
+class GitError(Exception):
+    """A git command the scan depends on failed. Never downgraded to "no results":
+    an unresolvable base ref must not be able to mean "scanned nothing, therefore
+    clean" — that is the one failure a content guard may never have."""
+
+
+def _git(*args: str, check: bool = False, text: bool = True):
+    r = subprocess.run(["git", "-C", REPO, *args], capture_output=True, text=text)
+    if check and r.returncode != 0:
+        err = (r.stderr if text else r.stderr.decode("utf-8", "replace")) or ""
+        raise GitError(f"git {' '.join(args)} failed ({r.returncode}): {err.strip()[:200]}")
+    return r
+
+
+def _zsplit(s: str) -> list[str]:
+    return [f for f in s.split("\0") if f]
+
+
+def resolve_base(base: str | None) -> tuple[str, str]:
+    """(ref, merge-base sha) for the changed scan.
+
+    Deliberately does NOT fetch. A network call inside a gate is a source of
+    non-determinism and a new way to fail, so a stale or missing remote ref is
+    reported for the caller to fix rather than silently repaired.
+    """
+    candidates = [base] if base else ["origin/main", "main", "origin/master", "master"]
+    for ref in candidates:
+        if not ref:
+            continue
+        if _git("rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}").returncode != 0:
+            continue
+        mb = _git("merge-base", ref, "HEAD", check=True).stdout.strip()
+        if mb:
+            return ref, mb
+    raise GitError(
+        f"cannot resolve a base ref (tried {', '.join(c for c in candidates if c)}). "
+        f"Pass --changed <ref>, or run: git fetch origin")
+
+
+def _history_items(base_sha: str) -> list[dict]:
+    """Every blob introduced by a commit in BASE..HEAD.
+
+    `-m` so a merge commit's own contributions are diffed against each parent
+    rather than skipped; `-M` so a rename reports its destination. Deletions
+    (all-zero destination sha) are excluded: they publish nothing.
+    """
+    revs = _git("rev-list", f"{base_sha}..HEAD", check=True).stdout
+    if not revs.strip():
+        return []
+    r = subprocess.run(
+        ["git", "-C", REPO, "diff-tree", "-r", "-m", "--raw", "--no-abbrev", "-z", "-M", "--stdin"],
+        input=revs, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise GitError(f"git diff-tree failed ({r.returncode}): {r.stderr.strip()[:200]}")
+
+    fields, out, i = r.stdout.split("\0"), [], 0
+    while i < len(fields):
+        meta = fields[i]
+        i += 1
+        # Commit-id lines and the trailing empty field are not raw records.
+        if not meta.startswith(":"):
+            continue
+        parts = meta[1:].split()
+        if len(parts) < 5 or i >= len(fields):
+            continue
+        dst_mode, dst_sha, status = parts[1], parts[3], parts[4]
+        path = fields[i]
+        i += 1
+        if status[0] in "RC":          # rename/copy: a second path field follows
+            if i >= len(fields):
+                break
+            path = fields[i]
+            i += 1
+        if status[0] not in "AMRCT" or set(dst_sha) == {"0"}:
+            continue
+        out.append({"path": path, "source": "history", "sha": dst_sha, "mode": dst_mode})
+    return out
+
+
+def build_universe(mode: str, base_sha: str | None = None) -> list[dict]:
+    """The scan's work list: one item per (path, source, blob) that would be published.
+
+    An item is {key, path, source, sha, mode}. `key` is what every leak line and
+    manifest entry is reported under — `path` for a live file, `path@<short-sha>`
+    for a blob that exists only in branch history, so the two can never be
+    confused for one another in a report.
+    """
+    if mode not in MODES:
+        raise GitError(f"unknown mode {mode!r}")
+
+    items: list[dict] = []
+    if mode == "full":
+        for cmd in (["ls-files", "-z"], ["ls-files", "--others", "--exclude-standard", "-z"]):
+            for p in _zsplit(_git(*cmd, check=True).stdout):
+                items.append({"path": p, "source": "worktree", "sha": None, "mode": None})
+    elif mode == "staged":
+        for p in _zsplit(_git("diff", "--cached", "--name-only", DIFF_FILTER, "-z",
+                              check=True).stdout):
+            items.append({"path": p, "source": "index", "sha": None, "mode": None})
     else:
-        # Tracked files AND untracked-but-not-ignored files. Untracked files are the
-        # highest-risk set: they are what the NEXT commit publishes, so scanning
-        # `ls-files` alone is not sufficient.
-        cmds = [["git", "-C", REPO, "ls-files"],
-                ["git", "-C", REPO, "ls-files", "--others", "--exclude-standard"]]
-    out = "".join(subprocess.run(c, capture_output=True, text=True).stdout for c in cmds)
-    return [f for f in out.splitlines() if f]
+        if not base_sha:
+            raise GitError("changed mode requires a base commit")
+        items.extend(_history_items(base_sha))
+        # Tip state: `git diff HEAD` covers staged AND unstaged worktree changes.
+        for p in _zsplit(_git("diff", "HEAD", "--name-only", DIFF_FILTER, "-z",
+                              check=True).stdout):
+            items.append({"path": p, "source": "worktree", "sha": None, "mode": None})
+        # Staged content that differs from the worktree is a third distinct blob.
+        for p in _zsplit(_git("diff", "--cached", "--name-only", DIFF_FILTER, "-z",
+                              check=True).stdout):
+            items.append({"path": p, "source": "index", "sha": None, "mode": None})
+        for p in _zsplit(_git("ls-files", "--others", "--exclude-standard", "-z",
+                              check=True).stdout):
+            items.append({"path": p, "source": "worktree", "sha": None, "mode": None})
+
+    seen, out = set(), []
+    for it in items:
+        if it["source"] == "history":
+            it["key"] = f"{it['path']}@{it['sha'][:12]}"
+        else:
+            it["key"] = it["path"]
+        dedupe = (it["key"], it["source"])
+        if dedupe in seen:
+            continue
+        seen.add(dedupe)
+        out.append(it)
+    # A history blob identical to the file now on disk is the same bytes twice.
+    # Identical CONTENT is not identical OBJECT, though: git stores a symlink as
+    # an ordinary blob holding its target string, so a history symlink and a
+    # regular worktree file whose text happens to equal that target have the same
+    # blob sha. Deduping across that boundary would drop the symlink item and with
+    # it the whole symlink lane for that path — the absolute-target check included.
+    # So only a regular-file history blob may be deduped against a regular file.
+    live = {it["path"] for it in out if it["source"] == "worktree"}
+    deduped = []
+    for it in out:
+        if (it["source"] == "history" and it["path"] in live
+                and it.get("mode") in ("100644", "100755")):
+            wt = os.path.join(REPO, it["path"])
+            try:
+                if os.path.isfile(wt) and not os.path.islink(wt):
+                    with open(wt, "rb") as fh:
+                        blob = b"blob " + str(os.path.getsize(wt)).encode() + b"\0" + fh.read()
+                    if hashlib.sha1(blob).hexdigest() == it["sha"]:
+                        continue
+            except OSError:
+                pass
+        deduped.append(it)
+    return sorted(deduped, key=lambda i: (i["key"], i["source"]))
 
 
 def _index_modes() -> dict[str, str]:
     """path -> git mode from the index. Mode 120000 is a symlink."""
-    r = subprocess.run(["git", "-C", REPO, "ls-files", "-s", "-z"],
-                       capture_output=True, text=True)
+    r = _git("ls-files", "-s", "-z")
     modes: dict[str, str] = {}
     for rec in r.stdout.split("\0"):
         if not rec:
@@ -409,6 +587,77 @@ def _index_modes() -> dict[str, str]:
         if path:
             modes[path] = meta.split()[0]
     return modes
+
+
+def item_is_symlink(item: dict, index_modes: dict[str, str] | None = None) -> bool:
+    if item["source"] == "history":
+        return item.get("mode") == "120000"
+    if item["source"] == "worktree":
+        return os.path.islink(os.path.join(REPO, item["path"]))
+    modes = index_modes if index_modes is not None else _index_modes()
+    return modes.get(item["path"]) == "120000"
+
+
+def item_link_target(item: dict) -> str | None:
+    """The link's TARGET STRING, read from the item's OWN source.
+
+    Reading the index blob regardless of source — which this did before there was
+    a worktree lane — reports the OLD target for a link that has been re-pointed
+    but not yet staged. That is precisely the case the symlink lane exists for.
+    """
+    try:
+        if item["source"] == "worktree":
+            return os.readlink(os.path.join(REPO, item["path"]))
+        if item["source"] == "history":
+            r = _git("cat-file", "blob", item["sha"], text=False)
+        else:
+            r = _git("cat-file", "-p", f":{item['path']}", text=False)
+    except OSError:
+        return None
+    if r.returncode != 0:
+        return None
+    return r.stdout.decode("utf-8", "replace").strip()
+
+
+def universe_symlink_targets(items: list[dict]) -> dict[str, str]:
+    """key -> target string, for every symlink in the work list."""
+    modes = _index_modes()
+    out: dict[str, str] = {}
+    for it in items:
+        if not item_is_symlink(it, modes):
+            continue
+        tgt = item_link_target(it)
+        if tgt is not None:
+            out[it["key"]] = tgt
+    return out
+
+
+def item_bytes(item: dict) -> bytes | None:
+    """The raw bytes this item would publish. For a symlink that is the TARGET
+    STRING — git's own blob — never the destination file's content."""
+    if item["source"] == "history":
+        r = _git("cat-file", "blob", item["sha"], text=False)
+        return r.stdout if r.returncode == 0 else None
+    if item["source"] == "index":
+        r = _git("show", f":{item['path']}", text=False)
+        return r.stdout if r.returncode == 0 else None
+    p = os.path.join(REPO, item["path"])
+    if os.path.islink(p):
+        try:
+            return os.readlink(p).encode("utf-8", "replace")
+        except OSError:
+            return None
+    if not os.path.isfile(p):
+        return None
+    try:
+        with open(p, "rb") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+def _mode_for(staged: bool) -> str:
+    return "staged" if staged else "full"
 
 
 def symlink_targets(staged: bool) -> dict[str, str]:
@@ -421,24 +670,7 @@ def symlink_targets(staged: bool) -> dict[str, str]:
     instead reads the destination file and never examines the target string,
     which is exactly how that class stayed invisible to every text grep.
     """
-    modes = _index_modes()
-    wanted = set(_git_file_list(staged))
-    out: dict[str, str] = {}
-    for rel, mode in modes.items():
-        if mode != "120000" or rel not in wanted:
-            continue
-        r = subprocess.run(["git", "-C", REPO, "cat-file", "-p", f":{rel}"],
-                           capture_output=True)
-        if r.returncode == 0:
-            out[rel] = r.stdout.decode("utf-8", "replace").strip()
-    if not staged:
-        # Untracked-but-stageable symlinks have no index entry yet.
-        for rel in wanted:
-            if rel not in out:
-                p = os.path.join(REPO, rel)
-                if os.path.islink(p):
-                    out[rel] = os.readlink(p)
-    return out
+    return universe_symlink_targets(build_universe(_mode_for(staged)))
 
 
 def symlink_leaks(targets: dict[str, str]) -> list[str]:
@@ -454,43 +686,58 @@ def symlink_leaks(targets: dict[str, str]) -> list[str]:
     return leaks
 
 
+def is_scannable_text(path: str) -> bool:
+    return (os.path.splitext(path)[1].lower() not in BINARY_EXT
+            and not path.endswith(".DS_Store"))
+
+
+def items_to_scan(items: list[dict], symlinks: frozenset = frozenset()) -> list[dict]:
+    """Text items for the line scanners. Symlinks are excluded and handled by
+    universe_symlink_targets(): open()ing one follows it, re-reading the
+    destination file while never examining the link target itself."""
+    return [it for it in items
+            if is_scannable_text(it["path"]) and it["key"] not in symlinks]
+
+
+def credential_material_items(items: list[dict]) -> list[dict]:
+    """Items whose EXTENSION is credential/key material. Content-blind on purpose:
+    these never reach the line scanners (binary, or no PEM banner to match)."""
+    return [it for it in items
+            if os.path.splitext(it["path"])[1].lower() in CREDENTIAL_EXT]
+
+
 def files_to_scan(staged: bool, symlinks: frozenset = frozenset()) -> list[str]:
-    """Text files for the line scanners. Symlinks are excluded and handled by
-    symlink_targets(): open()ing one follows it, re-reading the destination file
-    while never examining the link target itself."""
-    return [f for f in _git_file_list(staged)
-            if os.path.splitext(f)[1].lower() not in BINARY_EXT
-            and not f.endswith(".DS_Store")
-            and f not in symlinks]
+    """Path-level view of items_to_scan, kept for callers that work in paths."""
+    return [it["key"] for it in
+            items_to_scan(build_universe(_mode_for(staged)), symlinks)]
 
 
 def credential_material_files(staged: bool) -> list[str]:
-    """Paths whose EXTENSION is credential/key material. Content-blind on purpose:
-    these never reach the line scanners (binary, or no PEM banner to match)."""
-    return [f for f in _git_file_list(staged)
-            if os.path.splitext(f)[1].lower() in CREDENTIAL_EXT]
+    return [it["key"] for it in credential_material_items(build_universe(_mode_for(staged)))]
 
 
 MAX_TEXT_BYTES = 4_000_000
 MANIFEST_DEFAULT = ".claude/state/confidentiality/manifest.json"
+JSON_DEFAULT = ".claude/state/confidentiality/report.json"
+
+
+def manifest_default(mode: str) -> str:
+    """A partial scan must never overwrite the full scan's coverage proof: both
+    declare the same schema, and a `changed` manifest sitting at the full-scan
+    path would read as "the whole tree was examined"."""
+    return MANIFEST_DEFAULT if mode == "full" else MANIFEST_DEFAULT.replace(
+        "manifest.json", f"manifest-{mode}.json")
+
+
+def json_default(mode: str) -> str:
+    return JSON_DEFAULT if mode == "full" else JSON_DEFAULT.replace(
+        "report.json", f"report-{mode}.json")
 
 
 def file_bytes(rel: str, staged: bool) -> bytes | None:
     """The raw bytes this path would publish. For a symlink that is the TARGET
     STRING — git's own blob — never the destination file's content."""
-    if staged:
-        r = subprocess.run(["git", "-C", REPO, "show", f":{rel}"], capture_output=True)
-        return r.stdout if r.returncode == 0 else None
-    p = os.path.join(REPO, rel)
-    if os.path.islink(p):
-        return os.readlink(p).encode("utf-8", "replace")
-    if not os.path.isfile(p):
-        return None
-    try:
-        with open(p, "rb") as fh:
-            return fh.read()
-    except OSError:
-        return None
+    return item_bytes({"path": rel, "source": "index" if staged else "worktree", "sha": None})
 
 
 def classify(rel: str, raw: bytes | None, is_symlink: bool) -> tuple[str, str | None]:
@@ -585,11 +832,15 @@ def binary_leaks(entries: dict[str, dict]) -> list[str]:
     for rel, e in sorted(entries.items()):
         if e["kind"] != "binary":
             continue
-        if rel not in allow:
+        # Pin by PATH, report under the item KEY. A history item is keyed
+        # `path@<sha>`, which is in no pin list by construction, so keying the
+        # lookup would report every reviewed binary on a branch as unlisted.
+        path = e.get("path", rel)
+        if path not in allow:
             leaks.append(f"{rel}:0: BINARY [unlisted] -> a binary no text lane can read; "
                          f"review it, then add its sha256 to "
                          f"{os.path.relpath(BINARY_ALLOWLIST, REPO)}")
-        elif allow[rel] != e["sha256"]:
+        elif allow[path] != e["sha256"]:
             leaks.append(f"{rel}:0: BINARY [changed] -> content differs from the reviewed "
                          f"sha256; re-review and update the allowlist")
     return leaks
@@ -610,7 +861,47 @@ def _would_be_published(abspath: str) -> bool:
     return r.returncode != 0
 
 
-def write_manifest(path: str, staged: bool, entries: dict[str, dict]) -> None:
+def leak_summary(leak: str) -> str:
+    """A leak line with everything after the first ' -> ' removed.
+
+    That tail is the only part of the grammar that can carry a matched VALUE —
+    `PUBLIC IP -> <addr>`, `SECRET [...] -> <repr>`, `SYMLINK [escapes-repo] ->
+    <target>`, `PERSONAL [first.last email] -> @<domain>`. Location and rule are
+    enough to act on, and are all that may reach a public CI log, a PR body, or a
+    JSON artefact. Deliberately truncates rather than parses: a parser that fails
+    open on an unrecognised shape would emit the value it was meant to strip.
+
+    The split is anchored PAST the `<key>:<line>: ` prefix, because a path may
+    itself contain " -> " — splitting on the first occurrence in the whole line
+    would then cut inside the filename and drop the rule, reporting a location
+    with no reason attached.
+    """
+    m = re.match(r"^(.*?:\d+: )(.*)$", leak, re.DOTALL)
+    if not m:
+        return leak.split(" -> ", 1)[0].rstrip()
+    return (m.group(1) + m.group(2).split(" -> ", 1)[0]).rstrip()
+
+
+def tree_digest(entries: dict[str, dict]) -> str:
+    """A stable fingerprint of exactly the bytes this scan certified.
+
+    Content-addressed over (path, sha256-of-content) pairs, NOT over the item
+    keys. The distinction is load-bearing: `git commit` moves an item from the
+    worktree lane to the history lane, and a history item is keyed `path@<sha>`
+    while a live one is keyed `path`. Digesting keys would therefore change on
+    every commit, so /pr-save's "is what I am pushing still what the guard read?"
+    check could never pass. Digesting (path, content) makes the answer depend on
+    the published bytes alone — which is the question actually being asked.
+    """
+    h = hashlib.sha256()
+    pairs = sorted({(e["path"], e.get("sha256") or "") for e in entries.values()})
+    for path, sha in pairs:
+        h.update(f"{path}\0{sha}\n".encode())
+    return h.hexdigest()
+
+
+def write_manifest(path: str, mode: str, entries: dict[str, dict],
+                   base: str | None = None) -> None:
     """Prove the scan was exhaustive: one entry per publishable path, each either
     scanned or carrying an explicit reason it was not.
 
@@ -623,7 +914,8 @@ def write_manifest(path: str, staged: bool, entries: dict[str, dict]) -> None:
                          f"path this repo would publish: {path}")
 
     dirs: dict[str, dict] = {}
-    for rel, e in entries.items():
+    for key, e in entries.items():
+        rel = e["path"]
         top = rel.split("/")[0] if "/" in rel else "(root)"
         d = dirs.setdefault(top, {"files": 0, "scanned": 0, "hits": 0})
         d["files"] += 1
@@ -634,14 +926,13 @@ def write_manifest(path: str, staged: bool, entries: dict[str, dict]) -> None:
     for e in entries.values():
         kinds[e["kind"]] += 1
 
-    head = subprocess.run(["git", "-C", REPO, "rev-parse", "HEAD"],
-                          capture_output=True, text=True).stdout.strip()
+    head = _git("rev-parse", "HEAD").stdout.strip()
     payload = {
         "schema": "content-guard-manifest/v1",
         "head": head,
-        "mode": "staged" if staged else "full",
-        "universe_source": (["git diff --cached --name-only --diff-filter=ACMR"] if staged
-                            else ["git ls-files", "git ls-files --others --exclude-standard"]),
+        "mode": mode,
+        "base": base,
+        "universe_source": UNIVERSE_CMDS[mode],
         "counts": {"total": len(entries), **kinds,
                    "skipped": sum(1 for e in entries.values() if not e["scanned"]),
                    "hits": sum(e["hits"] for e in entries.values())},
@@ -650,7 +941,7 @@ def write_manifest(path: str, staged: bool, entries: dict[str, dict]) -> None:
     }
     # Invariants — the manifest is worthless if it cannot be trusted to be total.
     assert len(payload["files"]) == payload["counts"]["total"]
-    assert len({f["path"] for f in payload["files"]}) == len(payload["files"]), "duplicate path"
+    assert len({f["key"] for f in payload["files"]}) == len(payload["files"]), "duplicate key"
     for f in payload["files"]:
         assert f["scanned"] or f["skip_reason"], f"{f['path']}: skipped with no reason"
 
@@ -663,148 +954,265 @@ def write_manifest(path: str, staged: bool, entries: dict[str, dict]) -> None:
           f"-> {path}")
 
 
-def read_content(rel: str, staged: bool) -> str | None:
-    if staged:
-        r = subprocess.run(["git", "-C", REPO, "show", f":{rel}"],
-                           capture_output=True)
-        if r.returncode != 0:
-            return None
-        data = r.stdout
-    else:
-        path = os.path.join(REPO, rel)
-        if not os.path.isfile(path) or os.path.getsize(path) > 4_000_000:
-            return None
-        with open(path, "rb") as fh:
-            data = fh.read()
-    if b"\x00" in data[:4096]:
+def write_json_report(path: str, payload: dict) -> None:
+    """The machine-readable verdict, for a caller that must gate on it.
+
+    Carries summaries only — `leak_summary` has already removed every matched
+    value — because this file is what a workflow reads, quotes and forwards.
+    """
+    abspath = path if os.path.isabs(path) else os.path.join(REPO, path)
+    if _would_be_published(abspath):
+        raise SystemExit(f"check_client_data: refusing to write the JSON report to a "
+                         f"path this repo would publish: {path}")
+    for rec in payload["findings"] + payload["warnings"]:
+        assert " -> " not in rec, "a finding record must never carry a matched value"
+    os.makedirs(os.path.dirname(abspath), exist_ok=True)
+    with open(abspath, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, indent=2, sort_keys=False)
+        fh.write("\n")
+
+
+def decode_scannable(data: bytes | None) -> str | None:
+    """Text for the line scanners, or None when there is nothing to scan. The
+    size and NUL guards apply to EVERY source — they were previously on the
+    worktree arm only, so an oversized or binary index blob was decoded anyway."""
+    if data is None or len(data) > MAX_TEXT_BYTES or b"\x00" in data[:4096]:
         return None
     return data.decode("utf-8", "replace")
+
+
+def read_item_content(item: dict) -> str | None:
+    return decode_scannable(item_bytes(item))
+
+
+def read_content(rel: str, staged: bool) -> str | None:
+    return read_item_content({"path": rel, "source": "index" if staged else "worktree",
+                              "sha": None})
+
+
+def scan_lines(rel: str, content: str, denylist: set[str], allowlist: dict,
+               consumed: dict, leaks: list[str], warnings: list[str],
+               name_exempt: bool = False, self_exempt: bool = False,
+               allow_path: str | None = None) -> None:
+    """Run every line-level lane over one item's text, appending to leaks/warnings.
+
+    Extracted verbatim from main() so that --scan-file gets the identical rule set:
+    a PR body scanned by a second, thinner implementation would be exactly the
+    fork this guard exists to prevent.
+
+    `rel` is the item KEY and is what every finding is reported under.
+    `allow_path` is the plain repository path and is what allowlist suppression is
+    looked up by — an allowlist entry names a file, and a history item's key
+    (`path@<sha>`) matches no entry, so keying suppression would make every
+    reviewed exception reappear the moment the same file is scanned on a branch.
+    """
+    allow_path = allow_path or rel
+    for label, rx in SECRET_PATTERNS:
+        if not rx.flags & re.MULTILINE and "\\n" not in rx.pattern:
+            continue
+        if self_exempt:
+            continue
+        for m in rx.finditer(content):
+            lineno = content[:m.start()].count("\n") + 1
+            first = content.splitlines()[lineno - 1]
+            key = (allow_path, label, line_sha256(first))
+            if key in allowlist:
+                consumed[key] = True
+                continue
+            leaks.append(f"{rel}:{lineno}: SECRET [{label}] -> private key material")
+
+    for n, line in enumerate(content.splitlines(), 1):
+        if not name_exempt:
+            # Report the location only. Echoing the matched term would write it
+            # into a public CI log every time the check fails.
+            for _ in denylisted_tokens(line, denylist):
+                leaks.append(f"{rel}:{n}: denylisted term match")
+                break
+
+        for label, rx in SECRET_PATTERNS:
+            if "\\n" in rx.pattern:      # handled by the whole-file pass above
+                continue
+            if self_exempt:
+                continue
+            for m in rx.finditer(line):
+                if SECRET_ALLOW.search(m.group(0)) or SECRET_ALLOW.search(line):
+                    continue
+                key = (allow_path, label, line_sha256(line))
+                if key in allowlist:
+                    consumed[key] = True
+                    continue
+                leaks.append(f"{rel}:{n}: SECRET [{label}] -> {m.group(0)[:48]!r}")
+
+        for label, rx in ENGAGEMENT_PATTERNS:
+            if self_exempt:
+                continue
+            for m in rx.finditer(line):
+                hit = m.group(0)
+                # A placeholder slug documents the format rather than naming
+                # an engagement, and the CTF tree holds public challenges.
+                if PLACEHOLDER_SLUG.search(hit) or "projects/ctf/" in line:
+                    continue
+                leaks.append(f"{rel}:{n}: ENGAGEMENT [{label}] -> {hit[:60]!r}")
+
+        if not self_exempt:
+            pl, pw = personal_data_findings(rel, n, line)
+            leaks.extend(pl)
+            warnings.extend(pw)
+
+        for m in IP_RE.finditer(line):
+            s = m.group(1)
+            if s in IP_ALLOW or s.startswith(IP_ALLOW_PREFIX) or len(set(s.split("."))) == 1:
+                continue
+            if looks_like_oid_or_version(line, s):
+                continue
+            try:
+                ip = ipaddress.ip_address(s)
+            except ValueError:
+                continue
+            if not is_doc_ip(ip):
+                leaks.append(f"{rel}:{n}: PUBLIC IP -> {s}")
+
+
+def _today() -> str:
+    """UTC date for allowlist expiry. Fails closed: without a usable date every
+    `expires < today` comparison is False, which would silently disable expiry
+    enforcement in the gate this whole feature rests on."""
+    out = subprocess.run(["date", "-u", "+%Y-%m-%d"], capture_output=True,
+                         text=True).stdout.strip()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", out):
+        raise AllowlistError("cannot determine today's UTC date; allowlist expiry "
+                             "cannot be enforced")
+    return out
+
+
+def scan_external_file(path: str, denylist: set[str]) -> tuple[list[str], list[str]]:
+    """Run the line lanes over a file that is NOT in the repo — a PR or issue body
+    on its way to becoming public. Authored text is published text; nothing in this
+    repo scanned it before."""
+    try:
+        with open(path, "rb") as fh:
+            content = decode_scannable(fh.read())
+    except OSError as e:
+        raise GitError(f"cannot read {path}: {e}") from e
+    if content is None:
+        raise GitError(f"{path} is binary or too large to scan")
+    leaks: list[str] = []
+    warnings: list[str] = []
+    scan_lines(os.path.basename(path), content, denylist, {}, {}, leaks, warnings)
+    return leaks, warnings
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--staged", action="store_true",
                     help="scan staged content only (pre-commit mode)")
-    ap.add_argument("--manifest", nargs="?", const=MANIFEST_DEFAULT, default=None,
+    ap.add_argument("--changed", nargs="?", const="", default=None, metavar="BASE",
+                    help="scan only what this branch would publish relative to BASE "
+                         "(default origin/main, then main): every blob any commit on "
+                         "the branch introduced, plus the worktree, index and "
+                         "untracked files. A push publishes history, not just the tip.")
+    ap.add_argument("--manifest", nargs="?", const="", default=None,
                     metavar="PATH",
                     help="write a per-file coverage manifest proving every publishable "
                          f"path was examined (default {MANIFEST_DEFAULT}; must be gitignored)")
+    ap.add_argument("--json", nargs="?", const="", default=None, metavar="PATH",
+                    help="write the machine-readable verdict, summaries only — never a "
+                         f"matched value (default {JSON_DEFAULT}; must be gitignored)")
+    ap.add_argument("--redact", action="store_true",
+                    help="print rule and location only, never the matched value. Use "
+                         "wherever the output is published — a CI log, a transcript.")
+    ap.add_argument("--scan-file", metavar="PATH", default=None,
+                    help="scan one file outside the repo (a PR or issue body) with the "
+                         "same line rules, then exit")
+    ap.add_argument("--require-denylist", action="store_true",
+                    help="fail when the client-name term list is not configured, rather "
+                         "than reporting clean on a scan that never ran that lane")
     args = ap.parse_args()
 
+    if args.staged and args.changed is not None:
+        print("check_client_data: CONFIG ERROR — --staged and --changed are exclusive",
+              file=sys.stderr)
+        return 2
+    mode = "staged" if args.staged else ("changed" if args.changed is not None else "full")
+
     denylist = load_denylist()
-    today = subprocess.run(["date", "-u", "+%Y-%m-%d"], capture_output=True,
-                           text=True).stdout.strip()
+    if args.require_denylist and not denylist:
+        print("check_client_data: CONFIG ERROR — the client-name term list is not "
+              "configured, so that lane did not run; a clean result would be "
+              "misleading. Set CLIENT_DENYLIST (see scripts/gen_denylist.py).",
+              file=sys.stderr)
+        return 2
+
+    base_ref = base_sha = None
     try:
+        if mode == "changed":
+            base_ref, base_sha = resolve_base(args.changed or None)
+        if args.scan_file:
+            leaks, warnings = scan_external_file(args.scan_file, denylist)
+            items = []
+        else:
+            items = build_universe(mode, base_sha)
+    except GitError as e:
+        print(f"check_client_data: CONFIG ERROR — {e}", file=sys.stderr)
+        return 2
+
+    try:
+        today = _today()
         allowlist, consumed = load_allowlist(today)
     except AllowlistError as e:
         print(f"check_client_data: CONFIG ERROR — {e}", file=sys.stderr)
         return 2
+
+    if args.scan_file:
+        return report(mode, leaks, warnings, args, base_ref, {}, scanned_label=args.scan_file)
+
     leaks: list[str] = []
     warnings: list[str] = []
-    # One entry per publishable path. Built even when --manifest is absent so the
+    # One entry per publishable item. Built even when --manifest is absent so the
     # unreadable-file check below is always enforced.
     entries: dict[str, dict] = {}
 
     # Filename-level check first: credential material the content scanners cannot see.
-    for rel in credential_material_files(args.staged):
+    for it in credential_material_items(items):
+        rel = it["key"]
         leaks.append(f"{rel}:0: SECRET [credential-file] -> "
-                     f"{os.path.splitext(rel)[1]} key/cert material must never be committed")
+                     f"{os.path.splitext(it['path'])[1]} key/cert material must never be committed")
 
     # Symlink targets: structural verdicts, plus the target string run through the
     # ordinary line scanners (an absolute target is an operator path by definition).
-    symlinks = symlink_targets(args.staged)
+    symlinks = universe_symlink_targets(items)
     leaks.extend(symlink_leaks(symlinks))
 
-    # Enumerate the whole publishable universe first, so that every path has a
+    # Enumerate the whole publishable universe first, so that every item has a
     # recorded disposition — scanned, or skipped for a stated reason.
-    for rel in sorted(set(_git_file_list(args.staged))):
-        raw = file_bytes(rel, args.staged)
-        kind, skip = classify(rel, raw, rel in symlinks)
-        entries[rel] = {"path": rel, "kind": kind,
+    for it in items:
+        key = it["key"]
+        raw = item_bytes(it)
+        kind, skip = classify(it["path"], raw, key in symlinks)
+        entries[key] = {"key": key, "path": it["path"], "source": it["source"],
+                        "kind": kind,
                         "bytes": len(raw) if raw is not None else None,
                         "sha256": hashlib.sha256(raw).hexdigest() if raw is not None else None,
                         "scanned": skip is None, "skip_reason": skip, "hits": 0}
-    for rel, tgt in symlinks.items():
+    for key in symlinks:
         # A symlink IS scanned: symlink_leaks ran, and its target string goes
         # through the line scanners below.
-        entries[rel]["hits"] = sum(1 for lk in leaks if lk.startswith(f"{rel}:"))
+        if key in entries:
+            entries[key]["hits"] = sum(1 for lk in leaks if lk.startswith(f"{key}:"))
 
     def record(rel: str) -> None:
         if rel in entries:
             entries[rel]["hits"] = sum(1 for lk in leaks if lk.startswith(f"{rel}:"))
 
-    for rel in files_to_scan(args.staged, frozenset(symlinks)):
-        content = read_content(rel, args.staged)
+    for it in items_to_scan(items, frozenset(symlinks)):
+        rel = it["key"]
+        content = read_item_content(it)
         if content is None:
             continue
-        name_exempt = rel.startswith(NAME_EXEMPT_PREFIXES)
-
-        # Whole-file checks (patterns that legitimately span lines).
-        for label, rx in SECRET_PATTERNS:
-            if not rx.flags & re.MULTILINE and "\\n" not in rx.pattern:
-                continue
-            if rel in SECRET_SELF_EXEMPT:
-                continue
-            for m in rx.finditer(content):
-                lineno = content[:m.start()].count("\n") + 1
-                first = content.splitlines()[lineno - 1]
-                key = (rel, label, line_sha256(first))
-                if key in allowlist:
-                    consumed[key] = True
-                    continue
-                leaks.append(f"{rel}:{lineno}: SECRET [{label}] -> private key material")
-
-        for n, line in enumerate(content.splitlines(), 1):
-            if not name_exempt:
-                # Report the location only. Echoing the matched term would write it
-                # into a public CI log every time the check fails.
-                for _ in denylisted_tokens(line, denylist):
-                    leaks.append(f"{rel}:{n}: denylisted term match")
-                    break
-
-            for label, rx in SECRET_PATTERNS:
-                if "\\n" in rx.pattern:      # handled by the whole-file pass above
-                    continue
-                if rel in SECRET_SELF_EXEMPT:
-                    continue
-                for m in rx.finditer(line):
-                    if SECRET_ALLOW.search(m.group(0)) or SECRET_ALLOW.search(line):
-                        continue
-                    key = (rel, label, line_sha256(line))
-                    if key in allowlist:
-                        consumed[key] = True
-                        continue
-                    leaks.append(f"{rel}:{n}: SECRET [{label}] -> {m.group(0)[:48]!r}")
-
-            for label, rx in ENGAGEMENT_PATTERNS:
-                if rel in SECRET_SELF_EXEMPT:
-                    continue
-                for m in rx.finditer(line):
-                    hit = m.group(0)
-                    # A placeholder slug documents the format rather than naming
-                    # an engagement, and the CTF tree holds public challenges.
-                    if PLACEHOLDER_SLUG.search(hit) or "projects/ctf/" in line:
-                        continue
-                    leaks.append(f"{rel}:{n}: ENGAGEMENT [{label}] -> {hit[:60]!r}")
-
-            if rel not in SECRET_SELF_EXEMPT:
-                pl, pw = personal_data_findings(rel, n, line)
-                leaks.extend(pl)
-                warnings.extend(pw)
-
-            for m in IP_RE.finditer(line):
-                s = m.group(1)
-                if s in IP_ALLOW or s.startswith(IP_ALLOW_PREFIX) or len(set(s.split("."))) == 1:
-                    continue
-                if looks_like_oid_or_version(line, s):
-                    continue
-                try:
-                    ip = ipaddress.ip_address(s)
-                except ValueError:
-                    continue
-                if not is_doc_ip(ip):
-                    leaks.append(f"{rel}:{n}: PUBLIC IP -> {s}")
-
+        scan_lines(rel, content, denylist, allowlist, consumed, leaks, warnings,
+                   name_exempt=it["path"].startswith(NAME_EXEMPT_PREFIXES),
+                   self_exempt=it["path"] in SECRET_SELF_EXEMPT,
+                   allow_path=it["path"])
         record(rel)
 
     # A file that could not be read was never checked. Reporting OK for it would
@@ -813,10 +1221,11 @@ def main() -> int:
     # gone or changed. Failing here is what stops the list from accreting dead
     # exceptions that could later be repurposed.
     #
-    # FULL SCANS ONLY. --staged sees just the changed files, so an entry for a file
-    # not in this commit is legitimately unconsumed — enforcing staleness there
-    # would fail every commit that does not happen to touch every allowlisted file.
-    stale = [] if args.staged else [k for k, used in consumed.items() if not used]
+    # FULL SCANS ONLY. --staged and --changed see only the touched files, so an
+    # entry for a file not in this scan is legitimately unconsumed — enforcing
+    # staleness there would fail every commit and every PR that does not happen
+    # to touch every allowlisted file.
+    stale = [k for k, used in consumed.items() if not used] if mode == "full" else []
     if stale:
         print("check_client_data: CONFIG ERROR — stale allowlist entr(ies); the line each "
               "was granted for no longer matches:", file=sys.stderr)
@@ -831,26 +1240,83 @@ def main() -> int:
         leaks.append(f"{rel}:0: UNREADABLE -> publishable but could not be read; "
                      f"cannot certify it is clean")
 
-    if args.manifest:
-        write_manifest(args.manifest, args.staged, entries)
+    # Text that no line lane read. Reachable only via the MAX_TEXT_BYTES cap, and
+    # it must FAIL CLOSED for the same reason UNREADABLE does: the file is
+    # publishable, nothing examined it, and reporting OK would certify content
+    # this guard never saw. The size cap exists for memory safety, not as a
+    # licence to publish — and a client report, a HAR capture, an nmap XML or a
+    # Postman export is routinely larger than the cap, which makes this exactly
+    # the class the guard exists for. The --scan-file lane already fails closed on
+    # the identical condition; these lanes must not disagree.
+    oversize = sorted(r for r, e in entries.items()
+                      if e["kind"] == "text" and not e["scanned"])
+    for rel in oversize:
+        leaks.append(f"{rel}:0: UNSCANNED -> publishable text no line lane read "
+                     f"({entries[rel]['skip_reason']}); cannot certify it is clean")
+
+    if args.manifest is not None:
+        write_manifest(args.manifest or manifest_default(mode), mode, entries, base_ref)
+
+    return report(mode, leaks, warnings, args, base_ref, entries,
+                  denylist_active=bool(denylist))
+
+
+def report(mode: str, leaks: list[str], warnings: list[str], args, base_ref: str | None,
+           entries: dict[str, dict], denylist_active: bool = True,
+           scanned_label: str | None = None) -> int:
+    """Print the human verdict, optionally write the machine one, and return the
+    exit code. Exit codes stay 0/1/2 exactly — .githooks/pre-commit, .githooks/
+    pre-push and three CI workflows all branch on them."""
+    show = leak_summary if args.redact else (lambda s: s)
+
+    if args.json is not None:
+        scope = scanned_label or ("the tracked tree" if mode == "full" else f"{mode} content")
+        write_json_report(args.json or json_default(mode), {
+            "schema": "content-guard-report/v1",
+            "mode": mode,
+            "base": base_ref,
+            "head": _git("rev-parse", "HEAD").stdout.strip(),
+            "scope": scope,
+            "lanes": {"denylist": "active" if denylist_active else "absent"},
+            "counts": {
+                "universe": len(entries),
+                "scanned": sum(1 for e in entries.values() if e["scanned"]),
+                "skipped": sum(1 for e in entries.values() if not e["scanned"]),
+                "findings": len(set(leaks)),
+                "warnings": len(set(warnings)),
+            },
+            "tree_digest": tree_digest(entries),
+            # Live paths only — worktree and index. A history-only blob has no
+            # file to stage, and a caller that staged one would be inventing work.
+            "paths": sorted({e["path"] for e in entries.values()
+                             if e["source"] in ("worktree", "index")}),
+            # Summaries only. leak_summary has already removed the matched value,
+            # and write_json_report asserts that it did.
+            "findings": sorted({leak_summary(lk) for lk in leaks}),
+            "warnings": sorted({leak_summary(w) for w in warnings}),
+            "exit": 1 if leaks else 0,
+        })
 
     if warnings:
         print(f"check_client_data: {len(warnings)} warning(s) — heuristic classes "
               f"(address / named contact / phone). Review, do not ignore; these do "
               f"not fail the build:", file=sys.stderr)
-        for w in sorted(set(warnings))[:25]:
+        for w in sorted({show(w) for w in warnings})[:25]:
             print(f"  {w}", file=sys.stderr)
-        if len(set(warnings)) > 25:
-            print(f"  ... and {len(set(warnings)) - 25} more", file=sys.stderr)
+        if len({show(w) for w in warnings}) > 25:
+            print(f"  ... and {len({show(w) for w in warnings}) - 25} more", file=sys.stderr)
 
     if not leaks:
-        scope = "staged content" if args.staged else "the tracked tree"
+        scope = scanned_label or {
+            "staged": "staged content",
+            "changed": f"the changes on this branch vs {base_ref}",
+        }.get(mode, "the tracked tree")
         print(f"check_client_data: OK — no client data, credentials, or public IPs in {scope}")
         return 0
 
     print("check_client_data: FAIL — client data / credentials must not enter this public repo:",
           file=sys.stderr)
-    for leak in sorted(set(leaks)):
+    for leak in sorted({show(lk) for lk in leaks}):
         print(f"  {leak}", file=sys.stderr)
     print("\nFix: describe the CLASS of issue, not the customer — write 'a recurring mobile "
           "re-test crux', never '<ClientA>/<ClientB>'. Use RFC 5737 IPs (203.0.113.x) in examples, "

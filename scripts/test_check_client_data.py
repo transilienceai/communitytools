@@ -528,6 +528,410 @@ def json_dumps(s: str) -> str:
     return json.dumps(s)
 
 
+# --------------------------------------------------------------------------
+# Changed-scope scanning — what PUSHING this branch would publish.
+#
+# The class these cover: a push publishes HISTORY, not the tip. A secret added in
+# one commit and deleted in the next is absent from `BASE...HEAD` and absent from
+# the worktree, yet it is fetched by anyone who clones the PR ref and stays
+# reachable from that ref after the branch is deleted. A net-diff scan reports
+# clean on it, and so does a whole-tree scan.
+#
+# Every fixture is synthetic AND assembled at run time from fragments, so this
+# file contains no literal that matches a credential pattern. That keeps the
+# PreToolUse write-gate — which has no self-exemption list — able to protect this
+# file like any other, instead of the test suite being a hole in it.
+# --------------------------------------------------------------------------
+
+import tempfile  # noqa: E402
+
+FAKE_AWS_KEY = "AKIA" + "QQQQWWWWEEEERRRR"
+FAKE_GH_TOKEN = "ghp_" + "AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHHIIII"
+FAKE_HOME_LINK = "/" + "Users/someone/private-repo/x"
+# Routable and outside every documentation range, so the IP lane must fire.
+FAKE_PUBLIC_IP = "93.184." + "9.11"
+
+
+def _probe_repo(tmp: str) -> str:
+    """A throwaway git repo carrying a copy of the guard, so the changed lane can
+    be exercised against real commits without touching this repository.
+
+    Created in a SUBdirectory of tmp on purpose: the guard refuses to write a
+    manifest or a JSON report anywhere the repo under test would publish, and a
+    probe repo has no .gitignore, so artefacts must land beside it, not in it.
+    """
+    import shutil
+    tmp = os.path.join(tmp, "repo")
+    os.makedirs(tmp, exist_ok=True)
+    run = lambda *a: subprocess.run(["git", "-C", tmp, *a], capture_output=True, text=True)
+    subprocess.run(["git", "init", "-q", tmp], capture_output=True)
+    run("config", "user.email", "t@example.com")
+    run("config", "user.name", "t")
+    os.makedirs(os.path.join(tmp, "scripts"), exist_ok=True)
+    os.makedirs(os.path.join(tmp, "skills"), exist_ok=True)
+    shutil.copy(GUARD, os.path.join(tmp, "scripts", "check_client_data.py"))
+    with open(os.path.join(tmp, "scripts", "content-guard-binaries.json"), "w") as fh:
+        fh.write('{"binaries": []}\n')
+    with open(os.path.join(tmp, "skills", "base.md"), "w") as fh:
+        fh.write("a clean baseline\n")
+    run("add", "-A")
+    run("commit", "-qm", "base")
+    run("branch", "-M", "main")
+    return tmp
+
+
+def _probe_git(tmp: str, *a):
+    return subprocess.run(["git", "-C", tmp, *a], capture_output=True, text=True)
+
+
+def _probe_guard(tmp: str, *flags):
+    return subprocess.run([sys.executable, os.path.join(tmp, "scripts", "check_client_data.py"),
+                           *flags], capture_output=True, text=True, cwd=tmp)
+
+
+def _write(tmp: str, rel: str, text: str, mode: str = "w") -> None:
+    with open(os.path.join(tmp, rel), mode, encoding="utf-8") as fh:
+        fh.write(text)
+
+
+def test_changed_scan_catches_a_secret_added_then_deleted():
+    """THE case that motivates the history lane. The whole-tree scan reports clean
+    because the file no longer exists; the push still publishes the blob."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _probe_repo(tmp)
+        _probe_git(repo, "checkout", "-qb", "feature/probe")
+        _write(repo, "skills/oops.md", f"key {FAKE_AWS_KEY}\n")
+        _probe_git(repo, "add", "-A")
+        _probe_git(repo, "commit", "-qm", "add")
+        _probe_git(repo, "rm", "-q", "skills/oops.md")
+        _probe_git(repo, "commit", "-qm", "remove")
+
+        full = _probe_guard(repo)
+        changed = _probe_guard(repo, "--changed", "main")
+        assert full.returncode == 0, "precondition: the tip is clean, so a full scan passes"
+        assert changed.returncode == 1, "the changed scan must read the orphaned history blob"
+        assert "aws-access-key" in changed.stderr, changed.stderr
+
+
+def test_changed_scan_reads_the_worktree_not_only_commits():
+    """An uncommitted edit is what the next commit publishes; it must be scanned."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _probe_repo(tmp)
+        _probe_git(repo, "checkout", "-qb", "f")
+        _write(repo, "skills/base.md",
+               f"host 198.51.100.7 is fine\nreal {FAKE_PUBLIC_IP} endpoint\n", mode="a")
+        assert _probe_guard(repo, "--changed", "main").returncode == 1
+
+
+def test_changed_scan_covers_untracked_files():
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _probe_repo(tmp)
+        _write(repo, "skills/new.md", f"token {FAKE_GH_TOKEN}\n")
+        assert _probe_guard(repo, "--changed", "main").returncode == 1
+
+
+def test_changed_scan_is_clean_on_a_clean_branch():
+    """Precision matters as much as recall: a guard that cries wolf gets bypassed."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _probe_repo(tmp)
+        _probe_git(repo, "checkout", "-qb", "f")
+        _write(repo, "skills/ok.md", "Use 203.0.113.5 and /home/kali/tools in examples.\n")
+        _probe_git(repo, "add", "-A")
+        _probe_git(repo, "commit", "-qm", "docs: add an example")
+        r = _probe_guard(repo, "--changed", "main")
+        assert r.returncode == 0, r.stderr
+
+
+def test_unresolvable_base_fails_closed():
+    """"Scanned nothing" must never be reported as "clean" — the one failure a
+    content guard may not have."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _probe_repo(tmp)
+        r = _probe_guard(repo, "--changed", "no-such-ref")
+        assert r.returncode == 2, r.stdout + r.stderr
+        assert "cannot resolve a base ref" in r.stderr, r.stderr
+
+
+def test_staged_and_changed_are_exclusive():
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _probe_repo(tmp)
+        assert _probe_guard(repo, "--staged", "--changed", "main").returncode == 2
+
+
+def test_changed_scan_exempts_allowlist_staleness():
+    """A changed scan is partial exactly as a staged one is, so an entry for an
+    untouched file is legitimately unconsumed. Without this exemption every
+    /pr-save run would exit 2 as a config error.
+
+    Runs entirely inside a probe repo. Mutating this repository's own tracked
+    allowlist to assert a property of the guard means a crashed run leaves the
+    tree dirty and every later scan failing on a stale entry that no change
+    introduced — which is exactly what happened while this suite was written.
+    """
+    import json
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _probe_repo(tmp)
+        allow = {
+            "schema": "content-guard-allowlist/v1",
+            "max_entries": 25,
+            "unallowlistable": ["denylisted term match"],
+            "entries": [{
+                "path": "skills/nothing.md",
+                "rule": "aws-access-key",
+                # Matches no line anywhere, so it is unconsumed by construction.
+                "line_sha256": "0" * 64,
+                "reason": "synthetic fixture for the staleness exemption test",
+                "added_by": "test",
+                "added": "2026-01-01",
+                "expires": "2099-01-01",
+            }],
+        }
+        with open(os.path.join(repo, "scripts", "content-guard-allowlist.json"), "w") as fh:
+            json.dump(allow, fh, indent=2)
+        assert _probe_guard(repo).returncode == 2, "a FULL scan must catch a stale entry"
+        assert _probe_guard(repo, "--changed", "main").returncode != 2, \
+            "a changed scan cannot know an entry is stale"
+        assert _probe_guard(repo, "--staged").returncode != 2, \
+            "a staged scan cannot know an entry is stale either"
+
+
+def test_changed_universe_is_blobs_not_the_net_diff():
+    """Structural proof of the lane's reason for existing: every intermediate
+    revision of a file is its own published blob."""
+    import json
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _probe_repo(tmp)
+        _probe_git(repo, "checkout", "-qb", "f")
+        for i in range(3):
+            _write(repo, "skills/base.md", f"revision {i}\n")
+            _probe_git(repo, "add", "-A")
+            _probe_git(repo, "commit", "-qm", f"chore: rev {i}")
+        out = os.path.join(tmp, "m.json")
+        _probe_guard(repo, "--changed", "main", "--manifest", out)
+        doc = json.load(open(out, encoding="utf-8"))
+        assert doc["mode"] == "changed" and doc["base"] == "main", doc["mode"]
+        versions = [f for f in doc["files"] if f["path"] == "skills/base.md"]
+        assert len(versions) >= 3, f"each intermediate blob must be scanned, got {len(versions)}"
+
+
+def test_changed_scan_covers_a_type_change():
+    """Replacing a tracked FILE with a symlink is git status `T`, which
+    `--diff-filter=ACMR` silently drops — and "file replaced by a link to
+    /Users/<name>/…" is exactly the operator-path class the symlink lane exists
+    for. Regression guard on DIFF_FILTER including T."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _probe_repo(tmp)
+        os.remove(os.path.join(repo, "skills", "base.md"))
+        os.symlink(FAKE_HOME_LINK, os.path.join(repo, "skills", "base.md"))
+        r = _probe_guard(repo, "--changed", "main")
+        assert r.returncode == 1, "a file->symlink type change must be scanned"
+        assert "absolute-target" in r.stderr, r.stderr
+
+
+def test_symlink_target_is_read_from_its_own_source():
+    """A tracked symlink re-pointed in the worktree but not yet staged must report
+    its NEW target. Reading the index blob regardless of source reported the OLD,
+    clean one — the exact case the symlink lane exists for."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _probe_repo(tmp)
+        link = os.path.join(repo, "skills", "link")
+        os.symlink("base.md", link)
+        _probe_git(repo, "add", "-A")
+        _probe_git(repo, "commit", "-qm", "add a relative link")
+        assert _probe_guard(repo, "--changed", "main").returncode == 0, "a relative link is fine"
+        os.remove(link)
+        os.symlink(FAKE_HOME_LINK, link)          # re-pointed, deliberately NOT staged
+        r = _probe_guard(repo, "--changed", "main")
+        assert r.returncode == 1, "the worktree target must be read, not the index blob"
+        assert "absolute-target" in r.stderr, r.stderr
+        assert "someone" not in r.stderr, "the target itself must never be echoed"
+
+
+# --------------------------------------------------------------------------
+# The value-free reporting invariant. A finding travels — into a public CI log, a
+# PR body, an agent transcript — so the matched value may never travel with it.
+# --------------------------------------------------------------------------
+
+def test_leak_summary_drops_every_matched_value():
+    for leak, expected in (
+        ("a.md:3: PUBLIC IP -> 203.0.113.9", "a.md:3: PUBLIC IP"),
+        ("a.md:4: SECRET [aws-access-key] -> 'KEY'", "a.md:4: SECRET [aws-access-key]"),
+        ("a.md:5: SYMLINK [escapes-repo] -> ../../elsewhere", "a.md:5: SYMLINK [escapes-repo]"),
+        ("a.md:6: PERSONAL [first.last email] -> redacted @corp.example",
+         "a.md:6: PERSONAL [first.last email]"),
+        # A line with no ' -> ' is already value-free and must survive intact.
+        ("a.md:7: denylisted term match", "a.md:7: denylisted term match"),
+    ):
+        assert ccd.leak_summary(leak) == expected, ccd.leak_summary(leak)
+
+
+def test_json_report_never_echoes_a_matched_value():
+    """The JSON artefact is what a workflow reads, quotes and forwards into a PR."""
+    import json
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _probe_repo(tmp)
+        _write(repo, "skills/leak.md", f"key {FAKE_AWS_KEY}\nhost {FAKE_PUBLIC_IP}\n")
+        out = os.path.join(tmp, "report.json")
+        r = _probe_guard(repo, "--changed", "main", "--json", out)
+        assert r.returncode == 1, r.stdout + r.stderr
+        raw = open(out, encoding="utf-8").read()
+        assert FAKE_AWS_KEY not in raw, "the key reached the JSON report"
+        assert FAKE_PUBLIC_IP not in raw, "the address reached the JSON report"
+        doc = json.loads(raw)
+        assert doc["schema"] == "content-guard-report/v1"
+        assert doc["counts"]["findings"] >= 2 and doc["exit"] == 1
+        assert all(" -> " not in f for f in doc["findings"]), doc["findings"]
+
+
+def test_redact_strips_values_from_stderr():
+    """CI logs on a public repository are public."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _probe_repo(tmp)
+        _write(repo, "skills/leak.md", f"key {FAKE_AWS_KEY}\n")
+        plain = _probe_guard(repo, "--changed", "main")
+        red = _probe_guard(repo, "--changed", "main", "--redact")
+        assert FAKE_AWS_KEY in plain.stderr, "precondition: the default output shows it"
+        assert FAKE_AWS_KEY not in red.stderr, red.stderr
+        assert "aws-access-key" in red.stderr, "the rule and location must survive"
+
+
+def test_scan_file_covers_an_authored_body():
+    """A PR or issue body is public text that no other seam in this repo scans."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _probe_repo(tmp)
+        body = os.path.join(repo, "body.md")
+        _write(repo, "body.md", f"Fixes the parser.\nkey {FAKE_AWS_KEY}\n")
+        r = _probe_guard(repo, "--scan-file", body, "--redact")
+        assert r.returncode == 1, r.stdout + r.stderr
+        assert FAKE_AWS_KEY not in r.stderr, r.stderr
+        _write(repo, "ok.md", "Fixes the parser so 203.0.113.5 examples keep working.\n")
+        assert _probe_guard(repo, "--scan-file", os.path.join(repo, "ok.md")).returncode == 0
+
+
+def test_require_denylist_refuses_a_scan_that_skipped_the_name_lane():
+    """load_denylist() returns an empty set when the list is absent, so a green
+    scan can mean the client-name lane never ran. That is not clean."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _probe_repo(tmp)
+        env = dict(os.environ, CLIENT_DENYLIST=os.path.join(tmp, "absent.sha256"))
+        r = subprocess.run([sys.executable, os.path.join(repo, "scripts", "check_client_data.py"),
+                            "--changed", "main", "--require-denylist"],
+                           capture_output=True, text=True, cwd=tmp, env=env)
+        assert r.returncode == 2, r.stdout + r.stderr
+        assert "term list is not configured" in r.stderr, r.stderr
+
+
+def test_json_report_refuses_a_published_path():
+    """The report names paths and findings; writing it into the tree would publish
+    a map of them. The probe path deliberately is NOT a .json — the repo ignores
+    `*.json` wholesale, so a .json path is never "would be published" and would
+    make this assertion vacuous."""
+    probe = "docs/_probe_report.md"
+    r = subprocess.run([sys.executable, GUARD, "--changed", "--json", probe],
+                       capture_output=True, text=True, cwd=REPO)
+    assert "refusing to write the JSON report" in (r.stdout + r.stderr), r.stdout + r.stderr
+    assert not os.path.exists(os.path.join(REPO, probe))
+
+
+def test_oversized_text_fails_closed_in_every_mode():
+    """A text file above MAX_TEXT_BYTES is read by no line lane. Reporting OK for
+    it certifies content nothing examined — and a client report, a HAR capture or
+    an nmap XML is routinely larger than the cap, so this is the class the guard
+    exists for, not an edge case. The --scan-file lane already fails closed on the
+    same condition; the repo lanes must not disagree with it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _probe_repo(tmp)
+        head = f"key {FAKE_AWS_KEY} host {FAKE_PUBLIC_IP}\n"
+        _write(repo, "skills/big.md", head + "x" * (ccd.MAX_TEXT_BYTES + 1 - len(head)))
+        assert _probe_guard(repo, "--changed", "main").returncode == 1, "changed mode"
+        assert _probe_guard(repo).returncode == 1, "full mode"
+        _probe_git(repo, "add", "-A")
+        assert _probe_guard(repo, "--staged").returncode == 1, "staged mode"
+        r = _probe_guard(repo, "--changed", "main", "--redact")
+        assert "UNSCANNED" in r.stderr, r.stderr
+        # One byte smaller is scanned normally — the boundary must be exact.
+        _write(repo, "skills/big.md", head + "x" * (ccd.MAX_TEXT_BYTES - len(head)))
+        r2 = _probe_guard(repo, "--changed", "main", "--redact")
+        assert "UNSCANNED" not in r2.stderr and "aws-access-key" in r2.stderr, r2.stderr
+
+
+def test_tree_digest_is_invariant_across_a_commit():
+    """/pr-save re-scans after committing and refuses to push unless the digest
+    still matches what the guard certified. Committing moves an item from the
+    worktree lane to the history lane and changes its KEY, so a key-addressed
+    digest would change on every commit and that check could never pass."""
+    import json
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _probe_repo(tmp)
+        _probe_git(repo, "checkout", "-qb", "f")
+        _write(repo, "skills/new.md", "some ordinary content\n")
+        before_p, after_p = os.path.join(tmp, "b.json"), os.path.join(tmp, "a.json")
+        _probe_guard(repo, "--changed", "main", "--json", before_p)
+        _probe_git(repo, "add", "-A")
+        _probe_git(repo, "commit", "-qm", "feat: add a note")
+        _probe_guard(repo, "--changed", "main", "--json", after_p)
+        before = json.load(open(before_p, encoding="utf-8"))["tree_digest"]
+        after = json.load(open(after_p, encoding="utf-8"))["tree_digest"]
+        assert before == after, f"digest changed across commit: {before[:16]} -> {after[:16]}"
+        # ...but it MUST change when the content does, or it certifies nothing.
+        _write(repo, "skills/new.md", "different content\n")
+        changed_p = os.path.join(tmp, "c.json")
+        _probe_guard(repo, "--changed", "main", "--json", changed_p)
+        assert json.load(open(changed_p, encoding="utf-8"))["tree_digest"] != after
+
+
+def test_allowlist_suppression_keys_on_path_not_item_key():
+    """An allowlist entry names a FILE. A history item is keyed `path@<sha>`, which
+    matches no entry, so keying suppression by it would make every reviewed
+    exception reappear the moment that file is scanned on a branch."""
+    import json
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _probe_repo(tmp)
+        _probe_git(repo, "checkout", "-qb", "f")
+        line = f"key {FAKE_AWS_KEY}\n"
+        _write(repo, "skills/fixture.md", line)
+        _probe_git(repo, "add", "-A")
+        _probe_git(repo, "commit", "-qm", "add a fixture")
+        assert _probe_guard(repo, "--changed", "main").returncode == 1, "precondition"
+        with open(os.path.join(repo, "scripts", "content-guard-allowlist.json"), "w") as fh:
+            json.dump({"schema": "content-guard-allowlist/v1", "max_entries": 25,
+                       "unallowlistable": [], "entries": [{
+                           "path": "skills/fixture.md", "rule": "aws-access-key",
+                           "line_sha256": ccd.line_sha256(line.rstrip("\n")),
+                           "reason": "synthetic fixture", "added_by": "test",
+                           "added": "2026-01-01", "expires": "2099-01-01"}]}, fh)
+        assert _probe_guard(repo, "--changed", "main").returncode == 0, \
+            "the allowlist entry must suppress the finding on a history blob too"
+
+
+def test_history_symlink_is_not_deduped_against_a_regular_file():
+    """git stores a symlink as a blob holding its target string, so a history
+    symlink and a regular file whose text equals that target share a blob sha.
+    Deduping across that boundary drops the symlink item and with it the whole
+    symlink lane for that path — the absolute-target check included."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = _probe_repo(tmp)
+        _probe_git(repo, "checkout", "-qb", "f")
+        os.symlink(FAKE_HOME_LINK, os.path.join(repo, "skills", "link"))
+        _probe_git(repo, "add", "-A")
+        _probe_git(repo, "commit", "-qm", "add a link")
+        # A regular file whose CONTENT is byte-identical to the link's target.
+        os.remove(os.path.join(repo, "skills", "link"))
+        _write(repo, "skills/link", FAKE_HOME_LINK)
+        r = _probe_guard(repo, "--changed", "main", "--redact")
+        assert r.returncode == 1, "the history symlink blob must still be scanned"
+        assert "absolute-target" in r.stderr or "operator-home-path" in r.stderr, r.stderr
+
+
+def test_manifest_default_differs_per_mode():
+    """A partial scan must not overwrite the full scan's coverage proof: both
+    declare the same schema, so a changed manifest at the full path would read as
+    "the whole tree was examined"."""
+    paths = {m: ccd.manifest_default(m) for m in ("full", "staged", "changed")}
+    assert len(set(paths.values())) == 3, paths
+    assert paths["full"] == ccd.MANIFEST_DEFAULT
+
+
 def main() -> int:
     tests = [v for k, v in sorted(globals().items())
              if k.startswith("test_") and callable(v)]

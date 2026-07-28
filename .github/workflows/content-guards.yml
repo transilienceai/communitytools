@@ -39,7 +39,26 @@ jobs:
             printf '%s' "$CLIENT_DENYLIST_B64" | base64 -d > "$RUNNER_TEMP/denylist.sha256"
             export CLIENT_DENYLIST="$RUNNER_TEMP/denylist.sha256"
           fi
-          python3 scripts/check_client_data.py
+          # --redact everywhere: an Actions log on a public repository is public,
+          # and the default output prints the matched value beside the rule.
+          python3 scripts/check_client_data.py --redact
+
+      # The whole-tree scan above reads the TIP. A pull request publishes its
+      # HISTORY: a secret added in one commit and deleted in the next is absent
+      # from the tip and from the net diff, yet it is fetched by anyone who clones
+      # the PR ref and stays reachable from that ref afterwards. This lane reads
+      # every blob the branch introduces. Same rules, different universe.
+      - name: Changed-scope scan (every blob this branch would publish)
+        if: github.event_name == 'pull_request'
+        env:
+          CLIENT_DENYLIST_B64: ${{ secrets.CLIENT_DENYLIST_B64 }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -n "$CLIENT_DENYLIST_B64" ]; then
+            printf '%s' "$CLIENT_DENYLIST_B64" | base64 -d > "$RUNNER_TEMP/denylist.sha256"
+            export CLIENT_DENYLIST="$RUNNER_TEMP/denylist.sha256"
+          fi
+          python3 scripts/check_client_data.py --changed "$BASE_SHA" --redact
 
       - name: Reusable-tree IP neutrality
         run: python3 scripts/check_neutrality.py

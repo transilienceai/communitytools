@@ -57,11 +57,53 @@ untracked-not-ignored ones, because the latter is what the next commit would pub
 
 | Seam | Scope | Bypassable |
 |---|---|---|
+| `tools/content-guard-write.py` | one incoming Write/Edit, before it reaches disk | yes (fails open by design) |
 | `.githooks/pre-commit` | staged content | yes (`--no-verify`) |
 | `.githooks/pre-push` | whole tree | yes (`--no-verify`) |
-| `.github/workflows/content-guards.yml` | whole tree, **no path filter** | no |
+| `/content-guard` workflow | changed scope **+** whole tree | it is the gate inside `/pr-save` |
+| `.github/workflows/content-guards.yml` | whole tree, **no path filter**; plus changed scope on every PR | no |
 
 Enable the hooks once per clone: `git config core.hooksPath .githooks`
+
+## Before you publish: `/content-guard` and `/pr-save`
+
+`/content-guard` answers "is what I have right now safe to push?" and `/pr-save` opens a
+pull request **only** if it says yes. The verdict is computed by
+`scripts/check_client_data.py` and gated in code — no model is in the finding path, and no
+model can clear a finding.
+
+```bash
+python3 scripts/check_client_data.py --changed --redact   # what this branch would publish
+python3 scripts/check_client_data.py --redact             # the whole tree
+```
+
+**A push publishes history, not the tip.** A secret added in one commit and deleted in the
+next is absent from `BASE...HEAD` *and* from the working tree, yet it is fetched by anyone
+who clones the PR ref and stays reachable from that ref after the branch is deleted. So
+`--changed` scans the union of every blob any commit on the branch **introduced**, the
+worktree, the index, and untracked files — not the net diff. On this repository's own
+feature branch that was 57 distinct blobs against 35 net-diff paths: a net-diff scan would
+have read 60% of what it published.
+
+Three flags exist for the same reason the guard never echoes a denylisted term:
+
+- `--redact` prints the rule and the location, never the matched value. Use it wherever the
+  output is published — a CI log, an agent transcript. CI passes it everywhere.
+- `--json PATH` writes a machine-readable verdict that is value-free by construction: every
+  record is truncated at the first `->`, and the writer asserts it.
+- `--scan-file PATH` runs the same line rules over authored text — a PR or issue body — which
+  becomes public and which no other seam in this repo scanned. `/pr-save` gates on it before
+  `gh pr create`.
+
+`--require-denylist` fails a scan whose client-name lane never ran. `load_denylist()` returns
+an empty set when `$CLIENT_DENYLIST` is missing, so a green result would otherwise mean
+"nothing matched" and "that lane never executed" indistinguishably. `/content-guard` sets it
+by default.
+
+Allowlist staleness is enforced on **full** scans only. A changed or staged scan sees only
+the touched files, so an entry for an untouched file is legitimately unconsumed; enforcing it
+there would fail every commit and every PR that did not happen to touch every allowlisted
+file.
 
 **CI is the control, not the hooks.** `--no-verify` cannot be removed client-side, so the local
 hooks exist to catch the *accident* — a pasted path, a `git add -A` sweep. Content-guards must

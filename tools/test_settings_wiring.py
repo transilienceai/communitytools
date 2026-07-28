@@ -80,6 +80,16 @@ def test_write_edit_confidentiality_hook_present():
 
 
 def main():
+    # `.claude/settings.json` is per-machine state, deliberately untracked (the
+    # blanket `*.json` ignore). So it is simply ABSENT on a fresh checkout — which
+    # is every CI run. Asserting against a file that cannot exist there turns a
+    # required status check permanently red and says nothing about the change
+    # under test; the wiring this file guards is a local-configuration property.
+    if not os.path.exists(SETTINGS_PATH):
+        print(f"SKIPPED - {os.path.relpath(SETTINGS_PATH, REPO_ROOT)} is absent "
+              f"(untracked per-machine state; nothing to verify here)")
+        sys.exit(0)
+
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
     for t in tests:

@@ -244,5 +244,97 @@ ok(/test_skill_linter\.py/.test(readFileSync(join(wfDir, '..', '..', '.github', 
    'CI runs the skill_linter --json contract test');
 
 
+// ---------------------------------------------------------------------------
+// content-guard + pr-save: the publish gate.
+//
+// These assert the properties that make the gate a GATE rather than a habit —
+// things no unit test can see, because they are about ordering, about which
+// agent is constructed at all, and about what an agent is permitted to decide.
+// ---------------------------------------------------------------------------
+const cg = read('content-guard.js');
+const ps = read('pr-save.js');
+const guardYml = readFileSync(join(wfDir, '..', '..', '.github', 'workflows', 'content-guards.yml'), 'utf8');
+
+// content-guard: deterministic by construction.
+ok(/--changed/.test(cg), 'content-guard runs the changed-scope scan');
+ok(/guardCmd\('changed'\)/.test(cg) && /guardCmd\('full'\)/.test(cg),
+   'content-guard runs BOTH the changed scan and the whole-tree backstop');
+ok(/--redact/.test(cg),
+   'content-guard always redacts — its output lands in an agent transcript');
+ok(/check_neutrality\.py/.test(cg) && /check_no_forks\.py/.test(cg),
+   'content-guard runs the neutrality and no-forks guards too');
+ok(!/[^a-zA-Z]new RegExp\(|AKIA|-----BEGIN/.test(cg),
+   'content-guard forks NO rule from the Python guard — no regex, no pattern, no allowlist');
+ok(/function verdict\(/.test(cg) && /function usable\(/.test(cg),
+   'the verdict is a pure JS function of the relayed facts');
+ok(/exit === 2/.test(cg) && /CONFIG_ERROR/.test(cg),
+   'exit 2 is a config error (scan not trustworthy), distinct from a finding');
+ok(/denylistOk\(/.test(cg),
+   'a scan whose client-name lane never ran cannot be reported as clean');
+ok(/headMismatch/.test(cg),
+   'two lanes disagreeing about HEAD blocks — no single state would have been certified');
+// The exit code the verdict reads is a number an AGENT typed. The tool's own JSON
+// says the same thing authoritatively. Trusting only the transcript would put a
+// model back in the finding path, which is the one thing this design forbids.
+ok(/l\.payload\.exit !== l\.exit/.test(cg),
+   "the relayed exit code is cross-checked against the tool's own JSON verdict");
+ok(/l\.payload\.counts\.findings > 0\) !== \(l\.exit !== 0\)/.test(cg),
+   'a payload listing findings alongside a clean exit code is a disagreement, not a pass');
+ok(!/clean: \{ type|status: \{ type|verdict: \{ type|report_markdown: \{ type/.test(cg),
+   'no agent schema in content-guard can express a verdict — agents are transport only');
+ok(/Do NOT edit, create or delete ANY file/.test(cg),
+   'the scan runner is forbidden from fixing its own failure');
+ok((cg.match(/\.catch\(\(\) =>/g) || []).length >= 3, 'every content-guard agent call fails closed');
+
+// pr-save: the gate is structural — nothing that can publish exists on the blocked path.
+ok(/workflow\('content-guard'/.test(ps), 'pr-save delegates the analysis to the standalone workflow');
+ok(ps.indexOf("workflow('content-guard'") < ps.indexOf('git push'),
+   'the guard runs before any push');
+ok(/guard\.clean !== true/.test(ps), 'pr-save hard-gates strictly on the guard verdict');
+// Comments legitimately DESCRIBE the ordering, so compare positions in code only
+// — otherwise a comment mentioning phase('Plan') satisfies the assertion for free.
+const psCode = ps.replace(/^\s*\/\/[^\n]*$/gm, '');
+ok(psCode.indexOf('guard.clean !== true') < psCode.indexOf("phase('Plan')"),
+   'the gate returns BEFORE the Plan phase, so no publishing agent is ever constructed');
+ok(psCode.indexOf("phase('Guard')") < psCode.indexOf("phase('Commit')")
+   && psCode.indexOf("phase('Verify')") < psCode.indexOf("phase('Publish')"),
+   'phase order is Guard -> Plan -> Commit -> Verify -> Publish');
+// These tokens appear in pr-save only to FORBID them to the agent. Assert exactly
+// that: every occurrence must sit on a line that prohibits it. A bare absence
+// check would be satisfied by deleting the prohibitions, which is backwards.
+for (const tok of ['--no-verify', '--force', 'git add -A', 'git add .', '--amend']) {
+  const lines = ps.split('\n').filter((l) => l.includes(tok));
+  const bad = lines.filter((l) => !/NEVER|never/.test(l));
+  ok(bad.length === 0,
+     `pr-save mentions \`${tok}\` only to forbid it (offending line: ${(bad[0] || '').trim().slice(0, 70)})`);
+  ok(lines.length > 0, `pr-save explicitly forbids \`${tok}\` to the agent`);
+}
+ok(/guard\.stageable_paths/.test(ps), 'pr-save stages exactly the paths the guard certified');
+ok(/post\.tree_digest !== guard\.tree_digest/.test(ps),
+   'the push is bound to the digest the guard certified — content cannot change under it');
+// The body scan must be a CODE gate, not a sentence asking the agent to stop
+// itself: the scanning agent has no push/gh capability, and the publishing agent
+// is constructed only after JS has seen a clean scan.
+ok(/--scan-file/.test(ps), 'the PR and issue bodies are scanned before they are published');
+ok(/label: 'bodies'/.test(ps) && /label: 'publish'/.test(ps),
+   'writing+scanning the bodies is a separate agent from the one that pushes');
+ok(/bodies\.pr_body_exit !== 0 \|\| bodies\.issue_body_exit !== 0/.test(ps),
+   'a non-zero body scan blocks in code');
+ok(psCode.indexOf('bodies.pr_body_exit !== 0') < psCode.indexOf("label: 'publish'"),
+   'the body-scan gate returns BEFORE the publishing agent is constructed');
+ok(/required: \['ok', 'pr_body_exit', 'issue_body_exit'\]/.test(ps),
+   'both body-scan exit codes are REQUIRED fields — an omitted one cannot default to clean');
+ok(/PROTECTED\.includes\(branch\)/.test(ps), 'pr-save refuses to commit to main/master');
+ok(/validCommitSubject/.test(ps) && /subjectLeak/.test(ps),
+   'the commit subject is validated in code for convention AND for leakage');
+ok(/Closes #/.test(ps), 'the PR body links an issue, per the repo template');
+ok(!/report_markdown: \{ type/.test(ps), 'the pr-save report is never authored by an agent');
+ok((ps.match(/\.catch\(\(\) =>/g) || []).length >= 3, 'every pr-save agent call fails closed');
+
+// CI must enforce the changed-scope gate server-side, and redact its public log.
+ok(/check_client_data\.py --changed/.test(guardYml),
+   'CI runs the changed-scope scan on pull requests');
+ok(/--redact/.test(guardYml), 'CI redacts — an Actions log on a public repo is public');
+
 console.log(`\nwiring: ${pass} passed, ${fail} failed`);
 if (fail) { console.log('\n' + fails.join('\n')); process.exit(1); }
