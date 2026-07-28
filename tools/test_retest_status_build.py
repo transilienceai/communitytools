@@ -236,6 +236,35 @@ def test_cli_portfolio_exit0():
         assert port["retest_rollup"]["Open"] == 2
 
 
+def test_severity_cross_tab_reports_critical_high_closure():
+    """The status rollup answers "how many closed", not "were the ones that
+    mattered closed" — which is what a re-validation is contracted to confirm."""
+    base = [{"id": "F-001", "title": "RCE", "severity": "Critical"},
+            {"id": "F-002", "title": "SQLi", "severity": "High"},
+            {"id": "F-003", "title": "XSS", "severity": "High"},
+            {"id": "F-004", "title": "Header", "severity": "Low"}]
+    verd = {"F-001": {"status": "Closed"}, "F-002": {"status": "Open"},
+            "F-003": {"status": "Risk-Accepted"}, "F-004": {"status": "Closed"}}
+    doc = R.build_retest(base, verd, {})
+    sec = [s for s in doc["sections"] if s["title"] == "Closure by Severity"]
+    assert sec, "the severity cross-tab section must be emitted"
+    sec = sec[0]
+    # Risk-Accepted counts as closed: the client owns it deliberately.
+    assert "Critical/High closed: 2 of 3" in sec["paragraphs"][0], sec["paragraphs"][0]
+    assert "1 remain unresolved" in sec["paragraphs"][0]
+    assert sec["table"]["header"][0] == "Retest Status"
+    assert "Critical" in sec["table"]["header"] and "High" in sec["table"]["header"]
+    totals = [r for r in sec["table"]["rows"] if r[0] == "Total"][0]
+    assert totals[-1] == "4", totals
+
+
+def test_severity_cross_tab_handles_a_baseline_with_no_high_findings():
+    doc = R.build_retest([{"id": "F-1", "title": "x", "severity": "Low"}],
+                         {"F-1": {"status": "Closed"}}, {})
+    sec = [s for s in doc["sections"] if s["title"] == "Closure by Severity"][0]
+    assert "No Critical or High findings" in sec["paragraphs"][0]
+
+
 def main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

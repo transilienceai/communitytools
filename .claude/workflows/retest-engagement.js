@@ -1,7 +1,7 @@
 export const meta = {
   name: 'retest-engagement',
   description: 'Retest a PRIOR report\'s findings against the current target: ingest the baseline findings (tools/report_ingest.py), blind-re-validate EACH finding against the live target, assign a standardized verdict from a fixed vocabulary (Closed / Open / Partially-Remediated / Risk-Accepted / Needs-Live-Retest / False-Positive), then produce a canonical retest-status deliverable (baseline-vs-current table + status rollup) via tools/retest_status_build.py -> generate_report.py. Includes a controls-disabled/_SSL_Disabled_ test-build detector that flags affected verdicts as production-re-verification-required, and a multi-engagement portfolio roll-up mode. Deterministic bytes are owned by tools (report_ingest, retest_status_build, generate_report) — no LLM authors the final JSON.',
-  whenToUse: 'Retest a prior engagement\'s report against the current target (a follow-up / revalidation assessment), OR roll up several retests into one portfolio matrix. args: {prior_report (a finished report file/dir to ingest) OR baseline (a findings JSON array), target (what to retest against), output_dir? (default projects/pentest/<date>_retest), votes? (adversarial quorum, default 2), build_markers? (filenames/flags for the controls-disabled detector), controls_disabled? (bool), portfolio? ([ ...retest-status docs ] -> roll-up mode)}. One of prior_report/baseline (or portfolio) is required.',
+  whenToUse: 'Retest a prior engagement\'s report against the current target (a follow-up / revalidation assessment), OR roll up several retests into one portfolio matrix. args: {prior_report (a finished report file/dir to ingest) OR baseline (a findings JSON array), target (what to retest against), output_dir? (default projects/pentest/<date>_retest), votes? (adversarial quorum, default 2), min_severity? (retest only findings at or above this band; default 'High' because a re-validation is normally contracted for critical/high — pass 'Low'/'Info'/'all' to widen), build_markers? (filenames/flags for the controls-disabled detector), controls_disabled? (bool), portfolio? ([ ...retest-status docs ] -> roll-up mode)}. One of prior_report/baseline (or portfolio) is required.',
   phases: [
     { title: 'Ingest', detail: 'tools/report_ingest.py parses the prior report into baseline findings' },
     { title: 'Retest', detail: 'per baseline finding: a blind retester probes the CURRENT target -> a fixed-vocabulary verdict + note + evidence' },
@@ -71,6 +71,30 @@ if (!baseline) {
   if (ing && ing.warnings && ing.warnings.length) log(`report_ingest warnings: ${JSON.stringify(ing.warnings.slice(0, 8))}`)
 }
 if (!baseline.length) return { ok: false, status: 'BLOCKED', blocked_reason: 'baseline ingest produced 0 findings' }
+
+// Severity scoping. A re-validation is normally contracted to confirm that CRITICAL
+// and HIGH findings were remediated, so retesting every Low and Info by default
+// spends the budget on the items nobody asked about. Opt in to a wider sweep with
+// min_severity: 'Low' / 'Info', or 'all'.
+const SEV_RANK = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4, Informational: 4 }
+const minSeverity = input.min_severity == null ? 'High' : String(input.min_severity)
+const severityCutoff = minSeverity.toLowerCase() === 'all' ? 99 : SEV_RANK[minSeverity]
+if (severityCutoff === undefined) {
+  return { ok: false, status: 'BLOCKED', blocked_reason: `min_severity ${JSON.stringify(input.min_severity)} is not one of Critical/High/Medium/Low/Info/all` }
+}
+const baselineAll = baseline
+// Rank an unknown/absent severity as most-urgent: dropping a finding because its
+// severity did not parse would silently narrow the retest.
+const inScope = baselineAll.filter((f) => (SEV_RANK[f && f.severity] ?? 0) <= severityCutoff)
+const outOfScope = baselineAll.length - inScope.length
+if (!inScope.length) {
+  return { ok: false, status: 'BLOCKED', blocked_reason: `no baseline finding is ${minSeverity} or above (${baselineAll.length} below the cutoff) — pass min_severity to widen` }
+}
+baseline = inScope
+// Never silent: the report has to be able to say what was NOT retested, or a
+// partial sweep reads as a full one.
+const severityScope = { min_severity: minSeverity, retested: inScope.length, deferred: outOfScope, baseline_total: baselineAll.length }
+if (outOfScope) log(`Severity scope ${minSeverity}+: retesting ${inScope.length} of ${baselineAll.length}; ${outOfScope} below the cutoff are carried as not-retested.`)
 log(`Retesting ${baseline.length} baseline finding(s) against ${TARGET} (${VOTES} vote(s) each).`)
 
 // --- Phase Retest ----------------------------------------------------------
@@ -130,7 +154,7 @@ log(`Retest verdicts: ${JSON.stringify(rollupCounts)}`)
 phase('Report')
 const baselinePath2 = `${OUTPUT_DIR}/input/baseline.json`
 const verdictsPath = `${OUTPUT_DIR}/input/verdicts.json`
-const metaObj = { target: TARGET, controls_disabled: !!input.controls_disabled, build_markers: input.build_markers || [], engagement: input.engagement || {} }
+const metaObj = { target: TARGET, controls_disabled: !!input.controls_disabled, build_markers: input.build_markers || [], engagement: input.engagement || {}, severity_scope: severityScope }
 const genCmd = `python3 skills/transilience-report-style/reference/generate_report.py ${OUTPUT_DIR}/reports/report_data.json -o ${OUTPUT_DIR}/reports/Retest-Report.pdf --assets formats/transilience-report-style --theme light`
 const finalize = await agent(
   `ROLE: RETEST FINALIZE RUNNER (deterministic tool-runner, no judgment). cwd is repo root.\n` +
@@ -149,6 +173,7 @@ return {
   ok, status: ok ? 'COMPLETE' : 'BLOCKED',
   blocked_reason: ok ? null : (!finalize || !finalize.build_ok ? 'retest_status_build failed' : finalize.lint_ok === false ? 'report_data lint failed' : 'render failed'),
   mode: 'single', target: TARGET, baseline_count: baseline.length,
+  severity_scope: severityScope,
   rollup: rollupCounts, report: finalize && finalize.report_path,
   deliverable_zip: `${OUTPUT_DIR}/retest_deliverable.zip`,
 }

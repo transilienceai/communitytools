@@ -64,6 +64,11 @@ STATUS_PRIORITY = {"Open": 0, "Partially-Remediated": 1, "Needs-Live-Retest": 2,
 
 # Still-actionable statuses carried into findings[] (the report body).
 ACTIONABLE = frozenset({"Open", "Partially-Remediated", "Needs-Live-Retest"})
+# Statuses that mean "this no longer needs remediation work". Risk-Accepted counts:
+# the client owns it deliberately, which is a decision, not an outstanding fix.
+CLOSED_STATUSES = frozenset({"Closed", "Risk-Accepted", "False-Positive"})
+# The severities a re-validation is normally contracted to confirm.
+CRITICAL_HIGH = ("Critical", "High")
 
 # Per-status colour hint the generator can render (metric boxes read `color`; the
 # map is also emitted top-level so a caller can colour the status column).
@@ -210,6 +215,41 @@ def _summary_paragraph(rollup, total):
     return f"{total} baseline finding(s) retested: {', '.join(parts) if parts else 'none'}."
 
 
+def _severity_cross_tab(rows):
+    """Status x severity, plus the closure rate for Critical/High.
+
+    The status rollup alone answers "how many are closed" but not "were the ones
+    that mattered closed". Re-validation is normally contracted for critical and
+    high findings specifically, so that number has to be readable without the
+    reader cross-referencing two tables by hand.
+    """
+    sevs = [s for s in B.SEVERITY_ORDER if any(r["severity"] == s for r in rows)]
+    header = ["Retest Status"] + sevs + ["Total"]
+    table_rows = []
+    for st in STATUS_ORDER:
+        counts = [sum(1 for r in rows if r["status"] == st and r["severity"] == s) for s in sevs]
+        if not any(counts):
+            continue
+        table_rows.append([st] + [str(c) for c in counts] + [str(sum(counts))])
+    totals = [sum(1 for r in rows if r["severity"] == s) for s in sevs]
+    table_rows.append(["Total"] + [str(c) for c in totals] + [str(len(rows))])
+
+    high = [r for r in rows if r["severity"] in CRITICAL_HIGH]
+    closed = sum(1 for r in high if r["status"] in CLOSED_STATUSES)
+    para = (f"Critical/High closed: {closed} of {len(high)}." if high
+            else "No Critical or High findings in the baseline.")
+    if high and closed < len(high):
+        para += (f" {len(high) - closed} remain unresolved — these are the items a "
+                 "re-validation is normally contracted to confirm.")
+    n = max(2, len(header))
+    return {
+        "title": "Closure by Severity",
+        "paragraphs": [para],
+        "table": {"header": header, "rows": table_rows,
+                  "widths": [round(1.0 / n, 4)] * n},
+    }
+
+
 def build_retest(baseline, verdicts, meta=None):
     """Assemble a canonical retest-status report_data from baseline + verdicts.
 
@@ -268,6 +308,7 @@ def build_retest(baseline, verdicts, meta=None):
         "paragraphs": [_summary_paragraph(rollup, len(baseline))],
         "table": {"header": ["Retest Status", "Count"], "rows": summary_rows, "widths": [0.7, 0.3]},
     }
+    sev_section = _severity_cross_tab(rows)
     bvc_section = {
         "title": "Baseline vs Current",
         "paragraphs": ["Every prior-report finding with its retest verdict. Closed, "
@@ -286,7 +327,7 @@ def build_retest(baseline, verdicts, meta=None):
         "engagement": meta.get("engagement", {}),
         "findings": findings,
         "metrics": metrics,
-        "sections": [summary_section, bvc_section],
+        "sections": [summary_section, sev_section, bvc_section],
         "retest_status_colors": dict(STATUS_COLORS),
         "retest_rollup": rollup,
         "retest_engagement_label": _label_from_meta(meta),
