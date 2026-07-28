@@ -96,6 +96,11 @@ benchmarks/bountybench/results/
 # names coverage-matrix.json could never fire on a file git did not know about.
 !skills/coordination/reference/coverage-matrix.json
 !skills/transilience-report-style/reference/report-data-schema.json
+# The example report_data is the third file in that same trap: SKILL.md links it twice
+# as the worked reference, and test_report_schema.py reads it. Untracked, both link
+# checks and two schema tests pass locally (the file is on the author's disk) and fail
+# on a fresh checkout — which is exactly how it reached CI red.
+!skills/transilience-report-style/reference/example-report-data.json
 # PCI SSS catalog build config (deterministic, auditable) — keep tracked
 !tools/pci-sss/*.json
 # Content-guard binary pins. MUST stay tracked: without this file the guard cannot

@@ -1,0 +1,90 @@
+{
+  "engagement": {
+    "title_lines": ["API SECURITY AUDIT", "PENETRATION TEST REPORT"],
+    "subtitle": "Example Client — Production API",
+    "date": "2026-06-21",
+    "classification": "CONFIDENTIAL",
+    "sector": "Financial Services",
+    "target": "api.example.com",
+    "method": "Authenticated grey-box API test",
+    "prepared_by": "Transilience AI",
+    "report_id": "TI-EXAMPLE-20260621",
+    "footer": "API Security Audit",
+    "confidentiality": "This document contains confidential security findings. Distribution is restricted."
+  },
+  "executive_summary": {
+    "narrative": [
+      "Transilience AI assessed the Example API. <b>2</b> findings are reported (1 High, 1 Medium) after blind validation."
+    ],
+    "key_risks": [
+      "<b>IDOR on /orders (HIGH).</b> Order records are returned by sequential id with no ownership check."
+    ],
+    "positives": [
+      "JWTs are RS256-signed; no token-forgery primitive observed."
+    ]
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "IDOR on /orders/{id} — any order readable",
+      "severity": "High",
+      "cvss_score": 7.5,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N",
+      "cwe": "CWE-639",
+      "owasp": "API1:2023 Broken Object Level Authorization",
+      "affected": ["GET https://api.example.com/orders/{id}"],
+      "description": "The endpoint returns any order by numeric id with no binding to the authenticated user.",
+      "impact": "Cross-customer disclosure of order PII at scale via id enumeration.",
+      "recommendation": "Bind every order id to the authenticated principal server-side; use unguessable ids.",
+      "poc": [
+        {"description": "Authenticate as user A and note their own order id (1000)."},
+        {"description": "Request a different user's order id directly, reusing user A's token.", "command": "curl -s https://api.example.com/orders/1001 -H 'Authorization: Bearer <userA-token>'"},
+        {"description": "Response returns user B's order — name, address and total — confirming the missing object-level authorization.", "image_url": "appendix/finding-F-001/idor-response.png"}
+      ],
+      "needs_live_confirmation": false
+    },
+    {
+      "id": "F-002",
+      "title": "Outdated nginx 1.18.0 (multiple CVEs)",
+      "severity": "Medium",
+      "cvss_score": 5.3,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+      "cwe": "CWE-1104",
+      "owasp": "API8:2023 / Vulnerable & Outdated Components",
+      "affected": ["api.example.com (Server: nginx/1.18.0)"],
+      "description": "Server banner discloses nginx 1.18.0 with known CVEs.",
+      "impact": "Known-vulnerable component; banner also aids fingerprinting.",
+      "recommendation": "Upgrade nginx; suppress the version banner.",
+      "poc": [
+        {"description": "Fetch the response headers from the host.", "command": "curl -sI https://api.example.com/"},
+        {"description": "The Server header discloses the exact version: `Server: nginx/1.18.0`."}
+      ],
+      "needs_live_confirmation": false,
+      "cves": [{"id": "CVE-2021-23017", "score": 7.7, "severity": "HIGH"}]
+    }
+  ],
+  "tools_used": [
+    ["nmap", "Port & service enumeration", "invoked 12×"],
+    ["Burp Suite", "Authenticated API proxying + IDOR fuzzing", "invoked 8×"]
+  ],
+  "source_ips_intro": "Every IP address that reconnaissance and testing traffic originated from during this engagement.",
+  "source_ips": [
+    ["203.0.113.9", "primary-runner", ""],
+    ["198.51.100.24", "attack-vm", "gcp/asia-south1"]
+  ],
+  "roadmap": [
+    {"title": "Immediate (0–7 days)", "items": ["Add object-level authorization to /orders."]},
+    {"title": "Short-term (7–30 days)", "items": ["Upgrade nginx; suppress banners."]}
+  ],
+  "attack_pattern_coverage": {
+    "header": ["Attack class", "Taxonomy", "Description", "Cells", "Status"],
+    "rows": [
+      ["API1-BOLA", "API-2023", "Broken Object Level Authorization", "3/3", "covered"],
+      ["API8-MISCONFIG", "API-2023", "Security misconfiguration", "1/1", "covered_negative"],
+      ["XC-TLS-POSTURE", "Cross-cut", "TLS posture (weak ciphers/protocols)", "2/2", "covered_negative"]
+    ],
+    "widths": [0.20, 0.12, 0.40, 0.12, 0.16],
+    "note": "Deterministic (surface-unit × attack-class) coverage: 100% of applicable cells covered — 0 cell(s) untested."
+  },
+  "disclaimer": "Assessment performed under written authorization. © 2026 Transilience AI — CONFIDENTIAL."
+}
