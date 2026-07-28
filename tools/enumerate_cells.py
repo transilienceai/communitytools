@@ -163,14 +163,54 @@ def _recon_hosts(asset_dir: str) -> set:
     return hosts
 
 
+_OPEN_SERVICE_RE = re.compile(r"^\s*(\d{1,5})\s*/\s*(.*)$")
+# A version-looking token inside the free-text service label, e.g. "nginx 1.18.0",
+# "IIS/10.0". Used only to decide version_fingerprinted, never to assert a CVE.
+_VERSION_IN_TEXT_RE = re.compile(r"\d+\.\d+(?:\.\d+)*")
+
+
+def normalize_ports(host: dict) -> list:
+    """Return the host's open listeners as `ports[]` records, from either shape.
+
+    The scan pipeline writes `open_services: ["443/IIS-ASP.NET", ...]`; the schema
+    documented for this loader is `ports: [{port, service, product, version}]`.
+    Every one of the 72 committed host.json files uses the first form and none use
+    the second, so a loader that reads only `ports` returns None for every real
+    host — enumerating zero cells, which the gate then reports as nothing to do.
+    Accept both, and let a host that genuinely has neither fall through to None.
+    """
+    if host.get("ports"):
+        return list(host["ports"])
+    out = []
+    for entry in host.get("open_services") or []:
+        m = _OPEN_SERVICE_RE.match(str(entry))
+        if not m:
+            continue
+        label = m.group(2).strip()
+        out.append({
+            "port": m.group(1),
+            "state": "open",
+            # The label is one free-text blob; it is the only evidence available, so
+            # it serves as both service and product for flag matching. Splitting it
+            # further would be invention.
+            "service": label.lower(),
+            "product": label,
+            "version": m.group(0) if _VERSION_IN_TEXT_RE.search(label) else "",
+        })
+    return out
+
+
 def load_network_host(host_json_path: str) -> dict | None:
     try:
-        host = json.load(open(host_json_path, encoding="utf-8"))
+        with open(host_json_path, encoding="utf-8") as fh:
+            host = json.load(fh)
     except (json.JSONDecodeError, OSError):
         return None
+    ports = normalize_ports(host)
     # Zero-units guard: a dead / no-surface host yields NO cells (not even misconfig).
-    if not host.get("live") or not host.get("ports"):
+    if not host.get("live") or not ports:
         return None
+    host = dict(host, ports=ports)
     ip = host.get("ip") or os.path.basename(os.path.dirname(host_json_path))
     listener_flags: dict = {}
     asset_flags: set = set()

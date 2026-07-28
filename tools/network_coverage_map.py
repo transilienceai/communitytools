@@ -50,10 +50,44 @@ def _verified_regions(*dirs) -> list:
     return sorted(regions)
 
 
-def _raw_scan_ref(host_dir: str) -> str | None:
-    for p in sorted(glob.glob(os.path.join(host_dir, "recon", "*"))):
-        if os.path.isfile(p):
-            return os.path.relpath(p, host_dir)
+# Which attack classes an unauthenticated port/service sweep may close as a genuine
+# negative, and the token its raw output must contain to prove that probe actually
+# ran. FAIL CLOSED: a class absent from this map is NOT sweep-closable, and its cell
+# is left pending for a real probe rather than auto-closed.
+#
+# Before this map, every enumerated cell was written `covered_negative` corroborated
+# by whatever file happened to sit in recon/ — so "a file exists" stood in for "the
+# probe ran and found nothing". A sweep cannot evidence weak TLS ciphers, missing
+# security headers or SMB signing; only a probe that asked those questions can.
+CORROBORATOR_REQUIRED: dict = {
+    # nmap -sV with the vulners/vuln scripts genuinely enumerates service versions
+    # and known-vulnerable components on every open port it fingerprinted.
+    "WEB-A06-COMPONENTS": ("vulners", "<script id=", "service ", "product="),
+}
+
+
+def _scan_files(host_dir: str) -> list:
+    return [p for p in sorted(glob.glob(os.path.join(host_dir, "recon", "*")))
+            if os.path.isfile(p)]
+
+
+def _raw_scan_ref(host_dir: str, tokens=None) -> str | None:
+    """The raw file that corroborates a sweep negative.
+
+    With `tokens`, the file must actually CONTAIN one of them — otherwise the
+    reference is just "some file exists in recon/", which is not evidence that any
+    particular probe was run.
+    """
+    for p in _scan_files(host_dir):
+        if tokens:
+            try:
+                with open(p, encoding="utf-8", errors="replace") as fh:
+                    body = fh.read()
+            except OSError:
+                continue
+            if not any(t in body for t in tokens):
+                continue
+        return os.path.relpath(p, host_dir)
     return None
 
 
@@ -78,17 +112,34 @@ def map_host(host_dir: str, catalog: dict, verified_regions: list, force: bool) 
         return {"host_dir": host_dir, "skipped": "no cells (dead/no-surface host)"}
     by_id = catalog_by_id(catalog)
     ip = next(iter(doc.get("assets", {})), os.path.basename(host_dir.rstrip("/")))
-    scan_ref = _raw_scan_ref(host_dir)
 
     entries_by_class: dict = {}
     tool_eids: list = []
     closed = open_left = 0
+    not_sweep_closable: dict = {}
     for n, cell in enumerate(cells, 1):
         cls = by_id.get(cell["class_id"], {})
         nk = cls.get("negative_kind", "active_probe")
+
+        # An active_probe negative needs proof the probe ran. A class the sweep
+        # cannot answer, or one whose corroborating token is absent from the raw
+        # output, is left PENDING — never closed on the strength of a file existing.
+        if nk == "active_probe":
+            tokens = CORROBORATOR_REQUIRED.get(cell["class_id"])
+            corroborator = _raw_scan_ref(host_dir, tokens) if tokens else None
+            if not corroborator:
+                reason = ("no sweep evidence for this class"
+                          if tokens else "not answerable by an unauthenticated sweep")
+                not_sweep_closable.setdefault(cell["class_id"], {"reason": reason, "cells": 0})
+                not_sweep_closable[cell["class_id"]]["cells"] += 1
+                open_left += 1
+                continue
+        else:
+            corroborator = _raw_scan_ref(host_dir)
+
         e_id = f"SWEEP-{ip}-{n:02d}"
         entry = {"key": cell["scope_key"], "status": "covered_negative", "e_id": e_id, "negative_kind": nk}
-        note = f"swept {cell['class_id']} @ {cell['scope_key']} — no exposure (raw: {scan_ref or 'host.json'})"
+        note = f"swept {cell['class_id']} @ {cell['scope_key']} — no exposure (raw: {corroborator or 'host.json'})"
         if nk == "reachability":
             entry["vantages"] = list(verified_regions)
             if len(verified_regions) >= cls.get("min_vantages", 2):
@@ -98,8 +149,7 @@ def map_host(host_dir: str, catalog: dict, verified_regions: list, force: bool) 
         else:
             closed += 1
         if nk == "active_probe":
-            if scan_ref:
-                entry["corroborator"] = scan_ref
+            entry["corroborator"] = corroborator
             tool_eids.append(e_id)
         _append_experiment(host_dir, e_id, note)
         entries_by_class.setdefault(cell["class_id"], []).append(entry)
@@ -115,11 +165,17 @@ def map_host(host_dir: str, catalog: dict, verified_regions: list, force: bool) 
         tpath = os.path.join(host_dir, "tools", "000_network_sweep.md")
         os.makedirs(os.path.dirname(tpath), exist_ok=True)
         with open(tpath, "w", encoding="utf-8") as f:
-            f.write(f"# network-sweep (deterministic tail)\nRaw scan: {scan_ref or 'host.json'}\n\n")
+            f.write(f"# network-sweep (deterministic tail)\nRaw scan: "
+                    f"{_raw_scan_ref(host_dir) or 'host.json'}\n\n")
             for e in tool_eids:
                 f.write(f"Experiment: {e}\n")
             f.write("\n## Output\nActive-probe host/asset cells corroborated by the raw nmap/nuclei scan output above.\n")
-    return {"host_dir": host_dir, "ip": ip, "cells": len(cells), "closed": closed, "open_reachability": open_left}
+    return {"host_dir": host_dir, "ip": ip, "cells": len(cells), "closed": closed,
+            "open_reachability": open_left,
+            # Reported, never silent: these cells stay pending because a sweep cannot
+            # evidence them. Silent truncation reads as "covered everything".
+            "not_sweep_closable": {k: v["cells"] for k, v in sorted(not_sweep_closable.items())},
+            "not_sweep_closable_reasons": {k: v["reason"] for k, v in sorted(not_sweep_closable.items())}}
 
 
 def main() -> int:
