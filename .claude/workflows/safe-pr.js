@@ -52,11 +52,27 @@ const BODY_FILE = '.claude/state/confidentiality/pr-body.md'
 const ISSUE_FILE = '.claude/state/confidentiality/issue-body.md'
 
 const EMPTY = { pr_url: null, issue_url: null, branch: null, committed: false, pushed: false }
-const blocked = (reason, extra) => ({
-  ...EMPTY, status: 'BLOCKED', reason,
-  report_markdown: `⛔ **/safe-pr BLOCKED.** ${reason}\n\nNothing was committed, pushed or published.`,
-  ...(extra || {}),
-})
+
+/** The trailing sentence of a BLOCKED report must be a FUNCTION of the state the
+ *  run actually reached, never a constant. A late failure (the PR step) after an
+ *  early success (the push) is precisely the case a constant gets wrong, and it
+ *  gets it wrong in the dangerous direction — under-reporting what is already
+ *  public. Whoever reads this report decides what to clean up from it. */
+const NOTHING_HAPPENED = 'Nothing was committed, pushed or published.'
+function stateSentence({ committed, pushed, branch }) {
+  const on = branch ? `\`${branch}\`` : 'this branch'
+  if (pushed) return `⚠️ The commit **was pushed** to \`origin\` on ${on} and is already public — only the step above failed.`
+  if (committed) return `The commit exists locally on ${on}; nothing was pushed.`
+  return NOTHING_HAPPENED
+}
+
+const blocked = (reason, extra) => {
+  const state = { ...EMPTY, ...(extra || {}) }
+  return {
+    ...state, status: 'BLOCKED', reason,
+    report_markdown: `⛔ **/safe-pr BLOCKED.** ${reason}\n\n${stateSentence(state)}`,
+  }
+}
 
 // ---- pure-JS gates --------------------------------------------------------
 
@@ -115,7 +131,7 @@ if (!guard || guard.clean !== true) {
     guard_status: guard?.status || 'UNKNOWN',
     findings: guard?.findings || [],
     report_markdown: `⛔ **/safe-pr BLOCKED — the content guard did not certify this change.**\n\n`
-      + `${why}\n\nNothing was committed, pushed or published. Fix the findings, then re-run `
+      + `${why}\n\n${NOTHING_HAPPENED} Fix the findings, then re-run `
       + `\`/safe-pr\`. Describe the CLASS of issue rather than the customer, use RFC 5737 `
       + `addresses (203.0.113.x) in examples, and keep engagement data under \`projects/\`.`
       + `${detail}`,
@@ -273,8 +289,8 @@ HARD RULES:
     { label: 'commit', phase: 'Commit', schema: COMMIT_SCHEMA }).catch(() => null)
 
 if (!commitRun || commitRun.ok !== true) {
-  return blocked(`the commit step failed: ${commitRun?.error || 'the agent returned nothing'}. `
-    + 'Nothing was pushed.', { branch })
+  return blocked(`the commit step failed: ${commitRun?.error || 'the agent returned nothing'}.`,
+    { branch })
 }
 
 // ---- Verify — the committed state must be what the guard read -------------
@@ -284,14 +300,13 @@ const post = await workflow('content-guard', { base: BASE || undefined, scope: '
   .catch(() => null)
 
 if (!post || post.clean !== true) {
-  return blocked(`the post-commit re-scan did not come back clean (${post?.reason || 'no verdict'}). `
-    + `The commit exists locally on \`${commitRun.branch || branch}\` but nothing was pushed.`,
+  return blocked(`the post-commit re-scan did not come back clean (${post?.reason || 'no verdict'}).`,
     { branch: commitRun.branch || branch, committed: !!commitRun.committed })
 }
 if (post.tree_digest && guard.tree_digest && post.tree_digest !== guard.tree_digest) {
   return blocked('the content changed between the guard run and the commit — the tree digest '
     + `no longer matches what was certified (${String(guard.tree_digest).slice(0, 12)} → `
-    + `${String(post.tree_digest).slice(0, 12)}). Nothing was pushed. Re-run /safe-pr on a quiet tree.`,
+    + `${String(post.tree_digest).slice(0, 12)}). Re-run /safe-pr on a quiet tree.`,
     { branch: commitRun.branch || branch, committed: !!commitRun.committed })
 }
 
@@ -427,22 +442,30 @@ if (!bodies || bodies.ok !== true
     || bodies.pr_body_exit !== 0 || bodies.issue_body_exit !== 0) {
   const codes = `PR body exit ${bodies?.pr_body_exit ?? '—'}, issue body exit ${bodies?.issue_body_exit ?? '—'}`
   return blocked(`the PR/issue body did not pass the content scan (${codes}). Authored text `
-    + `becomes public the moment the PR opens, so nothing was pushed. `
+    + `becomes public the moment the PR opens. `
     + `${bodies?.findings_tail ? `Scan said: ${String(bodies.findings_tail).slice(0, 400)}` : ''}`
-    + `${bodies?.error ? ` ${String(bodies.error).slice(0, 200)}` : ''} `
-    + `The commit exists locally on \`${commitRun.branch || branch}\`.`,
+    + `${bodies?.error ? ` ${String(bodies.error).slice(0, 200)}` : ''}`,
     { branch: commitRun.branch || branch, committed: !!commitRun.committed })
 }
 
+/** `pushed` and `pr_create_exit` are REQUIRED and reported separately from `ok`.
+ *  Collapsing them into one boolean is what let a failed `gh pr create` erase a
+ *  push that had already succeeded: the report then denied that public bytes were
+ *  public. Each observable step reports its own outcome; JS decides what they mean. */
 const PUBLISH_SCHEMA = {
   type: 'object', additionalProperties: false,
-  required: ['ok', 'pushed'],
+  required: ['ok', 'pushed', 'pr_create_exit'],
   properties: {
-    ok: { type: 'boolean', description: 'true only if every command that ran exited 0' },
+    ok: {
+      type: 'boolean',
+      description: 'true only if `gh auth status` and `git push` exited 0. The PR step reports through pr_create_exit, NOT through this field.',
+    },
     gh_scopes: { type: 'string', description: 'the token scopes line from `gh auth status`, verbatim' },
-    pushed: { type: 'boolean' },
+    pushed: { type: 'boolean', description: 'true only if `git push` exited 0' },
+    pr_create_exit: { type: 'integer', description: 'the exit code of `gh pr create`, verbatim' },
+    pr_create_error: { type: 'string', description: 'verbatim stderr of `gh pr create` if it failed, else ""' },
     issue_url: { type: 'string', description: 'URL of the issue created or linked, or ""' },
-    pr_url: { type: 'string', description: 'URL of the pull request, or ""' },
+    pr_url: { type: 'string', description: 'the URL printed by `gh pr view` in the final step, or ""' },
     error: { type: 'string', description: 'verbatim stderr of the first command that failed' },
   },
 }
@@ -490,9 +513,20 @@ with \`_No issue linked._\` and set issue_url to "".
 gh pr create --base '${(guard.base || 'main').replace(/^origin\//, '')}' \\
   --head '${commitRun.branch || branch}' \\
   --title '${subject.replace(/'/g, `'\\''`)}' \\
-  --body-file ${BODY_FILE}${DRAFT ? ' \\\n  --draft' : ''}
+  --body-file ${BODY_FILE}${DRAFT ? ' \\\n  --draft' : ''}; echo "PR_CREATE_EXIT=$?"
 \`\`\`
-Report the PR URL as pr_url.
+Report that exit code VERBATIM as pr_create_exit and its stderr as pr_create_error.
+A non-zero exit is NOT yours to interpret or work around: do not close, reopen,
+retarget or edit any existing pull request, and do not retry with different flags.
+Report it and continue to Step 5 — the caller decides what it means.
+
+**Step 5 — resolve the pull request for this branch.** Run this WHETHER OR NOT
+Step 4 succeeded. It returns the PR that the push just updated when the branch
+already had one open, and the PR Step 4 just opened otherwise.
+\`\`\`bash
+gh pr view '${commitRun.branch || branch}' --json url --jq .url
+\`\`\`
+Report that URL as pr_url, or "" if the command finds no pull request.
 
 HARD RULES: do not modify any repository file other than the issue-number
 substitution above. Do not amend, rebase, reset or force anything. Do not re-run the
@@ -500,10 +534,28 @@ content guard with different flags. If a step fails, stop and report it verbatim
 never work around it.`,
   { label: 'publish', phase: 'Publish', schema: PUBLISH_SCHEMA }).catch(() => null)
 
+const prBranch = commitRun.branch || branch
+
 if (!publish || publish.ok !== true || !publish.pushed) {
-  return blocked(`${publish?.error || 'the publish step returned nothing'}. `
-    + `The commit exists locally on \`${commitRun.branch || branch}\`; nothing reached GitHub.`,
-    { branch: commitRun.branch || branch, committed: !!commitRun.committed })
+  return blocked(`${publish?.error || 'the publish step returned nothing'}. Nothing reached GitHub.`,
+    { branch: prBranch, committed: !!commitRun.committed })
+}
+
+// The push has landed, so the certified bytes are on `origin` — and if this branch
+// already had an open PR, they are already in review. `gh pr create` refusing
+// because that PR exists is therefore the SUCCESS path: what /safe-pr promises is
+// that the work is guard-certified and reviewable on GitHub, not that this
+// particular run is the one that opened the PR. Only an unresolvable PR blocks.
+const prUrl = String(publish.pr_url || '').trim()
+const prExisted = publish.pr_create_exit !== 0
+
+if (!prUrl) {
+  return blocked(`the push succeeded but no pull request could be resolved for \`${prBranch}\` `
+    + `(\`gh pr create\` exited ${publish.pr_create_exit}`
+    + `${publish.pr_create_error ? `: ${String(publish.pr_create_error).slice(0, 300)}` : ''}). `
+    + `Open one by hand against \`${(guard.base || 'main').replace(/^origin\//, '')}\`, or re-run `
+    + `\`/safe-pr\` once the cause is fixed — the commit itself is certified and pushed.`,
+    { branch: prBranch, committed: !!commitRun.committed, pushed: true })
 }
 
 const warn = post.counts?.warnings
@@ -511,30 +563,43 @@ const warn = post.counts?.warnings
     + (post.warnings || []).slice(0, 10).map((w) => `- \`${w}\``).join('\n')
   : ''
 
+// A pre-existing PR keeps its own title and description: they are authored text a
+// human may have edited, and silently overwriting them would be the documentation
+// equivalent of a force-push. Say so instead.
+const existedNote = prExisted
+  ? `\n\nThis branch already had an open pull request, so the push added the commit to it `
+    + `rather than opening a second one. Its existing title and description were left `
+    + `untouched — the body this run composed was **not** applied. Update it by hand if it `
+    + `no longer describes the branch.`
+  : ''
+
 return {
   status: 'OK',
-  reason: 'guard clean, committed, pushed, PR opened',
-  branch: commitRun.branch || branch,
+  reason: prExisted
+    ? 'guard clean, committed, pushed; the branch already had an open PR, which now carries the commit'
+    : 'guard clean, committed, pushed, PR opened',
+  branch: prBranch,
   committed: !!commitRun.committed,
   pushed: true,
-  pr_url: publish.pr_url || null,
+  pr_url: prUrl,
+  pr_existed: prExisted,
   issue_url: publish.issue_url || null,
   subject,
   guard_status: post.status,
   tree_digest: post.tree_digest,
   counts: post.counts,
-  report_markdown: `✅ **PR opened.**
+  report_markdown: `✅ **${prExisted ? 'Existing PR updated' : 'PR opened'}.**
 
-${publish.pr_url || '(no URL returned)'}
+${prUrl}
 
 | | |
 |---|---|
-| branch | \`${commitRun.branch || branch}\` → \`${(guard.base || 'main').replace(/^origin\//, '')}\` |
+| branch | \`${prBranch}\` → \`${(guard.base || 'main').replace(/^origin\//, '')}\` |
 | commit | \`${subject}\` |
 | issue | ${publish.issue_url || '—'} |
 | content guard | **CLEAN** — ${post.counts?.universe_changed ?? '?'} changed item(s) + ${post.counts?.universe_full ?? '?'} whole-tree item(s) scanned |
 | client-name lane | ${post.denylist_lane} |
 | tree digest | \`${String(post.tree_digest || '').slice(0, 16)}\` |
 
-The guard ran before the commit and again after it, and the digest it certified is the one that was pushed.${warn}`,
+The guard ran before the commit and again after it, and the digest it certified is the one that was pushed.${existedNote}${warn}`,
 }

@@ -331,6 +331,31 @@ ok(/Closes #/.test(ps), 'the PR body links an issue, per the repo template');
 ok(!/report_markdown: \{ type/.test(ps), 'the safe-pr report is never authored by an agent');
 ok((ps.match(/\.catch\(\(\) =>/g) || []).length >= 3, 'every safe-pr agent call fails closed');
 
+// A BLOCKED report must describe the state the run actually REACHED. The constant
+// sentence may exist exactly once — as the nothing-happened branch of the function
+// that derives it — because a second copy is how a late failure (the PR step) came
+// to deny a push that had already succeeded, hiding public bytes from the reader.
+ok((ps.match(/Nothing was committed, pushed or published/g) || []).length === 1,
+   'the "nothing happened" sentence exists once, inside the function that derives it');
+ok(/function stateSentence/.test(ps) && /\$\{stateSentence\(state\)\}/.test(ps),
+   'blocked() derives its closing sentence from state instead of asserting a constant');
+ok(/if \(pushed\) return/.test(ps),
+   'a block raised after a successful push reports that the commit is already public');
+
+// Push and PR-open are distinct observable outcomes; one must not be able to erase
+// the other. `gh pr create` refusing because the branch already has an open PR is
+// the success path — the push put the certified commit into that PR.
+ok(/required: \['ok', 'pushed', 'pr_create_exit'\]/.test(ps),
+   'push and PR-create outcomes are REQUIRED and reported separately');
+ok(/const prExisted = publish\.pr_create_exit !== 0/.test(ps),
+   'an already-open PR is classified in code, never by the agent');
+ok(psCode.indexOf('!publish.pushed') < psCode.indexOf('const prUrl'),
+   'the push verdict is settled before the PR verdict, so a PR failure cannot revoke it');
+ok(/gh pr view/.test(ps) && psCode.indexOf('gh pr create') < psCode.indexOf('gh pr view'),
+   'the PR is resolved after the create attempt, whether or not that attempt succeeded');
+ok(!/gh pr edit/.test(ps),
+   'safe-pr never overwrites an existing PR title or description — authored text is not force-pushed');
+
 // CI must enforce the changed-scope gate server-side, and redact its public log.
 ok(/check_client_data\.py --changed/.test(guardYml),
    'CI runs the changed-scope scan on pull requests');
