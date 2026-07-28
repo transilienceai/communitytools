@@ -935,6 +935,19 @@ def test_manifest_default_differs_per_mode():
 def main() -> int:
     tests = [v for k, v in sorted(globals().items())
              if k.startswith("test_") and callable(v)]
+
+    # A test defined BELOW the `__main__` guard does not exist yet when main()
+    # runs, so it is silently never collected and the suite still reports all
+    # green. Compare what was collected against what the source declares, so a
+    # misplaced test fails loudly instead of quietly doing nothing.
+    import re as _re
+    declared = len(_re.findall(r"^def (test_\w+)", open(__file__, encoding="utf-8").read(), _re.M))
+    if declared != len(tests):
+        print(f"  ERROR collection: {declared} test(s) defined in the file but "
+              f"{len(tests)} collected — a test defined after the __main__ guard "
+              f"never runs. Move it above the guard.")
+        return 1
+
     failed = 0
     for t in tests:
         try:
@@ -948,6 +961,83 @@ def main() -> int:
             print(f"  ERROR {t.__name__}: {type(e).__name__}: {e}")
     print(f"{len(tests) - failed}/{len(tests)} passed")
     return 1 if failed else 0
+
+
+# --------------------------------------------------------------------------
+# Public-IP lane — reserved and structural addresses are not customer data
+#
+# A correct security note ("a complementary pair of /1 halves covers everything
+# a /0 does") once tripped this lane on `128.0.0.0/1`. That address is the base
+# of a routing-arithmetic block, not anyone's netblock. The lane must stay blunt
+# about real hosts while ignoring address-space structure.
+# --------------------------------------------------------------------------
+
+def ip_leaks(line: str) -> list[str]:
+    """Mirror of the public-IP lane in scan(), including both suppressors."""
+    import ipaddress
+    out = []
+    for m in ccd.IP_RE.finditer(line):
+        s = m.group(1)
+        if s in ccd.IP_ALLOW or s.startswith(ccd.IP_ALLOW_PREFIX) or len(set(s.split("."))) == 1:
+            continue
+        if ccd.looks_like_oid_or_version(line, s):
+            continue
+        try:
+            ip = ipaddress.ip_address(s)
+        except ValueError:
+            continue
+        if ccd.is_doc_ip(ip) or ccd.is_structural_cidr(line, s, m.end(1)):
+            continue
+        out.append(s)
+    return out
+
+
+def test_reserved_and_documentation_ranges_are_not_leaks():
+    for line in ("0.0.0.0/0 any-any", "10.1.2.3 internal", "172.20.0.5 internal",
+                 "192.168.1.1 gateway", "127.0.0.1 loopback", "169.254.169.254 metadata",
+                 "203.0.113.9 example", "198.51.100.4 example", "192.0.2.7 example",
+                 "100.64.0.1 cgnat", "198.18.0.5 benchmarking", "192.0.0.8 protocol",
+                 "224.0.0.1 multicast", "255.255.255.255 broadcast"):
+        assert ip_leaks(line) == [], f"reserved/doc address flagged: {line}"
+
+
+def test_structural_cidr_blocks_are_not_leaks():
+    """/0../8 written at the exact block base is address-space arithmetic."""
+    upper = ".".join(["128", "0", "0", "0"])
+    for line in (f"0.0.0.0/1 plus {upper}/1 equals everything",
+                 f"{upper}/1 upper half",
+                 ".".join(["13", "0", "0", "0"]) + "/8 legacy class A",
+                 ".".join(["64", "0", "0", "0"]) + "/2 quarter of the space"):
+        assert ip_leaks(line) == [], f"structural CIDR flagged: {line}"
+
+
+def _pub(*octets: int) -> str:
+    """Assemble a public test address at runtime.
+
+    A test that asserts an address IS reported must contain a reportable address,
+    which would then make this very file fail the scan. Building the string from
+    octets keeps the literal out of the source. Never paste a real address seen on
+    an engagement here — synthesise one.
+    """
+    return ".".join(str(o) for o in octets)
+
+
+def test_real_public_hosts_are_still_leaks():
+    """The lane's actual job — unchanged by the suppressors above."""
+    for octets in ((128, 1, 2, 3), (45, 33, 32, 156), (77, 91, 14, 202)):
+        ip = _pub(*octets)
+        assert ip_leaks(f"the host {ip} responded on 443") == [ip], f"public host missed: {ip}"
+
+
+def test_structural_suppressor_is_narrow():
+    """Only the exact block base, and only a short prefix — otherwise a real
+    netblock, or a host inside one, would be waved through."""
+    host = _pub(128, 1, 2, 3)
+    assert ip_leaks(f"{host}/1 host part set") == [host], "a set host part must not qualify"
+    base = _pub(128, 0, 0, 0)
+    assert ip_leaks(f"{base}/16 a real netblock") == [base], "/16 is an allocation, not structure"
+    cli = _pub(45, 33, 32, 0)
+    assert ip_leaks(f"{cli}/24 client range") == [cli], "/24 is an allocation, not structure"
 
 
 if __name__ == "__main__":

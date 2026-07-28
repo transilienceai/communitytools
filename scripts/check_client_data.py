@@ -362,12 +362,54 @@ def denylisted_tokens(line: str, digests: set[str]) -> list[str]:
     return hits
 
 
+# IANA special-purpose blocks that Python's is_private/is_reserved do not all cover.
+# None of these can be a customer allocation, so none can be client data.
+_SPECIAL_USE = tuple(ipaddress.ip_network(c) for c in (
+    "192.0.2.0/24",      # TEST-NET-1  (RFC 5737 documentation)
+    "198.51.100.0/24",   # TEST-NET-2  (RFC 5737 documentation)
+    "203.0.113.0/24",    # TEST-NET-3  (RFC 5737 documentation)
+    "100.64.0.0/10",     # carrier-grade NAT (RFC 6598)
+    "192.0.0.0/24",      # IETF protocol assignments (RFC 6890)
+    "198.18.0.0/15",     # inter-network benchmarking (RFC 2544)
+    "192.88.99.0/24",    # deprecated 6to4 relay anycast (RFC 7526)
+))
+
+# A CIDR this short describes a slice of the address space itself, not a network
+# anyone is assigned: /0 is everything, /1 is half of it, /8 is a legacy Class A.
+# Writing `128.0.0.0/1` is arithmetic about routing, not a customer's netblock —
+# which is exactly how a correct security note ("a complementary pair of /1 halves
+# covers everything a /0 does") tripped a client-data guard.
+STRUCTURAL_PREFIX_MAX = 8
+
+
 def is_doc_ip(ip: ipaddress.IPv4Address) -> bool:
+    """True when the address cannot be customer-specific: private, loopback,
+    link-local, multicast, unspecified (0.0.0.0), reserved, or an IANA
+    special-purpose block such as the RFC 5737 documentation ranges."""
     return (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast
             or ip.is_unspecified or ip.is_reserved
-            or ip in ipaddress.ip_network("192.0.2.0/24")
-            or ip in ipaddress.ip_network("198.51.100.0/24")
-            or ip in ipaddress.ip_network("203.0.113.0/24"))
+            or any(ip in net for net in _SPECIAL_USE))
+
+
+def is_structural_cidr(line: str, ip: str, end: int) -> bool:
+    """True when `ip` is written as the base of a CIDR whose prefix is <= /8.
+
+    Only the exact network address counts. A block base with an all-zero host part
+    is address-space structure; the same prefix written against an address whose
+    host part is set names a host inside that block, and stays reportable.
+    """
+    m = re.match(r"/(\d{1,2})\b", line[end:])
+    if not m:
+        return False
+    prefix = int(m.group(1))
+    if prefix > STRUCTURAL_PREFIX_MAX:
+        return False
+    try:
+        # strict=True rejects a set host part, so only true block bases pass.
+        ipaddress.ip_network(f"{ip}/{prefix}", strict=True)
+    except ValueError:
+        return False
+    return True
 
 
 def looks_like_oid_or_version(line: str, ip: str) -> bool:
@@ -1069,8 +1111,9 @@ def scan_lines(rel: str, content: str, denylist: set[str], allowlist: dict,
                 ip = ipaddress.ip_address(s)
             except ValueError:
                 continue
-            if not is_doc_ip(ip):
-                leaks.append(f"{rel}:{n}: PUBLIC IP -> {s}")
+            if is_doc_ip(ip) or is_structural_cidr(line, s, m.end(1)):
+                continue
+            leaks.append(f"{rel}:{n}: PUBLIC IP -> {s}")
 
 
 def _today() -> str:

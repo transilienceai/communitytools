@@ -44,12 +44,16 @@ def _is_placeholder(s: str) -> bool:
     return len(set(octets)) == 1  # e.g. 2.2.2.2, 0.0.0.0 (already private-ish)
 
 
-def _is_documentation(ip: ipaddress.IPv4Address) -> bool:
-    return (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast
-            or ip.is_unspecified or ip.is_reserved
-            or ip in ipaddress.ip_network("192.0.2.0/24")       # TEST-NET-1
-            or ip in ipaddress.ip_network("198.51.100.0/24")    # TEST-NET-2
-            or ip in ipaddress.ip_network("203.0.113.0/24"))    # TEST-NET-3
+# The "is this address customer-specific?" rule has ONE home, in
+# check_client_data.py. This file used to carry a near-identical copy, and the two
+# drifted the moment one was taught about IANA special-purpose blocks and
+# structural CIDR notation — leaving two guards that disagreed about the same line.
+# Import it rather than restate it.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+from check_client_data import is_doc_ip as _is_documentation      # noqa: E402
+from check_client_data import is_structural_cidr                  # noqa: E402
 
 
 def scan_file(path: str) -> list[tuple[int, str]]:
@@ -67,8 +71,9 @@ def scan_file(path: str) -> list[tuple[int, str]]:
                 ip = ipaddress.ip_address(s)
             except ValueError:
                 continue
-            if not _is_documentation(ip):
-                hits.append((n, s))
+            if _is_documentation(ip) or is_structural_cidr(line, s, m.end(1)):
+                continue
+            hits.append((n, s))
     return hits
 
 
