@@ -65,6 +65,15 @@ validator are provider-agnostic.
 | Catalogue | Framework | Provider |
 |---|---|---|
 | [`catalog/cis-oci-foundations-v3.1.1.json`](catalog/cis-oci-foundations-v3.1.1.json) | CIS OCI Foundations Benchmark v3.1.1 — 54 controls | Oracle Cloud |
+| [`catalog/mcsb-azure-foundations-v1.json`](catalog/mcsb-azure-foundations-v1.json) | Microsoft Cloud Security Benchmark — 42 controls | Azure |
+| [`catalog/nsa-cisa-k8s-hardening-1.2.json`](catalog/nsa-cisa-k8s-hardening-1.2.json) | NSA/CISA Kubernetes Hardening Guide — 30 controls | Kubernetes |
+
+Why these sources rather than a CIS benchmark for each: **Microsoft Cloud Security Benchmark** is
+Microsoft's own guidance and ships their crosswalks to CIS, NIST SP 800-53, ISO 27001 and PCI DSS,
+so a compliance column cites Microsoft's mapping instead of one we invented — and the "which CIS
+Azure edition, at which profile level" question never arises. The **NSA/CISA Kubernetes Hardening
+Guide** is a US-government work in the public domain, making it the one source here that could be
+quoted directly rather than only cited.
 
 Validate any catalogue with `python3 tools/posture/catalog_validate.py --all`. It is the only thing
 checking these files: `scripts/skill_linter.py` globs `*.md`, so catalogue JSON is otherwise
