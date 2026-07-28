@@ -25,6 +25,17 @@ Test cloud infrastructure and container environments for security misconfigurati
 4. Test container isolation and escape paths
 5. Document findings with cloud-specific evidence
 
+## Two lanes — attack vs assess
+
+This skill covers both, and they are different jobs producing different artifacts. Do not mix them
+in one deliverable.
+
+| Lane | You have | You produce | Start at |
+|---|---|---|---|
+| **Offensive** | a cloud target to attack | exploited findings with a PoC | [`reference/INDEX.md`](reference/INDEX.md) |
+| **Posture** | read-only credentials and a "review the configuration" ask | one evidenced verdict per control in a pinned catalogue | [`reference/posture/INDEX.md`](reference/posture/INDEX.md) |
+
 ## Reference
 
-- `reference/INDEX.md` - Router for platform-specific attack scenarios (AWS, Azure, GCP, Docker, K8s)
+- [`reference/INDEX.md`](reference/INDEX.md) - Router for platform-specific attack scenarios (AWS, Azure, GCP, Docker, K8s)
+- [`reference/posture/INDEX.md`](reference/posture/INDEX.md) - Credentialed read-only configuration review (CSPM): run order, verdict vocabulary, the four false-pass traps, pinned catalogues, and the licensing rule for benchmark-derived content

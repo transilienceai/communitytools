@@ -223,6 +223,56 @@ def test_unknown_flag_fails():
         assert "unknown flag" in out or "applies_when" in out
 
 
+def _owasp_case(mutate):
+    """Run the validator over the real catalog with one OWASP-block mutation."""
+    cat = _load_real()
+    mutate(cat)
+    with tempfile.TemporaryDirectory() as tmp:
+        c = _write(tmp, "catalog.json", cat)
+        md = _write(tmp, "matrix.md", _synthetic_md([r["class_id"] for r in cat["classes"]]))
+        return run(catalog=c, md=md)
+
+
+def test_owasp_uncovered_category_fails():
+    """The point of the check: a category that is simply absent reads as covered."""
+    def drop_all(cat):
+        for r in cat["classes"]:
+            r.pop("owasp_refs", None)
+    rc, out = _owasp_case(drop_all)
+    assert rc == 1, f"stripping every owasp_refs must fail, rc={rc}"
+    assert "neither covered by a class nor explicitly excluded" in out, out
+
+
+def test_owasp_removing_the_exclusion_fails():
+    """A09 is not assessable black-box; deleting the record of that must not pass."""
+    rc, out = _owasp_case(lambda c: c["meta"]["owasp_top10_2021"].update({"not_assessed": {}}))
+    assert rc == 1, f"removing the A09 exclusion must fail, rc={rc}"
+    assert "A09:2021" in out, out
+
+
+def test_owasp_hand_wave_exclusion_reason_fails():
+    """An exclusion is only honest if it says why; 'too hard' is not a reason."""
+    rc, out = _owasp_case(
+        lambda c: c["meta"]["owasp_top10_2021"]["not_assessed"].update({"A09:2021": "too hard"}))
+    assert rc == 1, f"a thin exclusion reason must fail, rc={rc}"
+    assert "substantive reason" in out, out
+
+
+def test_owasp_unknown_category_fails():
+    def bogus(cat):
+        cat["classes"][0]["owasp_refs"] = ["A99:2021"]
+    rc, out = _owasp_case(bogus)
+    assert rc == 1, f"an unknown OWASP id must fail, rc={rc}"
+    assert "unknown categor" in out, out
+
+
+def test_owasp_covered_and_excluded_is_contradictory():
+    rc, out = _owasp_case(
+        lambda c: c["meta"]["owasp_top10_2021"]["not_assessed"].update({"A01:2021": "x" * 60}))
+    assert rc == 1, f"claiming a category both tested and untestable must fail, rc={rc}"
+    assert "both covered by a class and listed not_assessed" in out, out
+
+
 def main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     failed = 0

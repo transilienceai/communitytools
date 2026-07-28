@@ -86,8 +86,14 @@ benchmarks/bountybench/results/
 !.claude-plugin/marketplace.json
 !plugins/**/.claude-plugin/plugin.json
 !mcp/**/*.json
-# Skill compliance catalogs are source-of-truth data, not engagement output — keep them tracked
+# Skill compliance catalogs are source-of-truth data, not engagement output — keep them tracked.
+# Both forms: reference/catalog/ and a catalog/ nested deeper (e.g. reference/posture/catalog/).
+# The adjacency-only pattern silently excluded the latter, which is how a catalogue can validate
+# locally and be absent from CI — the same *.json trap that already hid coverage-matrix.json,
+# report-data-schema.json and example-report-data.json. tools/test_tracked_assets.py now fails
+# on any such file so the next one is caught by a test rather than by a red pipeline.
 !skills/**/reference/catalog/*.json
+!skills/**/catalog/*.json
 # The attack-class coverage catalog is the MACHINE source of truth for the whole
 # coverage gate (enumerate_cells / coverage_gate / validate_catalog all load it) and
 # the report-data schema is the contract generate_report.py renders against. Both sat
@@ -114,6 +120,15 @@ benchmarks/bountybench/results/
 # It is not redistributed here — obtain it from CERT-In and point the builder at it
 # with --template or CERTIN_TEMPLATE.
 formats/certin-audit-metadata/*.xlsx
+
+# Third-party benchmark and standard documents. CIS Benchmark Terms of Use state it is
+# NEVER acceptable to host a CIS Benchmark in ANY format on a non-CIS site, and that even
+# using portions of a Recommendation in third-party documentation needs CIS Legal's
+# written guidance. Our catalogues therefore carry control NUMBERS + our own procedure
+# text (see skills/cloud-containers/reference/posture/INDEX.md), never the source document.
+# Fails closed: PDFs are ignored by default, with existing tracked papers allowlisted.
+*.pdf
+!papers/practice-makes-perfect.pdf
 
 # Credentials and secrets
 credentials.json
