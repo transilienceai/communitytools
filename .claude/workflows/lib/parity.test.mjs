@@ -53,12 +53,19 @@ function extractFn(src, name) {
 const LANE = ['nvdKevText', 'terminalSubdir', 'buildInterim', 'checksPrompt', 'refuterPrompt', 'probePrompt', 'reproPrompt', 'curePrompt', 'CHECKS_SCHEMA', 'VOTE_SCHEMA', 'PROBE_SCHEMA', 'REPRO_SCHEMA'];
 const VERDICT = ['severityBand', 'riskBucket', 'riskScore', 'exposureFor', 'normVector', 'cveReconcile', 'EVIDENCE_MANIFEST', 'evidenceComplete', 'computeVerdict', 'finalPoc', 'round4', 'TIER_WEIGHTS', 'RISK_THRESHOLDS'];
 const GOVERNOR = ['cureLoopDecision', 'coverageDecision', 'shouldInlineValidate', 'backstopDecision', 'assessBudget', 'convergenceDone', 'nextDryStreak', 'summarizeLoopCounts', 'reduceCandidateVerdicts'];
+// The shared tool-gate scaffold. content-guard.js and skill-update.js both run
+// scripts/check_client_data.py through a transport agent and decide in JS; these
+// are the pieces that must stay identical, or the two guards diverge on what
+// counts as clean. skill-update cannot call the content-guard WORKFLOW instead —
+// htb-solve.js invokes skill-update via workflow(), and nesting is one level only.
+const GUARD = ['guardCmd', 'TOOL_REPORT_SCHEMA', 'transportPrompt', 'usablePayload', 'laneVerdict', 'denylistLaneOk'];
 const EXPECT = {
   'validate-findings.js': ['severityBand', 'riskBucket', 'riskScore', 'exposureFor', 'normVector', 'cveReconcile', 'EVIDENCE_MANIFEST', 'evidenceComplete', 'computeVerdict', 'finalPoc', 'round4', ...LANE],
   // coordinator-loop embeds the WHOLE interleaved validation lane (verdict + governor + prompts).
   'coordinator-loop.js': [...VERDICT, ...GOVERNOR, ...LANE],
   // skill-update embeds the whole promote/write/gate lane — every decision it makes.
-  'skill-update.js': ['SCRUB_PATTERNS', 'scrubCheck', 'capFor', 'capBudget', 'promotionGate', 'writeGate', 'skillUpdateGate', 'skillAgentBudget', 'buildChangeReport'],
+  'skill-update.js': ['SCRUB_PATTERNS', 'scrubCheck', 'capFor', 'capBudget', 'promotionGate', 'writeGate', 'skillUpdateGate', 'skillAgentBudget', 'buildChangeReport', ...GUARD],
+  'content-guard.js': [...GUARD],
   'pentest-engagement.js': ['severityBand', 'normalizeAssess', 'reconcileAssessed', 'finalizeGate', 'bumpVersion', 'scopeDiff', 'resolveEngagementMeta', 'detectAllowlist', 'resolveGeoZones', 'resumeSchedule', 'classifyEngagement'],
 };
 

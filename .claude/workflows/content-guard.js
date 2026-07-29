@@ -25,7 +25,7 @@ export const meta = {
 //      own UNIVERSE_CMDS and echoed into the manifest, so the coverage proof
 //      names the commands that actually ran.
 //   3. The verdict is one pure function of (parsed payloads, exit codes) — see
-//      verdict() below. Agents are transport: their schemas cannot express a
+//      laneVerdict() below. Agents are transport: their schemas cannot express a
 //      verdict, only "the command exited N and here is its JSON".
 //   4. Anything unexpected BLOCKS. An unparsed payload, a git failure, an
 //      unresolvable base, a dead agent or a disagreement between two agents
@@ -35,6 +35,13 @@ export const meta = {
 // No rule lives here. Regexes, allowlists, thresholds and exemptions are all in
 // the Python tool; re-implementing one in JS would fork the rule set, which is
 // the single thing this repo's confidentiality doc forbids most explicitly.
+//
+// The transport-and-verdict scaffold below (guardCmd, transportPrompt,
+// TOOL_REPORT_SCHEMA, usablePayload, laneVerdict, denylistLaneOk) is SHARED with
+// skill-update.js, whose Sweep phase guards the public skill base. It is
+// canonical in lib/wf-helpers.mjs, unit-tested there, embedded in both files
+// because the sandbox forbids import, and pinned against drift by
+// lib/parity.test.mjs — so the two guards cannot disagree about what is clean.
 
 // ---- inputs ---------------------------------------------------------------
 let __raw = args
@@ -70,19 +77,33 @@ if (dryRun) {
 
 // ---- pure-JS gates --------------------------------------------------------
 // Every accept/reject in this workflow is one of these functions.
+// Byte-identical copies of .claude/workflows/lib/wf-helpers.mjs — the sandbox
+// forbids import, and lib/parity.test.mjs fails the build if these drift.
+// skill-update.js embeds the same set, so both guards decide identically.
 
-/** A relayed payload is usable only if it is the shape we asked for. Anything
- *  else — truncated, paraphrased, wrong schema — is treated as "did not run". */
-function usable(p, schema) {
+// guardCmd — the one place the confidentiality guard's command line is built.
+// --redact is not optional: wherever this output can reach a transcript, a CI
+// log or a PR body, only the rule and the location may travel.
+function guardCmd({ mode, base, json, manifest, requireDenylist } = {}) {
+  const flags = ['--redact', `--json ${json}`]
+  if (manifest) flags.push('--manifest')
+  if (requireDenylist) flags.push('--require-denylist')
+  const scopeFlag = mode === 'changed' ? `--changed${base ? ` ${base}` : ''}` : ''
+  return `python3 scripts/check_client_data.py ${scopeFlag} ${flags.join(' ')}`.replace(/\s+/g, ' ').trim()
+}
+
+// usablePayload — a relayed payload is usable only if it is the shape we asked
+// for. Anything else — truncated, paraphrased, wrong schema — is "did not run".
+function usablePayload(p, schema) {
   return !!p && typeof p === 'object' && p.schema === schema
     && p.counts && typeof p.counts.findings === 'number'
 }
 
-/** The verdict. Pure function of the relayed facts; the only place a run can be
- *  declared clean. Note the ordering: CONFIG_ERROR outranks BLOCKED, because
- *  "the scan could not be trusted" is a different remedy from "fix the leak". */
-function verdict(lanes) {
-  const ran = lanes.filter((l) => l.required)
+// laneVerdict — the only place a guarded run can be declared clean. Pure
+// function of the relayed facts. CONFIG_ERROR outranks BLOCKED, because "the
+// scan could not be trusted" is a different remedy from "fix the leak".
+function laneVerdict(lanes) {
+  const ran = (lanes || []).filter((l) => l.required)
   for (const l of ran) {
     if (l.exit === 2) return { status: 'CONFIG_ERROR', clean: false,
       reason: `${l.name} could not run a trustworthy scan (exit 2): ${l.detail || 'see output'}` }
@@ -109,10 +130,11 @@ function verdict(lanes) {
   return { status: 'CLEAN', clean: true, reason: 'no findings in any lane' }
 }
 
-/** The denylist lane silently no-ops when $CLIENT_DENYLIST is absent, so a green
- *  scan can mean "the client-name lane never ran". That must not read as clean. */
-function denylistOk(payload) {
-  return !REQUIRE_DENYLIST || !payload || payload.lanes?.denylist === 'active'
+// denylistLaneOk — the denylist lane silently no-ops when the term list is
+// absent, so a green scan can mean "the client-name lane never ran". That must
+// not read as clean.
+function denylistLaneOk(payload, required = true) {
+  return !required || !payload || (payload.lanes && payload.lanes.denylist === 'active')
 }
 
 // ---- Scope ----------------------------------------------------------------
@@ -170,7 +192,10 @@ log(`branch ${scope.branch} @ ${scope.head.slice(0, 8)} vs ${scope.base_ref || '
 // ---- Scan -----------------------------------------------------------------
 phase('Scan')
 
-const REPORT_SCHEMA = {
+// TOOL_REPORT_SCHEMA — what a transport agent may say about a guard run: it
+// ran or it did not, this was the exit code, this was the JSON. There is no
+// field in which a model can express a verdict.
+const TOOL_REPORT_SCHEMA = {
   type: 'object', additionalProperties: false,
   required: ['ok', 'exit', 'payload'],
   properties: {
@@ -181,15 +206,11 @@ const REPORT_SCHEMA = {
   },
 }
 
-const guardCmd = (mode) => {
-  const flags = ['--redact', `--json ${mode === 'changed' ? CHANGED_JSON : FULL_JSON}`]
-  if (WANT_MANIFEST) flags.push('--manifest')
-  if (REQUIRE_DENYLIST) flags.push('--require-denylist')
-  const scopeFlag = mode === 'changed' ? `--changed${BASE ? ` ${BASE}` : ''}` : ''
-  return `python3 scripts/check_client_data.py ${scopeFlag} ${flags.join(' ')}`.replace(/\s+/g, ' ').trim()
-}
-
-const runnerPrompt = (cmd, jsonPath, what) => `Run EXACTLY this command from the repository root:
+// transportPrompt — the tool-runner contract. Every prohibition here exists
+// because the cheapest way for an agent to make a gate pass is to edit what the
+// gate reads.
+function transportPrompt(cmd, jsonPath, what) {
+  return `Run EXACTLY this command from the repository root:
 
 \`\`\`bash
 ${cmd}
@@ -207,6 +228,17 @@ Rules — this is a security gate and you are transport, not a judge:
 - If the command fails or the file is missing, set ok=false, report the exit code
   you saw and put stderr in stderr_tail. Never invent a payload.
 This is ${what}.`
+}
+
+// This workflow's binding of the shared builder — scope-to-report-path mapping
+// and the run's flags, resolved once.
+const scanCmd = (mode) => guardCmd({
+  mode,
+  base: BASE,
+  json: mode === 'changed' ? CHANGED_JSON : FULL_JSON,
+  manifest: WANT_MANIFEST,
+  requireDenylist: REQUIRE_DENYLIST,
+})
 
 const CHECKS_SCHEMA = {
   type: 'object', additionalProperties: false,
@@ -223,14 +255,14 @@ const needFull = SCOPE === 'both' || SCOPE === 'full'
 
 const [changedRun, fullRun, checksRun] = await parallel([
   () => (needChanged
-    ? agent(runnerPrompt(guardCmd('changed'), CHANGED_JSON,
+    ? agent(transportPrompt(scanCmd('changed'), CHANGED_JSON,
         'the CHANGED-scope scan: every blob this branch would publish, including blobs that exist only in branch history'),
-      { label: 'scan:changed', phase: 'Scan', schema: REPORT_SCHEMA }).catch(() => null)
+      { label: 'scan:changed', phase: 'Scan', schema: TOOL_REPORT_SCHEMA }).catch(() => null)
     : Promise.resolve(null)),
   () => (needFull
-    ? agent(runnerPrompt(guardCmd('full'), FULL_JSON,
+    ? agent(transportPrompt(scanCmd('full'), FULL_JSON,
         'the WHOLE-TREE backstop: it catches anything a change-scoped view cannot see'),
-      { label: 'scan:full', phase: 'Scan', schema: REPORT_SCHEMA }).catch(() => null)
+      { label: 'scan:full', phase: 'Scan', schema: TOOL_REPORT_SCHEMA }).catch(() => null)
     : Promise.resolve(null)),
   () => agent(`Run EXACTLY these two commands from the repository root and report both exit codes verbatim.
 
@@ -246,8 +278,8 @@ Do NOT edit any file to make either pass. Report what happened, nothing else.`,
 // ---- Verdict --------------------------------------------------------------
 phase('Verdict')
 
-const changedPayload = usable(changedRun?.payload, 'content-guard-report/v1') ? changedRun.payload : null
-const fullPayload = usable(fullRun?.payload, 'content-guard-report/v1') ? fullRun.payload : null
+const changedPayload = usablePayload(changedRun?.payload, 'content-guard-report/v1') ? changedRun.payload : null
+const fullPayload = usablePayload(fullRun?.payload, 'content-guard-report/v1') ? fullRun.payload : null
 
 // Two agents independently reported HEAD. If they disagree, the tree moved
 // underneath the scan and neither result describes a single state of the repo.
@@ -272,10 +304,10 @@ const lanes = [
     exit: checksRun?.no_forks_exit, detail: checksRun?.output_tail },
 ]
 
-let v = verdict(lanes)
+let v = laneVerdict(lanes)
 
 // The scan may be green because a lane never ran. That is not clean.
-if (v.clean && !denylistOk(changedPayload || fullPayload)) {
+if (v.clean && !denylistLaneOk(changedPayload || fullPayload, REQUIRE_DENYLIST)) {
   v = { status: 'CONFIG_ERROR', clean: false,
     reason: 'the client-name term list is not configured, so that lane did not run — a clean '
       + 'result would be misleading. Set CLIENT_DENYLIST (see scripts/gen_denylist.py), or '

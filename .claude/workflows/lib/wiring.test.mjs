@@ -229,7 +229,24 @@ ok(!/report_markdown: \{ type/.test(su),
 // The confidentiality sweep is an independent veto that no agent can talk past.
 ok(/python3 scripts\/check_client_data\.py/.test(su), 'the Sweep phase runs the confidentiality guard');
 ok(/gate\.ok && !sweepClean/.test(su), 'a failed confidentiality sweep vetoes an otherwise-passing gate');
-ok(/Do NOT edit any file to make it pass/.test(su), 'the sweep runner is forbidden from fixing its own failure');
+ok(/Do NOT edit, create or delete ANY file to make this pass/.test(su),
+   'the sweep runner is forbidden from fixing its own failure');
+// The sweep runs the SAME guard as /content-guard, on the same flags, judged by
+// the same function. It ran bare once — no --redact (matched values reached the
+// transcript), no --require-denylist (the client-name lane could no-op and still
+// read clean) and no --json (nothing to check the agent's typed exit code against).
+ok(/guardCmd\(\{ mode: 'full'/.test(su), 'the sweep builds its command with the shared guardCmd');
+ok(/requireDenylist: REQUIRE_DENYLIST/.test(su),
+   'the sweep requires the client-name lane to have actually run');
+ok(/laneVerdict\(\[\{/.test(su) && /denylistLaneOk\(sweepPayload/.test(su),
+   'the sweep verdict is the shared pure-JS gate, not an agent-typed boolean');
+ok(/usablePayload\(sweep && sweep\.payload, 'content-guard-report\/v1'\)/.test(su),
+   'the sweep only trusts a payload of the shape it asked for');
+ok(!/sweep\.findings/.test(su),
+   'the sweep never relays raw finding lines — only leak_summary output reaches the report');
+// skill-update is invoked BY htb-solve via workflow(); nesting is one level only,
+// so calling the content-guard workflow here would throw after the writes.
+ok(!/workflow\(\s*['"{]/.test(su), 'skill-update calls no nested workflow (it is itself a workflow child)');
 // Role boundary + fail-closed agent calls.
 ok(/INVOKED_BY === 'coordinator'/.test(su), 'a coordinator invocation is blocked (orchestrator-only)');
 ok(!/verdict === 'clean'/.test(su), 'no code path lets an agent verdict clear a deterministic finding');
@@ -257,7 +274,7 @@ const guardYml = readFileSync(join(wfDir, '..', '..', '.github', 'workflows', 'c
 
 // content-guard: deterministic by construction.
 ok(/--changed/.test(cg), 'content-guard runs the changed-scope scan');
-ok(/guardCmd\('changed'\)/.test(cg) && /guardCmd\('full'\)/.test(cg),
+ok(/scanCmd\('changed'\)/.test(cg) && /scanCmd\('full'\)/.test(cg),
    'content-guard runs BOTH the changed scan and the whole-tree backstop');
 ok(/--redact/.test(cg),
    'content-guard always redacts — its output lands in an agent transcript');
@@ -265,12 +282,20 @@ ok(/check_neutrality\.py/.test(cg) && /check_no_forks\.py/.test(cg),
    'content-guard runs the neutrality and no-forks guards too');
 ok(!/[^a-zA-Z]new RegExp\(|AKIA|-----BEGIN/.test(cg),
    'content-guard forks NO rule from the Python guard — no regex, no pattern, no allowlist');
-ok(/function verdict\(/.test(cg) && /function usable\(/.test(cg),
+ok(/function laneVerdict\(/.test(cg) && /function usablePayload\(/.test(cg),
    'the verdict is a pure JS function of the relayed facts');
 ok(/exit === 2/.test(cg) && /CONFIG_ERROR/.test(cg),
    'exit 2 is a config error (scan not trustworthy), distinct from a finding');
-ok(/denylistOk\(/.test(cg),
+ok(/denylistLaneOk\(/.test(cg),
    'a scan whose client-name lane never ran cannot be reported as clean');
+// The gate scaffold is shared with skill-update.js and pinned by parity.test.mjs,
+// so the two guards cannot drift on what counts as clean.
+ok(/function guardCmd\(/.test(cg) && /function guardCmd\(/.test(su),
+   'content-guard and skill-update build the guard command from the same function');
+ok(/function laneVerdict\(/.test(su),
+   'content-guard and skill-update reach a verdict with the same function');
+ok(/'content-guard\.js': \[\.\.\.GUARD\]/.test(read('lib/parity.test.mjs')),
+   'parity.test.mjs pins the shared gate scaffold in content-guard.js');
 ok(/headMismatch/.test(cg),
    'two lanes disagreeing about HEAD blocks — no single state would have been certified');
 // The exit code the verdict reads is a number an AGENT typed. The tool's own JSON

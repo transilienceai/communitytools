@@ -1,6 +1,6 @@
 export const meta = {
   name: 'skill-update',
-  description: 'Deterministically add, refine, or create skill content from engagement learnings. Stores a BASELINE violation key set via `scripts/skill_linter.py --write-baseline` (the tool computes the later delta, so no large payload crosses an agent), harvests candidate learnings from an engagement tree (or takes them directly), reframes each as a reusable "when X condition, try Y approach" pattern using <TARGET_IP>/<DC_FQDN>/<DOMAIN> placeholders, then per candidate: a judge proposes the four-gate promotion verdict with a CITED duplicate-search, N blind adversarial refuters attack every PROMOTE, and the pure-JS promotionGate applies the kill rules (all four gates AND no majority refutation AND a clean machine scrub for challenge-specific identifiers). Promoted candidates are routed to a target file, an author agent emits the exact insertion block, and pure-JS gates refuse it when it would breach a line cap (routing to a split instead), add DO NOT/MUST NOT/NEVER outside an Anti-Patterns section, restate a single-owner cross-cutting rule, create a forbidden auxiliary file, orphan a new reference file, or carry a link that does not resolve. JS then builds a byte-exact write plan, one writer persists it verbatim, an independent verifier recomputes the line counts, the confidentiality guard sweeps the result, and a post-write linter DELTA gate — not an absolute clean-tree gate, since the tree carries pre-existing violations — blocks on any newly introduced violation. The three-bucket Updated. / Skipped. / No changes. report is built in code, never authored by an agent.',
+  description: 'Deterministically add, refine, or create skill content from engagement learnings. Stores a BASELINE violation key set via `scripts/skill_linter.py --write-baseline` (the tool computes the later delta, so no large payload crosses an agent), harvests candidate learnings from an engagement tree (or takes them directly), reframes each as a reusable "when X condition, try Y approach" pattern using <TARGET_IP>/<DC_FQDN>/<DOMAIN> placeholders, then per candidate: a judge proposes the four-gate promotion verdict with a CITED duplicate-search, N blind adversarial refuters attack every PROMOTE, and the pure-JS promotionGate applies the kill rules (all four gates AND no majority refutation AND a clean machine scrub for challenge-specific identifiers). Promoted candidates are routed to a target file, an author agent emits the exact insertion block, and pure-JS gates refuse it when it would breach a line cap (routing to a split instead), add DO NOT/MUST NOT/NEVER outside an Anti-Patterns section, restate a single-owner cross-cutting rule, create a forbidden auxiliary file, orphan a new reference file, or carry a link that does not resolve. JS then builds a byte-exact write plan, one writer persists it verbatim, an independent verifier recomputes the line counts, the confidentiality guard sweeps the result — the same `scripts/check_client_data.py` run that /content-guard makes, on the same flags (`--redact` so no matched value reaches this workflow\'s output, `--require-denylist` so a scan whose client-name lane never ran cannot read clean, `--json` so the pure-JS verdict can cross-check the agent\'s transcribed exit code against the tool\'s own report), decided by the shared laneVerdict rather than an agent-typed boolean, and a post-write linter DELTA gate — not an absolute clean-tree gate, since the tree carries pre-existing violations — blocks on any newly introduced violation. The three-bucket Updated. / Skipped. / No changes. report is built in code, never authored by an agent.',
   whenToUse: 'Post-engagement skill-base maintenance. Parent-ORCHESTRATOR only — a coordinator must never invoke it. mode:"harvest" {output_dir} -> mine one engagement tree for learnings; mode:"learnings" {learnings:[{text,technique_type}]} -> judge and write an already-extracted set (also the resume path); mode:"create" {create:{name,description}} -> scaffold a new skill; mode:"audit" -> read-only conformance report over skills/, writes nothing. Options: votes(3), max_candidates(24), agent_budget(200), dryRun, invoked_by.',
   phases: [
     { title: 'Intake', detail: 'date tag + base commit, BASELINE skill_linter key set, dirty-path snapshot, mode preconditions' },
@@ -8,7 +8,7 @@ export const meta = {
     { title: 'Judge', detail: 'per candidate: four-gate judge with a CITED duplicate-search -> N blind adversarial refuters -> pure-JS promotionGate' },
     { title: 'Route', detail: 'author agent emits the exact block; pure-JS writeGate accepts, routes to a split, or rejects it' },
     { title: 'Write', detail: 'JS builds the byte-exact write plan; a writer persists it verbatim; an independent verifier recomputes the line counts' },
-    { title: 'Sweep', detail: 'confidentiality guard over the written tree — no client/engagement data may enter the public skill base' },
+    { title: 'Sweep', detail: 'the shared confidentiality guard over the written tree — no client/engagement data may enter the public skill base' },
     { title: 'Verify', detail: 'skill_linter --delta against the stored baseline; skillUpdateGate blocks on any NEW violation; the three-bucket report' },
   ],
 }
@@ -53,8 +53,12 @@ const MAX_CAND = Number(input.max_candidates) > 0 ? Math.floor(Number(input.max_
 const AGENT_BUDGET = Number(input.agent_budget) > 0 ? Math.floor(Number(input.agent_budget)) : 200
 const dryRun = !!input.dryRun
 const INVOKED_BY = String(input.invoked_by || '').toLowerCase()
+// Mirrors /content-guard's own default. Pass false only when knowingly accepting
+// a scan whose client-name lane never ran.
+const REQUIRE_DENYLIST = input.require_denylist !== false
 
 const BASELINE = '.claude/state/skill-update/baseline.json'
+const GUARD_JSON = '.claude/state/confidentiality/report-skill-update.json'
 
 const EMPTY = { counts: { candidates: 0, promoted: 0, skipped: 0, written: 0, deferred: 0 }, updated_files: [], skipped: [], report_markdown: '**No changes.**' }
 
@@ -215,6 +219,93 @@ function skillUpdateGate({ baselineOk, afterOk, delta, writeOk, writeMismatch })
   return { ok, status: ok ? 'COMPLETE' : 'BLOCKED', blocked_reason };
 }
 
+// ---- shared tool-gate scaffold (also embedded in content-guard.js) --------
+// The Sweep phase runs the SAME guard /content-guard runs, with the same flags,
+// and decides with the same function. It cannot call that workflow directly:
+// htb-solve.js invokes THIS workflow via workflow(), and nesting is one level
+// only — a workflow() call here would throw at Sweep, i.e. AFTER the writes and
+// before the revert path could run. So the reuse is at the helper layer.
+
+// guardCmd — the one place the confidentiality guard's command line is built.
+// --redact is not optional: wherever this output can reach a transcript, a CI
+// log or a PR body, only the rule and the location may travel.
+function guardCmd({ mode, base, json, manifest, requireDenylist } = {}) {
+  const flags = ['--redact', `--json ${json}`]
+  if (manifest) flags.push('--manifest')
+  if (requireDenylist) flags.push('--require-denylist')
+  const scopeFlag = mode === 'changed' ? `--changed${base ? ` ${base}` : ''}` : ''
+  return `python3 scripts/check_client_data.py ${scopeFlag} ${flags.join(' ')}`.replace(/\s+/g, ' ').trim()
+}
+
+// transportPrompt — the tool-runner contract. Every prohibition here exists
+// because the cheapest way for an agent to make a gate pass is to edit what the
+// gate reads.
+function transportPrompt(cmd, jsonPath, what) {
+  return `Run EXACTLY this command from the repository root:
+
+\`\`\`bash
+${cmd}
+echo "EXIT=$?"
+\`\`\`
+
+Then read \`${jsonPath}\` and reproduce its parsed JSON EXACTLY as \`payload\`.
+
+Rules — this is a security gate and you are transport, not a judge:
+- Report the exit code VERBATIM. 0 = clean, 1 = findings, 2 = config error.
+- Do NOT edit, create or delete ANY file to make this pass. Do NOT amend the
+  allowlist, the denylist, the binary pin list, or any scanned file.
+- Do NOT re-run with different flags, and do NOT "fix" a finding.
+- Do NOT omit, summarise, redact further, or reorder anything in the payload.
+- If the command fails or the file is missing, set ok=false, report the exit code
+  you saw and put stderr in stderr_tail. Never invent a payload.
+This is ${what}.`
+}
+
+// usablePayload — a relayed payload is usable only if it is the shape we asked
+// for. Anything else — truncated, paraphrased, wrong schema — is "did not run".
+function usablePayload(p, schema) {
+  return !!p && typeof p === 'object' && p.schema === schema
+    && p.counts && typeof p.counts.findings === 'number'
+}
+
+// laneVerdict — the only place a guarded run can be declared clean. Pure
+// function of the relayed facts. CONFIG_ERROR outranks BLOCKED, because "the
+// scan could not be trusted" is a different remedy from "fix the leak".
+function laneVerdict(lanes) {
+  const ran = (lanes || []).filter((l) => l.required)
+  for (const l of ran) {
+    if (l.exit === 2) return { status: 'CONFIG_ERROR', clean: false,
+      reason: `${l.name} could not run a trustworthy scan (exit 2): ${l.detail || 'see output'}` }
+    if (l.payloadRequired && !l.payload) return { status: 'CONFIG_ERROR', clean: false,
+      reason: `${l.name} did not return a usable ${l.schema} payload; the scan cannot be verified` }
+    if (l.exit === null || l.exit === undefined) return { status: 'CONFIG_ERROR', clean: false,
+      reason: `${l.name} did not report an exit code; treating as not-run` }
+    // `l.exit` is a number an AGENT typed. The tool's own JSON report — which we
+    // already hold — states the same thing authoritatively. Trusting only the
+    // transcribed field would put a model in the finding path after all: a
+    // mistyped 0 over a report listing findings would read as CLEAN. So they must
+    // agree, and a disagreement is CONFIG_ERROR rather than BLOCKED, because what
+    // it proves is that nothing was reliably certified.
+    if (l.payload && (l.payload.exit !== l.exit
+        || (l.payload.counts.findings > 0) !== (l.exit !== 0))) {
+      return { status: 'CONFIG_ERROR', clean: false,
+        reason: `${l.name} relayed exit ${l.exit}, but its JSON report says exit `
+          + `${l.payload.exit} with ${l.payload.counts.findings} finding(s). The `
+          + `transcript and the tool disagree, so no state was certified.` }
+    }
+    if (l.exit !== 0) return { status: 'BLOCKED', clean: false,
+      reason: `${l.name} found content that must not become public` }
+  }
+  return { status: 'CLEAN', clean: true, reason: 'no findings in any lane' }
+}
+
+// denylistLaneOk — the denylist lane silently no-ops when the term list is
+// absent, so a green scan can mean "the client-name lane never ran". That must
+// not read as clean.
+function denylistLaneOk(payload, required = true) {
+  return !required || !payload || (payload.lanes && payload.lanes.denylist === 'active')
+}
+
 // skillAgentBudget — decide how many candidates fit the agent budget BEFORE the
 // judge phase. Overflow is deferred and reported, never silently dropped.
 function skillAgentBudget(candidateCount, votes, budget, overhead = 9) {
@@ -345,11 +436,17 @@ const WRITER_SCHEMA = {
   },
 }
 
-const SWEEP_SCHEMA = {
-  type: 'object', additionalProperties: true, required: ['clean'],
+// TOOL_REPORT_SCHEMA — what a transport agent may say about a guard run: it
+// ran or it did not, this was the exit code, this was the JSON. There is no
+// field in which a model can express a verdict.
+const TOOL_REPORT_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['ok', 'exit', 'payload'],
   properties: {
-    clean: { type: 'boolean', description: 'exit code 0 from scripts/check_client_data.py' },
-    findings: { type: 'array', items: { type: 'string' } },
+    ok: { type: 'boolean', description: 'true only if the command ran AND its JSON parsed. NOT a judgement about the content.' },
+    exit: { type: ['number', 'null'], description: 'the process exit code, verbatim: 0 clean, 1 findings, 2 config error' },
+    payload: { type: ['object', 'null'], additionalProperties: true, description: 'the JSON report file, parsed and reproduced EXACTLY. Never edit, filter or summarise it.' },
+    stderr_tail: { type: 'string', description: 'last ~15 lines of stderr, verbatim' },
   },
 }
 
@@ -620,17 +717,37 @@ const writeOk = !!(writer && Number(writer.written) === writePlan.length && mism
 if (!writeOk) log(`Write verification: ${mismatches.length} file(s) differ from the planned line count.`)
 
 // ---- Sweep ----------------------------------------------------------------
+// The same guard /content-guard runs, on the same flags, judged by the same
+// function. --redact keeps a matched value out of this workflow's return value
+// and the transcript; --require-denylist stops a scan whose client-name lane
+// never ran from reading clean; --json gives laneVerdict a tool-authored report
+// to cross-check the agent's transcribed exit code against.
 phase('Sweep')
+const sweepCmd = guardCmd({ mode: 'full', json: GUARD_JSON, requireDenylist: REQUIRE_DENYLIST })
 const sweep = await agent(
-  `ROLE: CONFIDENTIALITY SWEEP RUNNER (deterministic tool-runner; run the command, relay the facts — do NOT judge or fix). cwd is repo root.\n` +
-  `Run EXACTLY: \`python3 scripts/check_client_data.py\`\n` +
-  `Set clean=true only if it exited 0. If it exited non-zero, return every reported line verbatim in findings[].\n` +
-  `Do NOT edit any file to make it pass. Return SWEEP_SCHEMA.`,
-  { schema: SWEEP_SCHEMA, label: 'sweep:confidentiality', phase: 'Sweep', agentType: 'general-purpose' },
-).catch(() => ({ clean: false, findings: ['confidentiality sweep agent error'] }))
+  `ROLE: CONFIDENTIALITY SWEEP RUNNER (deterministic tool-runner). cwd is repo root.\n\n` +
+  transportPrompt(sweepCmd, GUARD_JSON,
+    'the whole-tree confidentiality guard over the files this run just wrote'),
+  { schema: TOOL_REPORT_SCHEMA, label: 'sweep:confidentiality', phase: 'Sweep', agentType: 'general-purpose' },
+).catch(() => null)
 
-const sweepClean = !!(sweep && sweep.clean)
-if (!sweepClean) log(`Confidentiality sweep FAILED: ${((sweep && sweep.findings) || []).length} finding(s).`)
+const sweepPayload = usablePayload(sweep && sweep.payload, 'content-guard-report/v1') ? sweep.payload : null
+let sweepVerdict = laneVerdict([{
+  name: 'confidentiality guard (whole tree)', required: true, payloadRequired: true,
+  schema: 'content-guard-report/v1', exit: sweep && sweep.exit, payload: sweepPayload,
+  detail: sweep && sweep.stderr_tail,
+}])
+if (sweepVerdict.clean && !denylistLaneOk(sweepPayload, REQUIRE_DENYLIST)) {
+  sweepVerdict = { status: 'CONFIG_ERROR', clean: false,
+    reason: 'the client-name term list is not configured, so that lane did not run — a clean '
+      + 'result would be misleading. Set CLIENT_DENYLIST (see scripts/gen_denylist.py), or '
+      + 'pass {require_denylist:false}.' }
+}
+
+// Rule and location only — leak_summary has already stripped the matched value.
+const sweepFindings = (sweepPayload && sweepPayload.findings) || []
+const sweepClean = !!sweepVerdict.clean
+if (!sweepClean) log(`Confidentiality sweep ${sweepVerdict.status}: ${sweepVerdict.reason}`)
 
 // ---- Verify ---------------------------------------------------------------
 phase('Verify')
@@ -660,9 +777,13 @@ const gate = skillUpdateGate({
   writeMismatch: mismatches.map((m) => m.path).join(', '),
 })
 
-// The confidentiality sweep is an independent, non-overridable veto.
+// The confidentiality sweep is an independent, non-overridable veto. The
+// findings appended here are leak_summary output — rule and location, never the
+// matched value, so this reason is safe in a transcript and a report.
 const finalGate = (gate.ok && !sweepClean)
-  ? { ok: false, status: 'BLOCKED', blocked_reason: `confidentiality sweep failed: ${((sweep && sweep.findings) || []).slice(0, 3).join('; ')}` }
+  ? { ok: false, status: 'BLOCKED',
+      blocked_reason: `confidentiality sweep ${sweepVerdict.status}: ${sweepVerdict.reason}`
+        + (sweepFindings.length ? ` — ${sweepFindings.slice(0, 3).join('; ')}` : '') }
   : gate
 
 if (!finalGate.ok && baseCommit) {

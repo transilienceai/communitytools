@@ -787,6 +787,113 @@ export function writeGate(block, fileInfo, caps = {}) {
   return { ok: true, action: block.creates_file ? 'create' : 'append', reasons: [], budget };
 }
 
+// ---- shared tool-gate scaffold -------------------------------------------
+// content-guard.js and skill-update.js both do the same thing: run a
+// deterministic Python guard, have an agent relay its exit code and JSON
+// VERBATIM, and decide in pure JS. Before this section they each carried their
+// own copy, and the copies were not equivalent — skill-update ran
+// check_client_data.py bare, so it had no --redact (matched values reached the
+// transcript), no --require-denylist (the client-name lane could silently
+// no-op and still read clean) and no --json (the verdict rested on an
+// agent-typed boolean with nothing to check it against).
+//
+// No RULE lives here. Regexes, allowlists and thresholds stay in the Python
+// tools; this is transport and verdict only.
+
+// guardCmd — the one place the confidentiality guard's command line is built.
+// --redact is not optional: wherever this output can reach a transcript, a CI
+// log or a PR body, only the rule and the location may travel.
+export function guardCmd({ mode, base, json, manifest, requireDenylist } = {}) {
+  const flags = ['--redact', `--json ${json}`];
+  if (manifest) flags.push('--manifest');
+  if (requireDenylist) flags.push('--require-denylist');
+  const scopeFlag = mode === 'changed' ? `--changed${base ? ` ${base}` : ''}` : '';
+  return `python3 scripts/check_client_data.py ${scopeFlag} ${flags.join(' ')}`.replace(/\s+/g, ' ').trim();
+}
+
+// TOOL_REPORT_SCHEMA — what a transport agent may say about a guard run: it
+// ran or it did not, this was the exit code, this was the JSON. There is no
+// field in which a model can express a verdict.
+export const TOOL_REPORT_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['ok', 'exit', 'payload'],
+  properties: {
+    ok: { type: 'boolean', description: 'true only if the command ran AND its JSON parsed. NOT a judgement about the content.' },
+    exit: { type: ['number', 'null'], description: 'the process exit code, verbatim: 0 clean, 1 findings, 2 config error' },
+    payload: { type: ['object', 'null'], additionalProperties: true, description: 'the JSON report file, parsed and reproduced EXACTLY. Never edit, filter or summarise it.' },
+    stderr_tail: { type: 'string', description: 'last ~15 lines of stderr, verbatim' },
+  },
+};
+
+// transportPrompt — the tool-runner contract. Every prohibition here exists
+// because the cheapest way for an agent to make a gate pass is to edit what the
+// gate reads.
+export function transportPrompt(cmd, jsonPath, what) {
+  return `Run EXACTLY this command from the repository root:
+
+\`\`\`bash
+${cmd}
+echo "EXIT=$?"
+\`\`\`
+
+Then read \`${jsonPath}\` and reproduce its parsed JSON EXACTLY as \`payload\`.
+
+Rules — this is a security gate and you are transport, not a judge:
+- Report the exit code VERBATIM. 0 = clean, 1 = findings, 2 = config error.
+- Do NOT edit, create or delete ANY file to make this pass. Do NOT amend the
+  allowlist, the denylist, the binary pin list, or any scanned file.
+- Do NOT re-run with different flags, and do NOT "fix" a finding.
+- Do NOT omit, summarise, redact further, or reorder anything in the payload.
+- If the command fails or the file is missing, set ok=false, report the exit code
+  you saw and put stderr in stderr_tail. Never invent a payload.
+This is ${what}.`;
+}
+
+// usablePayload — a relayed payload is usable only if it is the shape we asked
+// for. Anything else — truncated, paraphrased, wrong schema — is "did not run".
+export function usablePayload(p, schema) {
+  return !!p && typeof p === 'object' && p.schema === schema
+    && p.counts && typeof p.counts.findings === 'number';
+}
+
+// laneVerdict — the only place a guarded run can be declared clean. Pure
+// function of the relayed facts. CONFIG_ERROR outranks BLOCKED, because "the
+// scan could not be trusted" is a different remedy from "fix the leak".
+export function laneVerdict(lanes) {
+  const ran = (lanes || []).filter((l) => l.required);
+  for (const l of ran) {
+    if (l.exit === 2) return { status: 'CONFIG_ERROR', clean: false,
+      reason: `${l.name} could not run a trustworthy scan (exit 2): ${l.detail || 'see output'}` };
+    if (l.payloadRequired && !l.payload) return { status: 'CONFIG_ERROR', clean: false,
+      reason: `${l.name} did not return a usable ${l.schema} payload; the scan cannot be verified` };
+    if (l.exit === null || l.exit === undefined) return { status: 'CONFIG_ERROR', clean: false,
+      reason: `${l.name} did not report an exit code; treating as not-run` };
+    // `l.exit` is a number an AGENT typed. The tool's own JSON report — which we
+    // already hold — states the same thing authoritatively. Trusting only the
+    // transcribed field would put a model in the finding path after all: a
+    // mistyped 0 over a report listing findings would read as CLEAN. So they must
+    // agree, and a disagreement is CONFIG_ERROR rather than BLOCKED, because what
+    // it proves is that nothing was reliably certified.
+    if (l.payload && (l.payload.exit !== l.exit
+        || (l.payload.counts.findings > 0) !== (l.exit !== 0))) {
+      return { status: 'CONFIG_ERROR', clean: false,
+        reason: `${l.name} relayed exit ${l.exit}, but its JSON report says exit `
+          + `${l.payload.exit} with ${l.payload.counts.findings} finding(s). The `
+          + `transcript and the tool disagree, so no state was certified.` };
+    }
+    if (l.exit !== 0) return { status: 'BLOCKED', clean: false,
+      reason: `${l.name} found content that must not become public` };
+  }
+  return { status: 'CLEAN', clean: true, reason: 'no findings in any lane' };
+}
+
+// denylistLaneOk — the denylist lane silently no-ops when the term list is
+// absent, so a green scan can mean "the client-name lane never ran". That must
+// not read as clean.
+export function denylistLaneOk(payload, required = true) {
+  return !required || !payload || (payload.lanes && payload.lanes.denylist === 'active');
+}
+
 // violationKey — the stable identity of a linter violation across two runs.
 export function violationKey(v) {
   return [v && v.code, v && v.file, (v && v.line) || 0, String((v && v.detail) || '').slice(0, 60)].join('|');

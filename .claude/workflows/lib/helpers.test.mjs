@@ -15,6 +15,7 @@ import {
   convergenceDone, nextDryStreak, resumeSchedule, classifyEngagement,
   scrubCheck, capFor, capBudget, promotionGate, writeGate, violationKey, lintDelta,
   skillUpdateGate, skillAgentBudget, buildChangeReport,
+  guardCmd, TOOL_REPORT_SCHEMA, transportPrompt, usablePayload, laneVerdict, denylistLaneOk,
 } from './wf-helpers.mjs';
 
 let pass = 0, fail = 0;
@@ -446,6 +447,66 @@ ok(buildChangeReport([], [], { ok: true }).startsWith('**No changes.**'), 'repor
 ok(buildChangeReport([{ id: 'c1', decision: 'SKIP', reason: 'already captured' }], [], { ok: true }).includes('**Skipped.**'), 'report: skipped bucket');
 ok(buildChangeReport([], [{ path: 'skills/x/SKILL.md', summary: 'added a pattern' }], { ok: true }).includes('**Updated.**'), 'report: updated bucket');
 ok(buildChangeReport([], [], { ok: false, blocked_reason: 'regressed' }).includes('BLOCKED'), 'report surfaces a blocked gate');
+
+// --- shared tool-gate scaffold (content-guard + skill-update) --------------
+const GJ = '.claude/state/confidentiality/report.json';
+ok(guardCmd({ mode: 'full', json: GJ }).includes('--redact'),
+   'guardCmd always redacts — a matched value must never reach a transcript');
+ok(!guardCmd({ mode: 'full', json: GJ }).includes('--changed'),
+   'guardCmd: full mode passes no --changed');
+ok(guardCmd({ mode: 'changed', json: GJ, base: 'origin/main' }).includes('--changed origin/main'),
+   'guardCmd: changed mode carries the base ref');
+ok(guardCmd({ mode: 'changed', json: GJ }).includes('--changed --redact'),
+   'guardCmd: changed mode with no base emits a bare --changed, not a dangling ref');
+ok(guardCmd({ mode: 'full', json: GJ, requireDenylist: true }).includes('--require-denylist'),
+   'guardCmd: --require-denylist is opt-in and passed through');
+ok(!guardCmd({ mode: 'full', json: GJ }).includes('--manifest'),
+   'guardCmd: no manifest unless asked');
+eq(guardCmd({ mode: 'full', json: GJ }), guardCmd({ mode: 'full', json: GJ }),
+   'guardCmd is deterministic');
+
+const P = (over) => ({ schema: 'content-guard-report/v1', exit: 0, counts: { findings: 0 },
+                       lanes: { denylist: 'active' }, ...over });
+ok(usablePayload(P(), 'content-guard-report/v1'), 'usablePayload accepts the right shape');
+ok(!usablePayload(P({ schema: 'other/v1' }), 'content-guard-report/v1'), 'usablePayload rejects a wrong schema');
+ok(!usablePayload({ schema: 'content-guard-report/v1' }, 'content-guard-report/v1'),
+   'usablePayload rejects a payload with no counts (paraphrased/truncated relay)');
+ok(!usablePayload(null, 'content-guard-report/v1'), 'usablePayload rejects null');
+
+const lane = (over) => ({ name: 'guard', required: true, payloadRequired: true,
+                          schema: 'content-guard-report/v1', exit: 0, payload: P(), ...over });
+eq(laneVerdict([lane()]).status, 'CLEAN', 'laneVerdict: a clean lane is CLEAN');
+eq(laneVerdict([]).status, 'CLEAN', 'laneVerdict: no required lanes is vacuously clean');
+eq(laneVerdict([lane({ required: false, exit: 1 })]).status, 'CLEAN', 'laneVerdict skips non-required lanes');
+eq(laneVerdict([lane({ exit: 1, payload: P({ exit: 1, counts: { findings: 3 } }) })]).status, 'BLOCKED',
+   'laneVerdict: findings BLOCK');
+eq(laneVerdict([lane({ exit: 2, payload: null })]).status, 'CONFIG_ERROR', 'laneVerdict: exit 2 is CONFIG_ERROR');
+eq(laneVerdict([lane({ exit: null, payload: null })]).status, 'CONFIG_ERROR', 'laneVerdict: a missing exit code is not-run');
+eq(laneVerdict([lane({ payload: null })]).status, 'CONFIG_ERROR',
+   'laneVerdict: a required payload that did not arrive cannot be verified');
+// The load-bearing one: an agent that types exit 0 over a report listing findings
+// must not be able to certify the tree.
+eq(laneVerdict([lane({ exit: 0, payload: P({ exit: 1, counts: { findings: 2 } }) })]).status, 'CONFIG_ERROR',
+   'laneVerdict: transcript/tool disagreement is CONFIG_ERROR, never CLEAN');
+eq(laneVerdict([lane({ exit: 1, payload: P({ exit: 0, counts: { findings: 0 } }) })]).status, 'CONFIG_ERROR',
+   'laneVerdict: disagreement the other way is also CONFIG_ERROR');
+eq(laneVerdict([lane({ exit: 2, payload: null }), lane({ exit: 1 })]).status, 'CONFIG_ERROR',
+   'laneVerdict: CONFIG_ERROR outranks BLOCKED');
+
+ok(denylistLaneOk(P(), true), 'denylistLaneOk: an active lane passes');
+ok(!denylistLaneOk(P({ lanes: { denylist: 'absent' } }), true),
+   'denylistLaneOk: a lane that never ran must not read as clean');
+ok(denylistLaneOk(P({ lanes: { denylist: 'absent' } }), false), 'denylistLaneOk: opt-out is honoured');
+ok(denylistLaneOk(null, true), 'denylistLaneOk: no payload is decided by laneVerdict, not here');
+
+const tp = transportPrompt('python3 scripts/check_client_data.py --redact', GJ, 'the whole-tree scan');
+ok(tp.includes('you are transport, not a judge'), 'transportPrompt states the transport contract');
+ok(tp.includes('Do NOT edit, create or delete ANY file to make this pass'),
+   'transportPrompt forbids editing what the gate reads');
+ok(tp.includes('Never invent a payload'), 'transportPrompt forbids fabricating a payload');
+ok(tp.includes(GJ) && tp.includes('--redact'), 'transportPrompt carries the command and the report path');
+eq(TOOL_REPORT_SCHEMA.additionalProperties, false, 'TOOL_REPORT_SCHEMA is closed — no field for a verdict');
+eq(TOOL_REPORT_SCHEMA.required, ['ok', 'exit', 'payload'], 'TOOL_REPORT_SCHEMA requires the exit code and the payload');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) { console.log('\n' + fails.join('\n')); process.exit(1); }
