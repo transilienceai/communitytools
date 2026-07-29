@@ -1,4 +1,6 @@
-# LLM08 — Excessive Agency
+# Excessive Agency
+
+> Category **`LLM06:2025`** Excessive Agency. The `llm08` filename predates the 2025 renumbering and does not match the id; the authoritative mapping is [`reference/catalog/llm-top10-2025.json`](../../catalog/llm-top10-2025.json).
 
 ## When this applies
 

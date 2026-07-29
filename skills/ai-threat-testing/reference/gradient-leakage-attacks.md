@@ -1,5 +1,7 @@
 # Gradient-Leakage Attacks (DLG / iDLG / Inverting Gradients)
 
+> Category **`LLM08:2025`** Vector and Embedding Weaknesses. Authoritative mapping: [`reference/catalog/llm-top10-2025.json`](catalog/llm-top10-2025.json).
+
 ## When this applies
 
 - A target ships *raw gradients* alongside model architecture: federated-learning client updates, "gradient logging" telemetry, distillation pipelines, or CTF artifacts pairing a small CNN definition with a saved gradient file (`.pt`, `.npy`, list of tensors whose shapes match model parameters).

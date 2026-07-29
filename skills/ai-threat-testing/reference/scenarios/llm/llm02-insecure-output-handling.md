@@ -1,4 +1,6 @@
-# LLM02 — Insecure Output Handling
+# Insecure Output Handling
+
+> Category **`LLM05:2025`** Improper Output Handling. The `llm02` filename predates the 2025 renumbering and does not match the id; the authoritative mapping is [`reference/catalog/llm-top10-2025.json`](../../catalog/llm-top10-2025.json).
 
 ## When this applies
 

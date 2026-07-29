@@ -1,4 +1,6 @@
-# Agent: LLM07 Model Extraction / Model Theft Testing
+# Agent: Model Extraction / Model Theft Testing
+
+> Category **`LLM10:2025`** Unbounded Consumption. The `llm07` filename predates the 2025 renumbering and does not match the id; the authoritative mapping is [`reference/catalog/llm-top10-2025.json`](catalog/llm-top10-2025.json).
 
 ## Core Responsibilities
 

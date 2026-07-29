@@ -1,5 +1,7 @@
 # Malicious Keras Model Triage
 
+> Category **`LLM03:2025`** Supply Chain. Authoritative mapping: [`reference/catalog/llm-top10-2025.json`](catalog/llm-top10-2025.json).
+
 ## When this applies
 
 - A `.keras`, `.h5`, or `SavedModel` artifact arrives without provenance and you must decide whether loading it is safe.

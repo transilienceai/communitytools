@@ -1,4 +1,6 @@
-# Agent: LLM10 Insufficient Logging & Monitoring Testing
+# Agent: Insufficient Logging & Monitoring Testing
+
+> Category **`TX-LLM-LOG-EVASION`** Monitoring evasion and forensic gaps in an LLM application. The `llm10` filename predates the 2025 renumbering and does not match the id; the authoritative mapping is [`reference/catalog/llm-top10-2025.json`](catalog/llm-top10-2025.json).
 
 ## Core Responsibilities
 

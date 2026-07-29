@@ -1,5 +1,7 @@
 # AI-ML — Hopfield / Spin-Glass Pattern Recovery
 
+> Category **`LLM08:2025`** Vector and Embedding Weaknesses. Authoritative mapping: [`reference/catalog/llm-top10-2025.json`](catalog/llm-top10-2025.json).
+
 When an AI-ML challenge ships a large symmetric weight matrix `W` and a generator notebook hinting at "associative memory", "energy minimisation", or "spin glass", you have a Hopfield network. The flag (or any hidden pattern) is encoded in stored patterns; recovery is via eigenspace seeding rather than naive iteration.
 
 ## Recognising the setup

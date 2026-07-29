@@ -1,5 +1,7 @@
 # Adversarial Pixel Attacks (L0-Bounded)
 
+> Category **`TX-LLM-ADVERSARIAL-INPUT`** Adversarial perturbation of non-text model input. Authoritative mapping: [`reference/catalog/llm-top10-2025.json`](catalog/llm-top10-2025.json).
+
 ## When this applies
 
 - An HTTP endpoint grants access / reveals a flag / changes state based on classifier output (image, audio, sensor reading). This is an **ML-as-Authorization** boundary — equivalent to authentication and rated CVSS ≈ 7.5 when bypassed.

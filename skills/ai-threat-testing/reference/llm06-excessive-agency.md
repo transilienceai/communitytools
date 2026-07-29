@@ -1,4 +1,6 @@
-# Agent: LLM06 Excessive Agency / Privilege Escalation Testing
+# Agent: Excessive Agency / Privilege Escalation Testing
+
+> Category **`LLM06:2025`** Excessive Agency. See [`reference/catalog/llm-top10-2025.json`](catalog/llm-top10-2025.json).
 
 ## Core Responsibilities
 

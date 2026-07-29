@@ -1,4 +1,6 @@
-# LLM01 — Direct Prompt Injection
+# Direct Prompt Injection
+
+> Category **`LLM01:2025`** Prompt Injection. See [`reference/catalog/llm-top10-2025.json`](../../catalog/llm-top10-2025.json).
 
 ## When this applies
 

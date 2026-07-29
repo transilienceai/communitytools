@@ -1,4 +1,6 @@
-# LLM06 — Sensitive Information Disclosure
+# Sensitive Information Disclosure
+
+> Category **`LLM02:2025`** Sensitive Information Disclosure. The `llm06` filename predates the 2025 renumbering and does not match the id; the authoritative mapping is [`reference/catalog/llm-top10-2025.json`](../../catalog/llm-top10-2025.json).
 
 ## When this applies
 

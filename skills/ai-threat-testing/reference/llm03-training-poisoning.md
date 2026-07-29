@@ -1,4 +1,6 @@
-# Agent: LLM03 Training Data Poisoning Analysis
+# Agent: Training Data Poisoning Analysis
+
+> Category **`LLM04:2025`** Data and Model Poisoning. The `llm03` filename predates the 2025 renumbering and does not match the id; the authoritative mapping is [`reference/catalog/llm-top10-2025.json`](catalog/llm-top10-2025.json).
 
 ## Core Responsibilities
 

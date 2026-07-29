@@ -1,4 +1,6 @@
-# Agent: LLM08 Vector Database Poisoning Testing
+# Agent: Vector Database Poisoning Testing
+
+> Category **`LLM08:2025`** Vector and Embedding Weaknesses. See [`reference/catalog/llm-top10-2025.json`](catalog/llm-top10-2025.json).
 
 ## Core Responsibilities
 

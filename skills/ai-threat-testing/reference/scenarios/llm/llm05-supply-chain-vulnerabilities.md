@@ -1,4 +1,6 @@
-# LLM05 — Supply Chain Vulnerabilities
+# Supply Chain Vulnerabilities
+
+> Category **`LLM03:2025`** Supply Chain. The `llm05` filename predates the 2025 renumbering and does not match the id; the authoritative mapping is [`reference/catalog/llm-top10-2025.json`](../../catalog/llm-top10-2025.json).
 
 ## When this applies
 

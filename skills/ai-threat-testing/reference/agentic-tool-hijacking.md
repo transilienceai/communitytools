@@ -1,5 +1,7 @@
 # Agentic AI Tool-Call Hijacking
 
+> Category **`LLM06:2025`** Excessive Agency. Authoritative mapping: [`reference/catalog/llm-top10-2025.json`](catalog/llm-top10-2025.json).
+
 ## When this applies
 
 - An app's UI flows user input through an LLM that holds tools (`set_X`, `update_Y`, `grant_Z`) which mutate server-side state.

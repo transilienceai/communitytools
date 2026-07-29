@@ -123,6 +123,56 @@ class TestNoInventedOwaspIds(unittest.TestCase):
         self.assertEqual(dupes, [], "a file addressing two categories makes coverage ambiguous")
 
 
+class TestEachFileDeclaresItsOwnCategory(unittest.TestCase):
+    """The part a catalogue alone does not fix.
+
+    Executors are handed a reference-file path, not SKILL.md — that is the repo's
+    stated convention. So a file whose own heading says "LLM07 Model Extraction"
+    still teaches the wrong id to every agent that reads it, however correct the
+    catalogue is. Each catalogued file must therefore name its category itself.
+    """
+
+    def _files(self):
+        cat = _catalog()
+        for group in ("categories", "local_classes"):
+            for c in cat[group]:
+                for rel in c.get("covered_by", []):
+                    yield rel, c["id"]
+
+    def test_no_heading_asserts_a_bare_llm_number(self):
+        offenders = []
+        for rel, _ in self._files():
+            with open(os.path.join(SKILL, rel), encoding="utf-8") as fh:
+                for line in fh:
+                    if line.startswith("#"):
+                        if re.search(r"LLM\d{2}(?!:)", line):
+                            offenders.append(f"{rel}: {line.strip()}")
+                        break
+        self.assertEqual(offenders, [],
+                         "a heading carrying an unqualified LLMnn re-teaches the old scheme")
+
+    def test_every_catalogued_file_states_its_category(self):
+        missing = []
+        for rel, cid in self._files():
+            with open(os.path.join(SKILL, rel), encoding="utf-8") as fh:
+                head = "".join(fh.readlines()[:6])
+            if cid not in head:
+                missing.append(f"{rel} does not name {cid} in its first 6 lines")
+        self.assertEqual(missing, [], "\n  ".join([""] + missing))
+
+    def test_the_three_that_were_actively_wrong(self):
+        """Named individually because these were the false claims."""
+        def head(rel):
+            with open(os.path.join(SKILL, rel), encoding="utf-8") as fh:
+                return "".join(fh.readlines()[:6])
+        self.assertIn("LLM10:2025", head("reference/llm07-model-extraction.md"),
+                      "model theft is Unbounded Consumption in 2025, not LLM07")
+        self.assertIn("TX-LLM-LOG-EVASION", head("reference/llm10-logging-bypass.md"),
+                      "monitoring evasion is not an OWASP category and must not claim LLM10")
+        self.assertIn("LLM02:2025", head("reference/scenarios/llm/llm06-sensitive-info-disclosure.md"),
+                      "sensitive information disclosure is LLM02 in 2025, not LLM06")
+
+
 class TestSkillDoesNotAssertTheOldScheme(unittest.TestCase):
     """SKILL.md is what an agent reads first; it propagated the wrong ids."""
 

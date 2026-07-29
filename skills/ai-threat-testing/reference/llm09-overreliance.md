@@ -1,4 +1,6 @@
-# Agent: LLM09 Overreliance Vulnerability Testing
+# Agent: Overreliance Vulnerability Testing
+
+> Category **`LLM09:2025`** Misinformation. See [`reference/catalog/llm-top10-2025.json`](catalog/llm-top10-2025.json).
 
 ## Core Responsibilities
 

@@ -1,4 +1,6 @@
-# Agent: LLM01 Prompt Injection Testing
+# Agent: Prompt Injection Testing
+
+> Category **`LLM01:2025`** Prompt Injection. See [`reference/catalog/llm-top10-2025.json`](catalog/llm-top10-2025.json).
 
 ## Core Responsibilities
 
