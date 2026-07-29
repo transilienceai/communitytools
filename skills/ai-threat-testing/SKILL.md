@@ -16,22 +16,30 @@ Test LLM applications for OWASP LLM Top 10 vulnerabilities using 10 specialized 
 4. Professional report with PoCs generated
 ```
 
-## Primary Agents
+## Coverage — OWASP LLM Top 10, 2025 edition
 
-Each agent targets one OWASP LLM vulnerability:
+**Which file addresses which category is decided by
+[`reference/catalog/llm-top10-2025.json`](reference/catalog/llm-top10-2025.json), not by the
+filename.** The `llmNN-` prefixes on disk predate the 2025 renumbering and no longer match; the
+content is correct, the labels were not. Cite an id only with its edition (`LLM06:2025`), because a
+bare `LLM06` means two different categories depending on which edition the reader assumes.
 
-1. **Prompt Injection** (LLM01): Direct/indirect injection, system prompt extraction
-2. **Output Handling** (LLM02): Code/XSS injection, unsafe deserialization
-3. **Training Poisoning** (LLM03): Membership inference, backdoors, data extraction
-4. **Resource Exhaustion** (LLM04): Token flooding, DoS, cost impact
-5. **Supply Chain** (LLM05): Dependency scanning, plugin security
-6. **Excessive Agency** (LLM06): Privilege escalation, unauthorized actions
-7. **Model Extraction** (LLM07): Query-based theft, data reconstruction
-8. **Vector Poisoning** (LLM08): RAG injection, retrieval manipulation
-9. **Overreliance** (LLM09): Hallucination testing, confidence manipulation
-10. **Logging Bypass** (LLM10): Monitoring evasion, forensic gaps
+| Category | Attack surface |
+|---|---|
+| `LLM01:2025` Prompt Injection | Direct and indirect injection, instruction override, filter evasion |
+| `LLM02:2025` Sensitive Information Disclosure | Training-data and cross-tenant RAG leakage, canary verification |
+| `LLM03:2025` Supply Chain | Dependency CVEs, model provenance, malicious serialized models |
+| `LLM04:2025` Data and Model Poisoning | Backdoor triggers, membership inference, behavioural anomalies |
+| `LLM05:2025` Improper Output Handling | Code/XSS injection downstream, unsafe deserialization |
+| `LLM06:2025` Excessive Agency | Tool/plugin abuse, privilege escalation, unauthorised actions — the category that matters for **agents** rather than chatbots |
+| `LLM07:2025` System Prompt Leakage | **Gap — no playbook yet.** See the catalogue: what the prompt *contains* is a separate finding from whether it can be extracted |
+| `LLM08:2025` Vector and Embedding Weaknesses | RAG injection, retrieval manipulation, embedding inversion |
+| `LLM09:2025` Misinformation | Hallucination and confidence manipulation where output is relied upon |
+| `LLM10:2025` Unbounded Consumption | Token flooding, cost impact, and **model extraction/theft** (2025 treats extraction-by-query as a consumption problem) |
 
-See `reference/llm0X-*.md` for attack playbooks.
+Two classes are testable but are **not** OWASP categories, so they carry local `TX-` ids rather than
+an invented `LLMnn`: monitoring evasion / forensic gaps, and adversarial perturbation of non-text
+input. `tools/test_llm_numbering.py` enforces that separation.
 
 ## Workflows
 
@@ -46,7 +54,7 @@ See `reference/llm0X-*.md` for attack playbooks.
 
 **Focused Testing** (1-3 hours):
 ```
-- [ ] Select vulnerability (LLM01-10)
+- [ ] Select a category from the catalogue (LLM01:2025 .. LLM10:2025, or a TX- local class)
 - [ ] Deploy agent
 - [ ] Execute techniques
 - [ ] Document findings

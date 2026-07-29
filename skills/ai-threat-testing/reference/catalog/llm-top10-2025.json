@@ -1,0 +1,119 @@
+{
+  "meta": {
+    "catalog_id": "owasp-llm-top10",
+    "framework": "OWASP Top 10 for Large Language Model Applications",
+    "framework_version": "2025",
+    "source_url": "https://owasp.org/www-project-top-10-for-large-language-model-applications/",
+    "licence_note": "OWASP material is CC BY-SA. Category ids and titles are cited as identifiers; every procedure in this skill is our own writing. Nothing is reproduced from the OWASP text, because share-alike would otherwise infect the file carrying it.",
+    "why_this_file": "The skill carried two incompatible numbering schemes at once. reference/ used LLM06=Excessive Agency, LLM07=Model Extraction, LLM08=Vector Poisoning, LLM10=Insufficient Logging; reference/scenarios/llm/ used the OWASP 2023 order (LLM06=Sensitive Information Disclosure, LLM07=Insecure Plugin Design, LLM08=Excessive Agency). A deliverable citing 'OWASP LLM Top 10' therefore contradicted itself, and 'Insufficient Logging & Monitoring' is not an OWASP LLM category in ANY edition. Filenames are left alone deliberately — renaming would break inbound links and the files are correct content under the wrong label. THIS catalogue is the single source of truth for which category a file addresses; the filename is only a filename.",
+    "local_namespace": "TX-",
+    "local_namespace_note": "A genuinely testable class that OWASP does not carry as a Top 10 category gets a TX- id. It is never given an LLMnn number, because an invented OWASP id is what made the original claim false."
+  },
+
+  "categories": [
+    {
+      "id": "LLM01:2025",
+      "title": "Prompt Injection",
+      "covered_by": [
+        "reference/llm01-prompt-injection.md",
+        "reference/scenarios/llm/llm01-prompt-injection-direct.md",
+        "reference/scenarios/llm/llm01-prompt-injection-indirect.md"
+      ],
+      "atlas_xref": ["AML.T0051"],
+      "note": "The one category whose filename already matched its id in both trees."
+    },
+    {
+      "id": "LLM02:2025",
+      "title": "Sensitive Information Disclosure",
+      "covered_by": ["reference/scenarios/llm/llm06-sensitive-info-disclosure.md"],
+      "note": "Filed as LLM06 on disk, which was the 2023 id. Content is correct for this category."
+    },
+    {
+      "id": "LLM03:2025",
+      "title": "Supply Chain",
+      "covered_by": [
+        "reference/llm05-supply-chain.md",
+        "reference/scenarios/llm/llm05-supply-chain-vulnerabilities.md",
+        "reference/malicious-keras-model-triage.md"
+      ],
+      "note": "Was LLM05 in 2023."
+    },
+    {
+      "id": "LLM04:2025",
+      "title": "Data and Model Poisoning",
+      "covered_by": [
+        "reference/llm03-training-poisoning.md",
+        "reference/scenarios/llm/llm03-training-data-poisoning.md"
+      ],
+      "note": "2023 called this Training Data Poisoning and numbered it LLM03; 2025 widens it to model poisoning."
+    },
+    {
+      "id": "LLM05:2025",
+      "title": "Improper Output Handling",
+      "covered_by": [
+        "reference/llm02-insecure-output.md",
+        "reference/scenarios/llm/llm02-insecure-output-handling.md"
+      ],
+      "note": "Was LLM02 in 2023."
+    },
+    {
+      "id": "LLM06:2025",
+      "title": "Excessive Agency",
+      "covered_by": [
+        "reference/llm06-excessive-agency.md",
+        "reference/scenarios/llm/llm08-excessive-agency.md",
+        "reference/scenarios/llm/llm07-insecure-plugin-design.md",
+        "reference/agentic-tool-hijacking.md"
+      ],
+      "note": "2023 carried Insecure Plugin Design as a separate LLM07; 2025 folds plugin/tool design into Excessive Agency, so both files land here. This is the category that matters most for AI agents rather than chatbots."
+    },
+    {
+      "id": "LLM07:2025",
+      "title": "System Prompt Leakage",
+      "covered_by": [],
+      "gap": "No dedicated file. System-prompt extraction is touched inside reference/llm01-prompt-injection.md as an injection objective, but 2025 makes it a category in its own right: what the system prompt CONTAINS that should not be there (credentials, connection strings, authorisation logic) is a different finding from whether it can be extracted. Write it before claiming coverage of this category.",
+      "atlas_xref": ["AML.T0051"]
+    },
+    {
+      "id": "LLM08:2025",
+      "title": "Vector and Embedding Weaknesses",
+      "covered_by": [
+        "reference/llm08-vector-poisoning.md",
+        "reference/hopfield-recovery.md",
+        "reference/gradient-leakage-attacks.md"
+      ],
+      "note": "Not an OWASP category at all in 2023; the file was numbered LLM08 against the 2025 list while its neighbours were numbered against 2023, which is how the two schemes ended up interleaved in one directory."
+    },
+    {
+      "id": "LLM09:2025",
+      "title": "Misinformation",
+      "covered_by": ["reference/llm09-overreliance.md"],
+      "note": "2023 framed this as Overreliance — the human-factors side. 2025 reframes it around the model's output being wrong and relied upon."
+    },
+    {
+      "id": "LLM10:2025",
+      "title": "Unbounded Consumption",
+      "covered_by": [
+        "reference/llm04-resource-exhaustion.md",
+        "reference/scenarios/llm/llm04-denial-of-service.md",
+        "reference/llm07-model-extraction.md"
+      ],
+      "note": "Two 2023 categories collapse here: Model Denial of Service (2023 LLM04) and Model Theft (2023 LLM10). 2025 treats extraction-by-query as a consumption problem, which is why model-extraction content belongs in this category rather than under an invented LLM07."
+    }
+  ],
+
+  "local_classes": [
+    {
+      "id": "TX-LLM-LOG-EVASION",
+      "title": "Monitoring evasion and forensic gaps in an LLM application",
+      "covered_by": ["reference/llm10-logging-bypass.md"],
+      "rationale": "Real and testable — whether prompts, tool calls and refusals are logged in a way an investigation could use, and whether an attacker can suppress that trail. But OWASP has never carried it as an LLM Top 10 category, in 2023 or 2025. It was labelled LLM10, which is Model Theft in 2023 and Unbounded Consumption in 2025, so the label asserted conformance to something that does not exist. Kept as a local class rather than deleted: the content is good, only the id was false."
+    },
+    {
+      "id": "TX-LLM-ADVERSARIAL-INPUT",
+      "title": "Adversarial perturbation of non-text model input",
+      "covered_by": ["reference/adversarial-pixel-attacks.md"],
+      "rationale": "Applies to multimodal and vision models rather than to LLM text applications, so it sits outside the LLM Top 10 scope entirely. Recorded here so it is not mistaken for an uncovered OWASP category."
+    }
+  ]
+}
