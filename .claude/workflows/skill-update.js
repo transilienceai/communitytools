@@ -473,11 +473,16 @@ if (mode === 'create' && !CREATE) {
 phase('Intake')
 
 const SOURCES = OUTPUT_DIR ? [
+  // Canonical OUTPUT_DIR layout (skills/coordination/reference/output-discipline.md):
+  // attack-chain.md / experiments.md / session-memory.md live at the OUTPUT_DIR ROOT,
+  // NOT under findings/ or logs/. reports/summary.md is emitted by the pentest-engagement
+  // and hackthebox flows in place of reports/completion-report.md (coordinator-loop).
   `${OUTPUT_DIR}/reports/completion-report.md`,
+  `${OUTPUT_DIR}/reports/summary.md`,
   `${OUTPUT_DIR}/session-memory.md`,
-  `${OUTPUT_DIR}/findings/attack-chain.md`,
+  `${OUTPUT_DIR}/attack-chain.md`,
   `${OUTPUT_DIR}/reports/validation-report.md`,
-  `${OUTPUT_DIR}/logs/experiments.md`,
+  `${OUTPUT_DIR}/experiments.md`,
 ] : []
 
 const intake = await agent(
@@ -540,7 +545,7 @@ if (mode === 'learnings') {
   if (!present.length) {
     return blocked(`no harvestable artifact found under ${OUTPUT_DIR} (looked for ${SOURCES.length} known paths)`)
   }
-  const groups = await parallel(present.slice(0, 5).map((p) => () => agent(
+  const groups = await parallel(present.slice(0, SOURCES.length).map((p) => () => agent(
     `ROLE: LEARNING HARVESTER (read-only). Read EXACTLY ONE file: ${p}. Read nothing else in the engagement tree.\n` +
     `Extract at most 6 REUSABLE patterns. Each MUST be written as "When <observable condition>, <approach to try>" — never "on <machine>, Y worked".\n` +
     `Substitute placeholders for every concrete value: <TARGET_IP>, <DC_FQDN>, <DOMAIN>, <USER>, <PORT>.\n` +
