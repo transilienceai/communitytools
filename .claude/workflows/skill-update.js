@@ -475,8 +475,8 @@ phase('Intake')
 const SOURCES = OUTPUT_DIR ? [
   // Canonical OUTPUT_DIR layout (skills/coordination/reference/output-discipline.md):
   // attack-chain.md / experiments.md / session-memory.md live at the OUTPUT_DIR ROOT,
-  // NOT under findings/ or logs/. reports/summary.md is emitted by the pentest-engagement
-  // and hackthebox flows in place of reports/completion-report.md (coordinator-loop).
+  // NOT under findings/ or logs/. Some workflows also emit reports/summary.md
+  // (e.g., pentest-engagement, merge-reports) alongside reports/completion-report.md.
   `${OUTPUT_DIR}/reports/completion-report.md`,
   `${OUTPUT_DIR}/reports/summary.md`,
   `${OUTPUT_DIR}/session-memory.md`,
