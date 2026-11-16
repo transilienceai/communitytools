@@ -24,6 +24,7 @@ Proactive class coverage → `owasp-api-top10-coverage.md` (the no-fingerprint c
 | Initial API recon | `scenarios/rest/api-recon-and-discovery.md` | Passive + active enumeration |
 | `/api` parent walk-back | `scenarios/rest/exposed-documentation.md` | Swagger / OpenAPI without auth |
 | UI uses one verb but Allow: lists more | `scenarios/rest/options-method-enumeration.md` | OPTIONS reveals hidden methods |
+| GET guarded but a sibling verb executes (OPTIONS silent) | `scenarios/rest/verb-differential-guard-bypass.md` | Blind verb sweep, status-code differential |
 | GET response fields > POST input fields | `scenarios/rest/mass-assignment.md` | Inject privileged hidden fields |
 | Frontend → internal-API URL build | `scenarios/rest/sspp-query-string.md` | `%26field=...%23` injection |
 | Path-based internal API | `scenarios/rest/sspp-rest-path.md` | `..%2f` traversal to internal endpoints |
