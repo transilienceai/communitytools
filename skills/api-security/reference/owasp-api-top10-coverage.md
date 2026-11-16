@@ -31,7 +31,7 @@ Probe depth notes (what a shallow pass under-tests on each item):
 - **API2** — cover the *full* auth lifecycle: login, refresh, reset, logout/revocation, and token forgery — not just the login form.
 - **API3** — drive field discovery from `verbose-error-schema-disclosure.md`; inject server-fetched URL fields (`base_url`, `webhook_url`) that double as SSRF sinks → `API7-SSRF`.
 - **API4** — characterize limits passively (response headers, observed throttling); do NOT flood. A missing limit is a finding on its own.
-- **API5** — combine role axis (low-priv token) with verb axis (`OPTIONS`-revealed `PATCH`/`PUT`) — function-level gaps hide on unlisted verbs.
+- **API5** — combine role axis (low-priv token) with verb axis (`PATCH`/`PUT`/`DELETE`) — function-level gaps hide on unlisted verbs. `OPTIONS` under-reports them, so blind-sweep every verb and read the status-code differential (`scenarios/rest/verb-differential-guard-bypass.md`), not just `OPTIONS`-revealed methods.
 - **API6** — model the intended sequence/quantity of a business flow, then break it (replay, skip a step, exceed a per-account cap).
 - **API7** — every connector/integration create-body URL field is a sink; confirm with an out-of-band collaborator callback, then try metadata/internal targets.
 - **API8** — this is the umbrella for the cross-cut classes below; do not treat one missing header as the whole of API8.
